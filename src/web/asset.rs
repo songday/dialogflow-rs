@@ -5,8 +5,8 @@ use std::sync::LazyLock;
 pub(crate) static ASSETS_MAP: LazyLock<HashMap<&str, usize>> = LazyLock::new(|| {
 HashMap::from([
 (r"/assets/inbound-bot-PJJg_rST.png", 0),
-(r"/assets/index-BeRgcDSB.js", 1),
-(r"/assets/index-BXB7fqRW.css", 2),
+(r"/assets/index-CGv75_Bj.css", 1),
+(r"/assets/index-pTWt5gtr.js", 2),
 (r"/assets/outbound-bot-EmsLuWRN.png", 3),
 (r"/assets/text-bot-CWb_Poym.png", 4),
 (r"/assets/usedByDialogNodeTextGeneration-DrFqkTqi.png", 5),
