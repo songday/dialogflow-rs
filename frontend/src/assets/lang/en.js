@@ -5,6 +5,7 @@ export default {
             back: 'Back',
             save: 'Save',
             saved: 'Successfully saved',
+            create: 'Create',
             cancel: 'Cancel',
             edit: 'Edit',
             del: 'Delete',
@@ -15,6 +16,8 @@ export default {
             successTip: 'Success',
             errTip: 'Error',
             toDetail: 'View detail',
+            name: 'Name',
+            type: 'Type',
         },
         err: {},
         mainflow: {
@@ -146,6 +149,10 @@ export default {
             },
         },
         home: {
+            workspace: 'Workspace',
+            robotListTitle: 'Choose a robot to start',
+            createRobotBtnTxt: 'Create a new robot',
+            globalSettings: 'Global settings',
             title: 'Dialog Flow Visual Editor and Responsing System',
             subTitle: 'Low code dialog flow responsing system',
             btn1: 'Getting Started',

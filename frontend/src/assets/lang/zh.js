@@ -7,6 +7,7 @@ export default {
             save: '保存',
             saved: '保存成功',
             cancel: '取消',
+            create: '创建',
             edit: '编辑',
             del: '删除',
             deleted: '删除成功',
@@ -16,6 +17,8 @@ export default {
             successTip: '成功提示',
             errTip: '错误提示',
             toDetail: '查看详情',
+            name: '名称',
+            type: '类型',
         },
         err: {},
         mainflow: {
@@ -147,6 +150,10 @@ export default {
             },
         },
         home: {
+            workspace: '工作区',
+            robotListTitle: '选择一个机器人',
+            createRobotBtnTxt: '创建新机器人',
+            globalSettings: '全局设置',
             title: 'Dialog Flow 对话流程可视化编辑器',
             subTitle: '低代码流程应答系统',
             btn1: '立即使用',
