@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n'
 import MaterialSymbolsHouseOutline from '~icons/material-symbols/house-outline'
 import RiRobot2Line from '~icons/ri/robot-2-line'
 import BiChatSquareDots from '~icons/bi/chat-square-dots'
@@ -10,6 +11,7 @@ import SolarDownloadOutline from '~icons/solar/download-outline'
 import SolarRouting2Linear from '~icons/solar/routing-2-linear'
 import EpSetting from '~icons/ep/setting'
 const route = useRoute()
+const { t, locale } = useI18n();
 const robotId = route.params.robotId
 const isCollapse = ref(false)
 </script>
@@ -37,54 +39,53 @@ const isCollapse = ref(false)
                     <el-icon>
                         <MaterialSymbolsHouseOutline />
                     </el-icon>
-                    <template #title>Home</template>
+                    <template #title>{{ t('lang.menu.home') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId">
                     <el-icon>
                         <RiRobot2Line />
                     </el-icon>
-                    <template #title>This robot</template>
+                    <template #title>{{ t('lang.menu.thisRobot') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId + '/mainflows'">
                     <el-icon>
                         <BiChatSquareDots />
                     </el-icon>
-                    <template #title>Dialog flows</template>
+                    <template #title>{{ t('lang.menu.dialogFlows') }}</template>
                 </el-menu-item>
                 <el-sub-menu index="kbMenu">
                     <template #title>
                         <el-icon>
                             <MaterialSymbolsBook5Outline />
                         </el-icon>
-                        <span>Knowledge base</span>
+                        <span>{{ t('lang.menu.kb') }}</span>
                     </template>
-                    <el-menu-item :index="'/robot/' + robotId + '/kb/qa'">Questions and
-                        answer</el-menu-item>
-                    <el-menu-item :index="'/robot/' + robotId + '/kb/doc'">Documents (WIP)</el-menu-item>
+                    <el-menu-item :index="'/robot/' + robotId + '/kb/qa'">{{ t('lang.menu.qa') }}</el-menu-item>
+                    <el-menu-item :index="'/robot/' + robotId + '/kb/doc'">{{ t('lang.menu.doc') }}</el-menu-item>
                 </el-sub-menu>
                 <el-menu-item :index="'/robot/' + robotId + '/intents'">
                     <el-icon>
                         <RiBardLine />
                     </el-icon>
-                    <template #title>Intents</template>
+                    <template #title>{{ t('lang.menu.intents') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId + '/variables'">
                     <el-icon>
                         <SolarDownloadOutline />
                     </el-icon>
-                    <template #title>Variables</template>
+                    <template #title>{{ t('lang.menu.vars') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId + '/external/httpApis'">
                     <el-icon>
                         <SolarRouting2Linear />
                     </el-icon>
-                    <template #title>External APIs</template>
+                    <template #title>{{ t('lang.menu.vars') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId + '/settings'">
                     <el-icon>
                         <EpSetting />
                     </el-icon>
-                    <template #title>Robot settings</template>
+                    <template #title>{{ t('lang.menu.rs') }}</template>
                 </el-menu-item>
             </el-menu>
         </el-aside>
