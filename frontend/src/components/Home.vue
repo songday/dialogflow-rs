@@ -11,7 +11,9 @@ import RiRobot2Line from '~icons/ri/robot-2-line'
 import OutboundCallBotAvatar from '@/assets/outbound-bot.png'
 import InboundCallBotAvatar from '@/assets/inbound-bot.png'
 import TextBotAvatar from '@/assets/text-bot.png'
-useI18n();
+const { t, locale } = useI18n();
+// console.log('Current locale:', locale.value);
+const isZhLang = locale.value == 'zh';
 const router = useRouter();
 const currentVersion = ref('')
 const checkUpdateResult = ref(0)
@@ -89,29 +91,29 @@ const getBotAvatar = (type) => {
 }
 const getBotType = (type) => {
   if (type == 'OutboundCallBot')
-    return 'Telephone outbound bot'
+    return isZhLang ? '语音外呼机器人' : 'Outbound call bot'
   else if (type == 'InboundCallBot')
-    return 'Telephone incoming bot'
+    return isZhLang ? '语音呼入机器人' : 'Incoming call bot'
   else if (type == 'TextBot')
-    return 'Text chat bot'
+    return isZhLang ? '文本机器人' : 'Text chat bot'
   else
     return ''
 }
 const compareDifferentRobotTypeData = [
   {
-    rtype: 'Telephone outbound bot',
-    dialogNodeAnswerTextType: 'Plain text',
-    llmChatNodeAsyncResponse: 'Not supported',
+    rtype: getBotType('OutboundCallBot'),
+    dialogNodeAnswerTextType: isZhLang ? '普通文本, 非流式响应' : 'Plain text, No streaming response',
+    llmChatNodeAsyncResponse: isZhLang ? '非流式响应' : 'No streaming response',
   },
   {
-    rtype: 'Telephone incoming bot',
-    dialogNodeAnswerTextType: 'Plain text',
-    llmChatNodeAsyncResponse: 'Not supported',
+    rtype: getBotType('InboundCallBot'),
+    dialogNodeAnswerTextType: isZhLang ? '普通文本, 非流式响应' : 'Plain text, No streaming response',
+    llmChatNodeAsyncResponse: isZhLang ? '非流式响应' : 'No streaming response',
   },
   {
-    rtype: 'Text chat bot',
-    dialogNodeAnswerTextType: 'Rich text',
-    llmChatNodeAsyncResponse: 'Supported by SSE',
+    rtype: getBotType('TextBot'),
+    dialogNodeAnswerTextType: isZhLang ? '富文本, 流式响应' : 'Rich text, Streaming response',
+    llmChatNodeAsyncResponse: isZhLang ? '流式响应' : 'Streaming response',
   },
 ];
 </script>
@@ -169,7 +171,7 @@ const compareDifferentRobotTypeData = [
 </el-page-header> -->
   <el-row class="header-row">
     <el-col :span="8">
-      <span class="header"> Workspace </span>
+      <span class="header"> {{ t('lang.home.workspace') }} </span>
       <!-- <el-button size="large">
         <el-icon size="large">
           <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 24 24"><path d="M21 4H7V2H5v20h2v-8h14l-2-5l2-5zm-3.86 5.74l.9 2.26H7V6h11.05l-.9 2.26l-.3.74l.29.74zM14 9c0 1.1-.9 2-2 2s-2-.9-2-2s.9-2 2-2s2 .9 2 2z" fill="currentColor"></path></svg>
@@ -221,9 +223,9 @@ const compareDifferentRobotTypeData = [
           <el-icon :size="50">
             <RiRobot2Line />
           </el-icon>
-          Choose a robot to start
+          {{ t('lang.home.robotListTitle') }}
           <el-button size="large" @click="showRobotForm" type="success">
-            Create a new robot
+            {{ t('lang.home.createRobotBtnTxt') }}
           </el-button>
         </h1>
       </el-col>
@@ -239,7 +241,8 @@ const compareDifferentRobotTypeData = [
             <el-image :src="getBotAvatar(n.robotType)" />
           </template>
           <template #extra>
-            <el-button size="large" type="primary" @click="robotDetail(n.robotId, n.robotName)">Detail</el-button>
+            <el-button size="large" type="primary" @click="robotDetail(n.robotId, n.robotName)">{{
+              t('lang.common.toDetail') }}</el-button>
           </template>
         </el-result>
       </div>
@@ -262,13 +265,13 @@ const compareDifferentRobotTypeData = [
       <el-icon :size="30">
         <EpSetting />
       </el-icon>
-      Global settings
+      {{ $t('lang.home.globalSettings') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link to="/settings">Global settings</router-link>
+      <router-link to="/settings">{{ $t('lang.home.globalSettings') }}</router-link>
       <div class="description">{{ $t('lang.guide.desc4') }}</div>
     </div>
 
@@ -307,30 +310,31 @@ const compareDifferentRobotTypeData = [
       <a href="https://www.flaticon.com/" target="_blank">Flaticon</a>
     </div>
   </div>
-  <el-dialog v-model="setFormVisible" title="Create a new robot" width="60%">
+  <el-dialog v-model="setFormVisible" :title="t('lang.home.createRobotBtnTxt')" width="60%">
     <el-form :model="robotData">
-      <el-form-item label="Name" :label-width="formLabelWidth" prop="robotName" :rules="[
+      <el-form-item :label="t('lang.common.name')" :label-width="formLabelWidth" prop="robotName" :rules="[
         { required: true, message: 'Robot name is required' },
       ]">
         <el-input v-model="robotData.robotName" autocomplete="off" />
       </el-form-item>
-      <el-form-item label="Type" :label-width="formLabelWidth" prop="robotType" :rules="[
+      <el-form-item :label="t('lang.common.type')" :label-width="formLabelWidth" prop="robotType" :rules="[
         { required: true, message: 'Please choose a type of robot' },
       ]">
         <el-select v-model="robotData.robotType" placeholder="">
-          <el-option label="Text bot" value="TextBot" />
-          <el-option label="Inbound call bot" value="InboundCallBot" />
-          <el-option label="Outbound call bot" value="OutboundCallBot" />
+          <el-option :label="getBotType('TextBot')" value="TextBot" />
+          <el-option :label="getBotType('InboundCallBot')" value="InboundCallBot" />
+          <el-option :label="getBotType('OutboundCallBot')" value="OutboundCallBot" />
         </el-select>
       </el-form-item>
     </el-form>
     <el-table :data="compareDifferentRobotTypeData">
       <el-table-column property="rtype" label="" width="190" />
-      <el-table-column property="dialogNodeAnswerTextType" label="Dialog node" width="150" />
-      <el-table-column property="llmChatNodeAsyncResponse" label="Llm chat node streaming" width="200" />
+      <el-table-column property="dialogNodeAnswerTextType" :label="isZhLang ? '话术节点' : 'Dialog node'" width="270" />
+      <el-table-column property="llmChatNodeAsyncResponse" :label="isZhLang ? '大模型聊天节点' : 'Llm chat node streaming'"
+        width="200" />
     </el-table>
     <template #footer>
-      <el-button type="primary" @click="newRobot()">Create</el-button>
+      <el-button type="primary" @click="newRobot()">{{ $t('lang.common.create') }}</el-button>
       <el-button @click="setFormVisible = false">{{ $t('lang.common.cancel') }}</el-button>
     </template>
   </el-dialog>
