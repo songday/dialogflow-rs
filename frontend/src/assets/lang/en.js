@@ -20,6 +20,18 @@ export default {
             type: 'Type',
         },
         err: {},
+        menu: {
+            home: "Home",
+            thisRobot: "This robot",
+            dialogFlows: "Dialog flows",
+            kb: "Knowledge base",
+            qa: "Questions and answer",
+            doc: 'Documents (WIP)',
+            vars: "Variables",
+            intents: "Intents",
+            eApi: 'External HTTP APIs',
+            rs: 'Robot settings',
+        },
         mainflow: {
             title: 'Dialog flow list',
             add: 'Add a new dialog flow',

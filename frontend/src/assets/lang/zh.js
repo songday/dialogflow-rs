@@ -21,6 +21,18 @@ export default {
             type: '类型',
         },
         err: {},
+        menu: {
+            home: "首页",
+            thisRobot: "当前机器人",
+            dialogFlows: "对话流程",
+            kb: "知识库",
+            qa: "问答知识",
+            doc: '文档 (正在做)',
+            vars: "变量",
+            intents: "意图",
+            eApi: '外部 HTTP 接口',
+            rs: '机器人设置',
+        },
         mainflow: {
             title: '主流程列表',
             add: '增加主流程',
