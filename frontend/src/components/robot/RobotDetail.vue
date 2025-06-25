@@ -13,7 +13,7 @@ import SolarRouting2Linear from '~icons/solar/routing-2-linear'
 import EpSetting from '~icons/ep/setting'
 import SolarDocumentTextLinear from '~icons/solar/document-text-linear'
 import BiBoxArrowUpRight from '~icons/bi/box-arrow-up-right'
-useI18n();
+const { t, locale } = useI18n();
 const route = useRoute();
 const router = useRouter();
 // const fromPage = 'guide';
@@ -49,7 +49,7 @@ async function updateRobot() {
 }
 async function deleteRobot() {
   ElMessageBox.confirm(
-    'Do you confirm that delete this robot and its all data?',
+    t('lang.guide.delRoConfirm'),
     'Warning',
     {
       confirmButtonText: 'OK',
@@ -102,26 +102,26 @@ async function deleteRobot() {
 }
 </style>
 <template>
-  <el-page-header title="Robots list" @back="goBack">
+  <el-page-header :title="t('lang.guide.header1')" @back="goBack">
     <template #content>
-      <span class="text-large font-600 mr-3"> Robot detail </span>
+      <span class="text-large font-600 mr-3">{{ t('lang.guide.header2') }}</span>
     </template>
   </el-page-header>
   <el-row class="header-row">
     <el-col :span="24">
       <span class="header"> {{ robotData.robotName }}</span>
       <el-button type="primary" text @click="dialogFormVisible = true;">
-        Change robot name
+        {{ t('lang.guide.chRoNaBtn') }}
       </el-button>
     </el-col>
   </el-row>
   <el-row>
     <el-col :span="20">
-      Robot id: {{ robotId }}
+      {{ t('lang.guide.robotId') }}: {{ robotId }}
     </el-col>
     <el-col :span="2">
       <el-button type="danger" @click="deleteRobot">
-        Delete this robot
+        {{ t('lang.guide.delRoNaBtn') }}
       </el-button>
     </el-col>
   </el-row>
@@ -158,21 +158,21 @@ async function deleteRobot() {
       <el-icon :size="30">
         <MaterialSymbolsBook5Outline />
       </el-icon>
-      Knowledge base
+      {{ t('lang.menu.kb') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'kbQA', params: { robotId: robotId } }">Questions and answer</router-link>
+      <router-link :to="{ name: 'kbQA', params: { robotId: robotId } }">{{ t('lang.menu.qa') }}</router-link>
       &nbsp;&nbsp;
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'kbDoc', params: { robotId: robotId } }">Documents management (WIP not usable yet)</router-link>
+      <router-link :to="{ name: 'kbDoc', params: { robotId: robotId } }">{{ t('lang.menu.doc') }}</router-link>
       <div class="description">
-        {{ $t('lang.guide.desc2') }}<br />
-        We have built-in "Positive" and "Negative" intentions. If that's not enough, you can add your own
+        {{ $t('lang.guide.kbDesc') }}<br />
+        {{ $t('lang.guide.qaDesc') }}
       </div>
     </div>
 
@@ -189,7 +189,7 @@ async function deleteRobot() {
       <router-link :to="{ name: 'intents', params: { robotId: robotId } }">{{ $t('lang.guide.nav2') }}</router-link>
       <div class="description">
         {{ $t('lang.guide.desc2') }}<br />
-        We have built-in "Positive" and "Negative" intentions. If that's not enough, you can add your own
+        {{ $t('lang.guide.intentsDesc') }}
       </div>
     </div>
 
@@ -211,14 +211,14 @@ async function deleteRobot() {
       <el-icon :size="30">
         <SolarRouting2Linear />
       </el-icon>
-      External APIs call
+      {{ $t('lang.guide.eApiTitle') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'externalHttpApis', params: { robotId: robotId } }">External HTTP API list</router-link>
-      <div class="description">By using this function, you can send data to external URLs and receive response.</div>
+      <router-link :to="{ name: 'externalHttpApis', params: { robotId: robotId } }">{{ $t('lang.guide.httpApiList') }}</router-link>
+      <div class="description">{{ $t('lang.guide.eApiDesc') }}</div>
     </div>
 
     <div class="title">
@@ -232,7 +232,7 @@ async function deleteRobot() {
         <EpArrowRightBold />
       </el-icon>
       <router-link :to="{ name: 'settings', params: { robotId: robotId } }">{{ $t('lang.guide.nav4') }}</router-link>
-      <div class="description">Change maximum session idle time, Embedding provider and Email STMP information.</div>
+      <div class="description">{{ $t('lang.guide.desc4') }}</div>
     </div>
 
     <div class="title">
@@ -255,9 +255,9 @@ async function deleteRobot() {
       <div class="description">{{ $t('lang.guide.desc5') }}</div>
     </div>
   </div>
-  <el-dialog v-model="dialogFormVisible" title="Change robot name">
+  <el-dialog v-model="dialogFormVisible" :title="t('lang.guide.chRoNaBtn')">
     <el-form :model="form">
-      <el-form-item label="Name" :label-width="formLabelWidth">
+      <el-form-item :label="t('lang.common.name')" :label-width="formLabelWidth">
         <el-input v-model="robotData.robotName" autocomplete="off" />
       </el-form-item>
     </el-form>
