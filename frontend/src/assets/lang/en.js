@@ -204,6 +204,7 @@ export default {
             header2: 'Robot detail',
             chRoNaBtn: 'Change robot name',
             delRoNaBtn: 'Delete this robot',
+            delRoConfirm: 'Are you sure you want to delete this robot and all its data?',
             robotId: 'Robot ID',
             kbDesc: 'The knowledge base is a comprehensive database for centralized storage and management of knowledge',
             qaDesc: 'In the Q&A knowledge nodes of the flow, the content from the knowledge base can be used to answer user questions.',

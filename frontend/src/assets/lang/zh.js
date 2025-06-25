@@ -204,6 +204,7 @@ export default {
             header1: '机器人列表',
             header2: '机器人详情',
             chRoNaBtn: '修改机器人名称',
+            delRoConfirm: '确认要删除此机器人, 以及它的所有数据吗?',
             delRoNaBtn: '删除此机器人',
             robotId: '机器人ID',
             kbDesc: '知识库是一个集中存储和管理知识的综合性数据库',

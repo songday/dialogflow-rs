@@ -49,7 +49,7 @@ async function updateRobot() {
 }
 async function deleteRobot() {
   ElMessageBox.confirm(
-    'Do you confirm that delete this robot and its all data?',
+    t('lang.guide.delRoConfirm'),
     'Warning',
     {
       confirmButtonText: 'OK',
@@ -255,9 +255,9 @@ async function deleteRobot() {
       <div class="description">{{ $t('lang.guide.desc5') }}</div>
     </div>
   </div>
-  <el-dialog v-model="dialogFormVisible" title="Change robot name">
+  <el-dialog v-model="dialogFormVisible" :title="t('lang.guide.chRoNaBtn')">
     <el-form :model="form">
-      <el-form-item label="Name" :label-width="formLabelWidth">
+      <el-form-item :label="t('lang.common.name')" :label-width="formLabelWidth">
         <el-input v-model="robotData.robotName" autocomplete="off" />
       </el-form-item>
     </el-form>
