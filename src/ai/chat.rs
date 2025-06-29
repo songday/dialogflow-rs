@@ -272,7 +272,7 @@ async fn open_ai(
                                     if let Some(content) = message.get("content") {
                                         if content.is_string() {
                                             if let Some(s) = content.as_str() {
-                                                log::info!("OpenAI push {}", s);
+                                                log::info!("OpenAI push {s}");
                                                 sb.push_str(s);
                                             }
                                         }

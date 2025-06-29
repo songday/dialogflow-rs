@@ -187,7 +187,7 @@ pub async fn start_app() {
         },
     );
     log::info!("---------------------------------------------");
-    log::info!("Current version: {}", VERSION);
+    log::info!("Current version: {VERSION}");
     log::info!("Visiting https://dialogflowai.github.io/ for the latest releases");
 
     log::info!(
@@ -426,7 +426,7 @@ async fn shutdown_signal(sender: tokio::sync::oneshot::Sender<()>) {
     } else {
         "应用已退出"
     };
-    log::info!("{}", m);
+    log::info!("{m}");
 }
 
 #[derive(Serialize)]

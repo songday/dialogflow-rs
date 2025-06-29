@@ -191,7 +191,7 @@ impl Variable {
                                 _ => None,
                             },
                             Err(e) => {
-                                log::error!("{:?}", e);
+                                log::error!("{e:?}");
                                 None
                             }
                         },

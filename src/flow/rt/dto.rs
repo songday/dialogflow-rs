@@ -65,10 +65,13 @@ impl ResponseChannelWrapper {
     pub(crate) fn send_response(&self, res: &ResponseData) {
         let res_data = serde_json::to_string(res).unwrap();
         log::info!("send response: {}", &res_data);
-        crate::sse_send!(self.sender.as_ref().unwrap(), StreamingResponseData {
-            content_seq: None,
-            content: res_data,
-        });
+        crate::sse_send!(
+            self.sender.as_ref().unwrap(),
+            StreamingResponseData {
+                content_seq: None,
+                content: res_data,
+            }
+        );
     }
 }
 

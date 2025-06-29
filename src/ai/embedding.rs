@@ -136,7 +136,7 @@ async fn open_ai(
     map.insert(String::from("input"), Value::String(String::from(s)));
     map.insert(String::from("model"), Value::String(String::from(m)));
     let obj = Value::Object(map);
-    let authorization = format!("Bearer {}", api_key);
+    let authorization = format!("Bearer {api_key}");
     let req = client
         .post("https://api.openai.com/v1/embeddings")
         .header("Content-Type", "application/json")
@@ -156,7 +156,7 @@ async fn open_ai(
                 for e in embedding.iter() {
                     if let Some(n) = e.as_number() {
                         if let Some(num) = n.as_f64() {
-                            let s = format!("{:.9}", num);
+                            let s = format!("{num:.9}");
                             embedding_result.push(s.parse::<f32>()?);
                         }
                     }

@@ -59,24 +59,23 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
     // println!("Init database");
     // let ddl = include_str!("./embedding_ddl.sql");
     let sql = format!(
-        "CREATE TABLE {}_doc (
+        "CREATE TABLE {robot_id}_doc (
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
             file_name TEXT NOT NULL,
             file_size INTEGER NOT NULL,
             doc_content TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
-        CREATE TABLE {}_vec_row_id (
+        CREATE TABLE {robot_id}_vec_row_id (
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT
-        );",
-        robot_id, robot_id
+        );"
     );
     // log::info!("sql = {}", &sql);
     let mut stream = sqlx::raw_sql(&sql).execute_many(DATA_SOURCE.get().unwrap());
     while let Some(res) = stream.next().await {
         match res {
             Ok(_r) => log::info!("Initialized doc table"),
-            Err(e) => log::error!("Create table failed, err: {:?}", e),
+            Err(e) => log::error!("Create table failed, err: {e:?}"),
         }
     }
     // let dml = include_str!("../resource/sql/dml.sql");
@@ -106,7 +105,7 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
 // }
 
 pub(super) async fn list(robot_id: &str) -> Result<Vec<DocData>> {
-    let sql = format!("SELECT * FROM {}_doc ORDER BY created_at DESC", robot_id);
+    let sql = format!("SELECT * FROM {robot_id}_doc ORDER BY created_at DESC");
     let results = sqlx::query_as::<Sqlite, DocData>(&sql)
         .fetch_all(DATA_SOURCE.get().unwrap())
         .await?;

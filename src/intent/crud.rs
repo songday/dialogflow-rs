@@ -234,7 +234,7 @@ pub(crate) async fn remove_keyword(Json(params): Json<IntentFormData>) -> impl I
         .data
         .parse::<usize>()
         .map_err(|e| {
-            log::error!("{:?}", e);
+            log::error!("{e:?}");
             Error::WithMessage(String::from("Invalid parameter"))
         })
         .and_then(|idx| {
@@ -275,7 +275,7 @@ pub(crate) async fn remove_regex(Json(params): Json<IntentFormData>) -> impl Int
         .data
         .parse::<usize>()
         .map_err(|e| {
-            log::error!("{:?}", e);
+            log::error!("{e:?}");
             Error::WithMessage(String::from("Invalid parameter"))
         })
         .and_then(|idx| {
@@ -379,7 +379,7 @@ pub(crate) async fn remove_phrase(Json(params): Json<IntentFormData>) -> impl In
     let phrase_idx = match r {
         Ok(n) => n,
         Err(e) => {
-            log::error!("{:?}", e);
+            log::error!("{e:?}");
             return to_res(Err(Error::WithMessage(String::from("Invalid parameter"))));
         }
     };
