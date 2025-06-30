@@ -274,21 +274,21 @@ async fn open_ai(
     while let Some(item) = stream.next().await {
         let chunk = item?;
         let v: Value = serde_json::from_slice(chunk.as_ref())?;
-        if let Some(choices) = v.get("choices") {
-            if choices.is_array() {
-                if let Some(choices) = choices.as_array() {
-                    if !choices.is_empty() {
-                        if let Some(item) = choices.first() {
-                            if let Some(delta) = item.get("delta") {
-                                if let Some(content) = delta.get("content") {
-                                    if content.is_string() {
-                                        if let Some(s) = content.as_str() {
-                                            let m = String::from(s);
-                                            log::info!("OpenAI push {}", &m);
-                                            sender_wrapper.send(m);
-                                        }
-                                    }
-                                }
+        if let Some(choices) = v.get("choices")
+            && choices.is_array()
+        {
+            if let Some(choices) = choices.as_array()
+                && !choices.is_empty()
+            {
+                if let Some(item) = choices.first() {
+                    if let Some(delta) = item.get("delta") {
+                        if let Some(content) = delta.get("content")
+                            && content.is_string()
+                        {
+                            if let Some(s) = content.as_str() {
+                                let m = String::from(s);
+                                log::info!("OpenAI push {}", &m);
+                                sender_wrapper.send(m);
                             }
                         }
                     }
@@ -346,13 +346,13 @@ async fn ollama(
     while let Some(item) = stream.next().await {
         let chunk = item?;
         let v: Value = serde_json::from_slice(chunk.as_ref())?;
-        if let Some(res) = v.get("response") {
-            if res.is_string() {
-                if let Some(s) = res.as_str() {
-                    let m = String::from(s);
-                    log::info!("Ollama push {}", &m);
-                    sender_wrapper.send(m);
-                }
+        if let Some(res) = v.get("response")
+            && res.is_string()
+        {
+            if let Some(s) = res.as_str() {
+                let m = String::from(s);
+                log::info!("Ollama push {}", &m);
+                sender_wrapper.send(m);
             }
         }
     }

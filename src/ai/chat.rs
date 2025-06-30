@@ -238,21 +238,21 @@ async fn open_ai(
             while let Some(item) = stream.next().await {
                 let chunk = item?;
                 let v: Value = serde_json::from_slice(chunk.as_ref())?;
-                if let Some(choices) = v.get("choices") {
-                    if choices.is_array() {
-                        if let Some(choices) = choices.as_array() {
-                            if !choices.is_empty() {
-                                if let Some(item) = choices.first() {
-                                    if let Some(delta) = item.get("delta") {
-                                        if let Some(content) = delta.get("content") {
-                                            if content.is_string() {
-                                                if let Some(s) = content.as_str() {
-                                                    let m = String::from(s);
-                                                    log::info!("OpenAI push {}", &m);
-                                                    // crate::sse_send!(sender, m);
-                                                }
-                                            }
-                                        }
+                if let Some(choices) = v.get("choices")
+                    && choices.is_array()
+                {
+                    if let Some(choices) = choices.as_array()
+                        && !choices.is_empty()
+                    {
+                        if let Some(item) = choices.first() {
+                            if let Some(delta) = item.get("delta") {
+                                if let Some(content) = delta.get("content")
+                                    && content.is_string()
+                                {
+                                    if let Some(s) = content.as_str() {
+                                        let m = String::from(s);
+                                        log::info!("OpenAI push {}", &m);
+                                        // crate::sse_send!(sender, m);
                                     }
                                 }
                             }
@@ -263,20 +263,20 @@ async fn open_ai(
         }
         ResultSender::StrBuf(sb) => {
             let v: Value = serde_json::from_slice(res.text().await?.as_ref())?;
-            if let Some(choices) = v.get("choices") {
-                if choices.is_array() {
-                    if let Some(choices) = choices.as_array() {
-                        if !choices.is_empty() {
-                            if let Some(item) = choices.first() {
-                                if let Some(message) = item.get("message") {
-                                    if let Some(content) = message.get("content") {
-                                        if content.is_string() {
-                                            if let Some(s) = content.as_str() {
-                                                log::info!("OpenAI push {s}");
-                                                sb.push_str(s);
-                                            }
-                                        }
-                                    }
+            if let Some(choices) = v.get("choices")
+                && choices.is_array()
+            {
+                if let Some(choices) = choices.as_array()
+                    && !choices.is_empty()
+                {
+                    if let Some(item) = choices.first() {
+                        if let Some(message) = item.get("message") {
+                            if let Some(content) = message.get("content")
+                                && content.is_string()
+                            {
+                                if let Some(s) = content.as_str() {
+                                    log::info!("OpenAI push {s}");
+                                    sb.push_str(s);
                                 }
                             }
                         }
@@ -345,20 +345,20 @@ async fn ollama(
             while let Some(item) = stream.next().await {
                 let chunk = item?;
                 let v: Value = serde_json::from_slice(chunk.as_ref())?;
-                if let Some(message) = v.get("message") {
-                    if message.is_object() {
-                        if let Some(content) = message.get("content") {
-                            if content.is_string() {
-                                if let Some(s) = content.as_str() {
-                                    if sender_wrapper.sender.is_closed() {
-                                        log::warn!("Ollama channel sender is closed");
-                                        break;
-                                    }
-                                    let m = String::from(s);
-                                    log::info!("Ollama push {}", &m);
-                                    sender_wrapper.send(m);
-                                }
+                if let Some(message) = v.get("message")
+                    && message.is_object()
+                {
+                    if let Some(content) = message.get("content")
+                        && content.is_string()
+                    {
+                        if let Some(s) = content.as_str() {
+                            if sender_wrapper.sender.is_closed() {
+                                log::warn!("Ollama channel sender is closed");
+                                break;
                             }
+                            let m = String::from(s);
+                            log::info!("Ollama push {}", &m);
+                            sender_wrapper.send(m);
                         }
                     }
                 }
@@ -368,12 +368,12 @@ async fn ollama(
             let v: Value = serde_json::from_slice(res.bytes().await?.as_ref())?;
             if let Some(message) = v.get("message") {
                 if message.is_object() {
-                    if let Some(content) = message.get("content") {
-                        if content.is_string() {
-                            if let Some(s) = content.as_str() {
-                                log::info!("Ollama returned {}", s);
-                                sb.push_str(s);
-                            }
+                    if let Some(content) = message.get("content")
+                        && content.is_string()
+                    {
+                        if let Some(s) = content.as_str() {
+                            log::info!("Ollama returned {}", s);
+                            sb.push_str(s);
                         }
                     }
                 }
