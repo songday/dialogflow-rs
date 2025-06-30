@@ -55,17 +55,16 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
     // println!("Init database");
     // let ddl = include_str!("./embedding_ddl.sql");
     let sql = format!(
-        "CREATE TABLE {}_idt (
+        "CREATE TABLE {robot_id}_idt (
                 id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT
             );",
-        robot_id
     );
     // log::info!("sql = {}", &sql);
     let mut stream = sqlx::raw_sql(&sql).execute_many(DATA_SOURCE.get().unwrap());
     while let Some(res) = stream.next().await {
         match res {
             Ok(_r) => log::info!("Initialized phrase table"),
-            Err(e) => log::error!("Create table failed, err: {:?}", e),
+            Err(e) => log::error!("Create table failed, err: {e:?}"),
         }
     }
     // let dml = include_str!("../resource/sql/dml.sql");
@@ -77,8 +76,7 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
 
 pub(crate) async fn search(robot_id: &str, vectors: &Vec<f32>) -> Result<Vec<(String, f64)>> {
     let sql = format!(
-        "SELECT intent_id, intent_name, distance FROM {} WHERE phrase_vec MATCH ? ORDER BY distance ASC LIMIT 1",
-        robot_id
+        "SELECT intent_id, intent_name, distance FROM {robot_id} WHERE phrase_vec MATCH ? ORDER BY distance ASC LIMIT 1",
     );
     let results = sqlx::query::<Sqlite>(&sql)
         .bind(serde_json::to_string(vectors)?)
@@ -156,14 +154,13 @@ pub(crate) async fn add(
                 vec.len()
             );
             sqlx::query::<Sqlite>(&sql).execute(&mut **txn).await?;
-            let sql = format!("INSERT INTO {}_idt(id) VALUES(NULL)", robot_id);
+            let sql = format!("INSERT INTO {robot_id}_idt(id) VALUES(NULL)");
             let last_insert_rowid = sqlx::query::<Sqlite>(&sql)
                 .execute(&mut **txn)
                 .await?
                 .last_insert_rowid();
             let sql = format!(
-                "INSERT INTO {} (id, intent_id, intent_name, phrase, phrase_vec)VALUES(?, ?, ?, ?, ?)",
-                robot_id
+                "INSERT INTO {robot_id} (id, intent_id, intent_name, phrase, phrase_vec)VALUES(?, ?, ?, ?, ?)",
             );
             sqlx::query::<Sqlite>(&sql)
                 .bind(last_insert_rowid)
@@ -175,10 +172,7 @@ pub(crate) async fn add(
                 .await?;
             Ok(last_insert_rowid)
         } else {
-            let sql = format!(
-                "UPDATE {} SET phrase = ?, phrase_vec = ? WHERE = ?",
-                robot_id
-            );
+            let sql = format!("UPDATE {robot_id} SET phrase = ?, phrase_vec = ? WHERE = ?",);
             let vec_row_id = vec_row_id.unwrap();
             sqlx::query::<Sqlite>(&sql)
                 .bind(phrase)
@@ -227,7 +221,7 @@ pub(crate) async fn batch_add(
 
 pub(crate) async fn remove(robot_id: &str, id: i64) -> Result<()> {
     // INDEXES.lock()?.get(robot_id).and_then(|idx| {idx.remove(id as u64); None::<()>});
-    let sql = format!("DELETE FROM {} WHERE id = ?", robot_id);
+    let sql = format!("DELETE FROM {robot_id} WHERE id = ?");
     sqlx::query::<Sqlite>(&sql)
         .bind(id)
         .execute(DATA_SOURCE.get().unwrap())
@@ -236,7 +230,7 @@ pub(crate) async fn remove(robot_id: &str, id: i64) -> Result<()> {
 }
 
 pub(crate) async fn remove_by_intent_id(robot_id: &str, intent_id: &str) -> Result<()> {
-    let sql = format!("DELETE FROM {} WHERE intent_id = ?", robot_id);
+    let sql = format!("DELETE FROM {robot_id} WHERE intent_id = ?");
     match sqlx::query::<Sqlite>(&sql)
         .bind(intent_id)
         .execute(DATA_SOURCE.get().unwrap())
@@ -258,7 +252,7 @@ pub(crate) async fn remove_by_intent_id(robot_id: &str, intent_id: &str) -> Resu
 }
 
 pub(crate) async fn remove_tables(robot_id: &str) -> Result<()> {
-    let sql = format!("DROP TABLE {}", robot_id);
+    let sql = format!("DROP TABLE {robot_id}");
     match sqlx::query::<Sqlite>(&sql)
         .execute(DATA_SOURCE.get().unwrap())
         .await

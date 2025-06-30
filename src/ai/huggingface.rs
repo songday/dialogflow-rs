@@ -428,7 +428,7 @@ impl HuggingFaceModel {
 
 impl std::fmt::Display for HuggingFaceModel {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
         // or, alternatively:
         // fmt::Debug::fmt(self, f)
     }
@@ -592,7 +592,7 @@ async fn download_hf_file(
     root_path: &str,
     f: &str,
 ) -> Result<()> {
-    let file_path_str = format!("{}/{}", root_path, f);
+    let file_path_str = format!("{root_path}/{f}");
     let file_path = std::path::Path::new(&file_path_str);
     if tokio::fs::try_exists(file_path).await? {
         return Ok(());
@@ -639,7 +639,7 @@ async fn download_hf_file(
 }
 
 pub(super) fn construct_model_file_path(mirror: &str, f: &str) -> String {
-    format!("{}{}/{}", HUGGING_FACE_MODEL_ROOT, mirror, f)
+    format!("{HUGGING_FACE_MODEL_ROOT}{mirror}/{f}")
 }
 
 pub(super) fn device() -> Result<Device> {

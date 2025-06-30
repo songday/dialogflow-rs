@@ -156,7 +156,7 @@ impl RuntimeNode for TextNode {
                     })
                 }
             }
-            Err(e) => log::error!("{:?}", e),
+            Err(e) => log::error!("{e:?}"),
         };
         // log::info!("add {}", &self.next_node_id);
         add_next_node(ctx, &self.next_node_id);
@@ -511,7 +511,7 @@ impl RuntimeNode for ExternalHttpCallNode {
                             }
                         }
                         Err(e) => {
-                            log::error!("{:?}", e);
+                            log::error!("{e:?}");
                         }
                     }
                 });
@@ -594,7 +594,7 @@ impl SendEmailNode {
             tokio::spawn(async move {
                 // mailer.send(email) // will be wrong
                 if let Err(e) = mailer.send(email).await {
-                    log::error!("Failed to send email, failure reason is: {:?}", e);
+                    log::error!("Failed to send email, failure reason is: {e:?}");
                 }
             });
             Ok(())
@@ -608,7 +608,7 @@ impl SendEmailNode {
                 .build();
 
             Ok(mailer.send(&email).map(|r| {
-                log::info!("Sent email response: {:?}", r);
+                log::info!("Sent email response: {r:?}");
             })?)
         }
     }
@@ -779,7 +779,7 @@ impl LlmChatNode {
                             check_contains_str.as_ref().unwrap()
                         );
                         contains_certain_str = s.contains(check_contains_str.unwrap());
-                        log::info!("contains_certain_str {}", contains_certain_str);
+                        log::info!("contains_certain_str {contains_certain_str}");
                     }
                     response.answers.push(AnswerData {
                         content: s,

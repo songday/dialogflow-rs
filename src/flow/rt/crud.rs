@@ -4,7 +4,7 @@ use crate::db;
 use crate::result::Result;
 
 fn get_table_name(main_flow_id: &str) -> String {
-    format!("RTN{}", main_flow_id)
+    format!("RTN{main_flow_id}")
 }
 
 pub(crate) fn get_runtime_node(

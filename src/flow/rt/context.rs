@@ -155,7 +155,7 @@ fn session_not_expired(d: &mut Vec<String>, idx: usize, now: u64) -> Result<bool
     let settings = settings::get_settings(&c.robot_id)?;
     if settings.is_none() {
         if let Err(e) = db::remove(TABLE, session_id) {
-            log::warn!("Discarding expired session {} failed {:?}", session_id, e);
+            log::warn!("Discarding expired session {session_id} failed {e:?}");
         } else {
             d.remove(idx);
         }
@@ -166,9 +166,9 @@ fn session_not_expired(d: &mut Vec<String>, idx: usize, now: u64) -> Result<bool
             .min(settings.as_ref().unwrap().max_session_idle_sec as u64)
     {
         if let Err(e) = db::remove(TABLE, session_id) {
-            log::warn!("Discarding expired session {} failed {:?}", session_id, e);
+            log::warn!("Discarding expired session {session_id} failed {e:?}");
         } else {
-            log::info!("Discarded expired session: {}", session_id);
+            log::info!("Discarded expired session: {session_id}");
             d.remove(idx);
         }
         return Ok(false);
@@ -205,10 +205,10 @@ pub async fn clean_expired_session(mut recv: tokio::sync::oneshot::Receiver<()>)
                         }
                     }
                     if let Err(e) = db::write(TABLE, CONTEXT_KEY, &d) {
-                        log::error!("{:?}", e);
+                        log::error!("{e:?}");
                     }
                 }
-                Err(e) => log::error!("{:?}", e),
+                Err(e) => log::error!("{e:?}"),
             }
         }
     }

@@ -53,23 +53,22 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
     // println!("Init database");
     // let ddl = include_str!("./embedding_ddl.sql");
     let sql = format!(
-        "CREATE TABLE {}_question_vec_row_id (
+        "CREATE TABLE {robot_id}_question_vec_row_id (
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT
         );
-        CREATE TABLE {}_qa (
+        CREATE TABLE {robot_id}_qa (
             id TEXT NOT NULL PRIMARY KEY,
             qa_data TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
-        CREATE INDEX idx_{}_created_at ON {}_qa (created_at);",
-        robot_id, robot_id, robot_id, robot_id
+        CREATE INDEX idx_{robot_id}_created_at ON {robot_id}_qa (created_at);"
     );
     // log::info!("sql = {}", &sql);
     let mut stream = sqlx::raw_sql(&sql).execute_many(DATA_SOURCE.get().unwrap());
     while let Some(res) = stream.next().await {
         match res {
             Ok(_r) => log::info!("Initialized QnA table"),
-            Err(e) => log::error!("Create table failed, err: {:?}", e),
+            Err(e) => log::error!("Create table failed, err: {e:?}"),
         }
     }
     // let dml = include_str!("../resource/sql/dml.sql");
@@ -88,10 +87,7 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
 // );
 
 pub(crate) async fn list(robot_id: &str) -> Result<Vec<QuestionAnswerPair>> {
-    let sql = format!(
-        "SELECT qa_data FROM {}_qa ORDER BY created_at DESC",
-        robot_id
-    );
+    let sql = format!("SELECT qa_data FROM {robot_id}_qa ORDER BY created_at DESC",);
     let results = sqlx::query::<Sqlite>(&sql)
         .fetch_all(DATA_SOURCE.get().unwrap())
         .await?;
@@ -147,10 +143,7 @@ async fn save_inner(
 
         log::info!("vectors.0.len() = {}", vectors.0.len());
         if q.vec_row_id.is_none() {
-            let sql = format!(
-                "INSERT INTO {}_question_vec_row_id (id)VALUES(NULL)",
-                robot_id
-            );
+            let sql = format!("INSERT INTO {robot_id}_question_vec_row_id (id)VALUES(NULL)");
             let last_insert_rowid = sqlx::query::<Sqlite>(&sql)
                 .execute(&mut **transaction)
                 .await?
@@ -174,7 +167,7 @@ async fn save_inner(
                 .await?;
             q.vec_row_id = Some(last_insert_rowid);
         } else {
-            let sql = format!("UPDATE {} SET vectors = ? WHERE rowid = ?", robot_id);
+            let sql = format!("UPDATE {robot_id} SET vectors = ? WHERE rowid = ?");
             let vec_row_id = q.vec_row_id.unwrap();
             sqlx::query::<Sqlite>(&sql)
                 .bind(serde_json::to_string(&vectors.0)?)
@@ -186,7 +179,7 @@ async fn save_inner(
     }
     if !vec_row_ids.is_empty() {
         let params = format!("?{}", ", ?".repeat(vec_row_ids.len() - 1));
-        let sql = format!("DELETE FROM {} WHERE rowid NOT IN ({})", robot_id, params);
+        let sql = format!("DELETE FROM {robot_id} WHERE rowid NOT IN ({params})");
         let mut query = sqlx::query(&sql);
         for i in vec_row_ids {
             query = query.bind(i);
@@ -194,17 +187,15 @@ async fn save_inner(
         query.fetch_all(&mut **transaction).await?;
     }
     if new_record {
-        let sql = format!(
-            "INSERT INTO {}_qa(id, qa_data, created_at)VALUES(?, ?, unixepoch())",
-            robot_id
-        );
+        let sql =
+            format!("INSERT INTO {robot_id}_qa(id, qa_data, created_at)VALUES(?, ?, unixepoch())");
         sqlx::query::<Sqlite>(&sql)
             .bind(d.id.as_ref().unwrap())
             .bind(dbg!(serde_json::to_string(&d)?))
             .execute(&mut **transaction)
             .await?;
     } else {
-        let sql = format!("UPDATE {}_qa SET qa_data = ? WHERE id = ?", robot_id);
+        let sql = format!("UPDATE {robot_id}_qa SET qa_data = ? WHERE id = ?");
         sqlx::query::<Sqlite>(&sql)
             .bind(dbg!(serde_json::to_string(&d)?))
             .bind(d.id.as_ref().unwrap())
@@ -234,10 +225,9 @@ async fn delete_inner(
     //todo sqlx prepare statement
     let sql = format!(
         "
-    DELETE FROM {} WHERE qa_id = ?;
-    DELETE FROM {}_qa WHERE id = ?;
-    ",
-        robot_id, robot_id
+    DELETE FROM {robot_id} WHERE qa_id = ?;
+    DELETE FROM {robot_id}_qa WHERE id = ?;
+    "
     );
     let qa_id = d.id.as_ref().unwrap();
     let r = sqlx::query(&sql)
@@ -255,7 +245,7 @@ pub(crate) async fn retrieve_answer(
 ) -> Result<(Option<QuestionAnswerPair>, f64)> {
     let vectors = embedding(robot_id, question).await?;
     if vectors.0.is_empty() {
-        let err = format!("{} embedding data is empty", question);
+        let err = format!("{question} embedding data is empty");
         log::warn!("{}", &err);
         return Err(Error::WithMessage(err));
     }

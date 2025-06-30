@@ -199,7 +199,7 @@ where
             write_txn.commit()?;
             Ok(())
         }
-        Err(e) => Err(Error::WithMessage(format!("{:?}", e))),
+        Err(e) => Err(Error::WithMessage(format!("{e:?}"))),
     }
 }
 
@@ -325,7 +325,7 @@ pub(crate) fn save_txn(
                     table.insert(d.2, r.as_slice())?;
                 }
                 Err(e) => {
-                    err = Some(Error::WithMessage(format!("{:?}", e)));
+                    err = Some(Error::WithMessage(format!("{e:?}")));
                     break;
                 }
             };
