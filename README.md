@@ -2,7 +2,7 @@
 
 # Dialog flow AI
 **only ONE executable file**, you can use it directly, including intent detection, AI management, a visual process editor and a response system.  
-<img src="https://img.shields.io/badge/Latest_version-v1.19.2-blue" /> <img src="https://img.shields.io/badge/MSRV-1.85.0-green" />
+<img src="https://img.shields.io/badge/Latest_version-v1.19.2-blue" /> <img src="https://img.shields.io/badge/MSRV-1.88.0-green" />
 
 ![All in ONE](./doc/assets/allinone.png)
 
