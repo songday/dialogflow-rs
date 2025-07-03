@@ -180,7 +180,7 @@ pub(super) fn parse_docx(b: Vec<u8>) -> Result<String> {
             }
             Ok(Event::Empty(ref e)) if e.name().as_ref() == b"w:p" => doc_text.push('\n'),
             Ok(Event::Text(e)) if in_paragraph => {
-                doc_text.push_str(&e.unescape()?);
+                doc_text.push_str(&e.decode()?);
             }
             Ok(Event::Eof) => break,
             Err(e) => panic!("Error at position {}: {:?}", reader.error_position(), e),

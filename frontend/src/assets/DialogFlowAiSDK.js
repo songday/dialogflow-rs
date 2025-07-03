@@ -82,14 +82,14 @@ class DialogFlowAiSDK {
             data.userInputIntent = null;
     }
 
-    addChat(t, c, aT, idx) {
+    addChat(t, tS, aT, idx) {
         if (idx && idx > -1) {
             if (idx >= this.chatHistory.length) {
                 for (let i = this.chatHistory.length; i < idx; i++) {
                     this.chatHistory.push({
                         id: 'chat-' + Math.random().toString(16),
                         text: '',
-                        cssClass: c,
+                        textSource: tS,
                         answerType: aT,
                     });
                 }
@@ -101,7 +101,7 @@ class DialogFlowAiSDK {
         this.chatHistory.push({
             id: 'chat-' + Math.random().toString(16),
             text: t.trimStart(),
-            cssClass: c,
+            textSource: tS,
             answerType: aT,
         });
         return this.chatHistory.length - 1;

@@ -669,7 +669,7 @@ function addChat(t, c, aT, idx) {
                 chatRecords.value.push(chatRecords.value.push({
                     id: 'chat-' + Math.random().toString(16),
                     text: '',
-                    cssClass: c,
+                    textSource: c,
                     answerType: aT,
                 }));
             }
@@ -681,7 +681,7 @@ function addChat(t, c, aT, idx) {
     chatRecords.value.push({
         id: 'chat-' + Math.random().toString(16),
         text: t.trimStart(),
-        cssClass: c,
+        textSource: c,
         answerType: aT,
     });
     return chatRecords.value.length - 1;
@@ -1069,7 +1069,7 @@ const popupRundryWindow = async () => {
             <template #default>
                 <el-scrollbar ref="chatScrollbarRef" height="100%" always>
                     <div ref="dryrunChatRecords">
-                        <div v-for="item in chatRecords" :key="item.id" :class="item.cssClass">
+                        <div v-for="item in chatRecords" :key="item.id" :class="item.textSource">
                             <!-- <span v-html="item.text"></span> -->
                             <el-text v-if="item.answerType == 'TextPlain'">{{ item.text }}</el-text>
                             <el-text v-else v-html="item.text"></el-text>
