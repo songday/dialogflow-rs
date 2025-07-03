@@ -1,3 +1,5 @@
+[中文文档](./README_zh-CN.md)
+
 ## Import SDK
 
 > Assume that the address of this tool is: http://127.0.0.1:12715
