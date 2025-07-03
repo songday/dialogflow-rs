@@ -29,6 +29,7 @@ export function httpReq(method, uri, query, form, body) {
     return fetch(url, options).then(response => response.json()).catch(error => error);
 }
 
+/*
 export async function chatReq(method, uri, query, form, body) {
     const options = {
         method: method,
@@ -96,6 +97,7 @@ export async function chatReq(method, uri, query, form, body) {
         return { stream: false, error };
     }
 }
+*/
 
 export function genBranchesByNode(node) {
     if (!node || !node.ports || node.ports.length == 0)

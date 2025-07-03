@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "compress": "terser src/assets/DialogFlowAiSDK.js -o public/DialogFlowAiSDK.min.js -c -m",
+    "compress": "terser src/assets/DialogFlowAiSDK.js -o public/assets/DialogFlowAiSDK.min.js -c -m",
     "build": "npm run compress && vite build",
     "preview": "vite preview"
   },
