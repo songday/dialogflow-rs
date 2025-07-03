@@ -14,6 +14,7 @@ import { Graph } from '@antv/x6';
 // https://x6.antv.vision/zh/docs/tutorial/advanced/react#%E6%B8%B2%E6%9F%93-vue-%E8%8A%82%E7%82%B9
 import { register, getTeleport } from "@antv/x6-vue-shape";
 import { atob, chatReq, httpReq } from '../../assets/tools.js'
+import { DialogFlowAiSDK } from '../../assets/DialogFlowAiSDK.js'
 // import { ElNotification, ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n'
 import EpDelete from '~icons/ep/delete'
@@ -668,7 +669,7 @@ function addChat(t, c, aT, idx) {
                 chatRecords.value.push(chatRecords.value.push({
                     id: 'chat-' + Math.random().toString(16),
                     text: '',
-                    cssClass: c,
+                    textSource: c,
                     answerType: aT,
                 }));
             }
@@ -680,12 +681,42 @@ function addChat(t, c, aT, idx) {
     chatRecords.value.push({
         id: 'chat-' + Math.random().toString(16),
         text: t.trimStart(),
-        cssClass: c,
+        textSource: c,
         answerType: aT,
     });
     return chatRecords.value.length - 1;
 }
+let dialogFlowAiSDK = null;
 async function dryrun() {
+    if (chatRecords.value.length > 0 && !userAsk.value)
+        return;
+    if (waitingResponse.value)
+        return;
+    waitingResponse.value = true;
+    if (dialogFlowAiSDK == null) {
+        dialogFlowAiSDK = new DialogFlowAiSDK({
+            url: 'http://localhost:12715/flow/answer',
+            robotId: robotId,
+            mainFlowId: mainFlowId,
+            chatHistory: chatRecords.value,
+        });
+    }
+    await dialogFlowAiSDK.sendMessage({
+        type: dialogFlowAiSDK.MessageKind.PLAIN_TEXT,
+        content: userAsk.value,
+    });
+    if (dialogFlowAiSDK.chatHasEnded) {
+        dialogFlowAiSDK.addChat(t('lang.flow.guideReset'), 'terminateText', dialogFlowAiSDK.MessageKind.PLAIN_TEXT, -1);
+        dialogFlowAiSDK = null;
+        dryrunDisabled.value = true;
+    }
+    waitingResponse.value = false;
+    nextTick(() => {
+        // console.log(dryrunChatRecords.value.clientHeight);
+        chatScrollbarRef.value.setScrollTop(dryrunChatRecords.value.clientHeight);
+    })
+}
+async function dryrun2() {
     if (chatRecords.value.length > 0 && !userAsk.value)
         return;
     if (waitingResponse.value)
@@ -1038,7 +1069,7 @@ const popupRundryWindow = async () => {
             <template #default>
                 <el-scrollbar ref="chatScrollbarRef" height="100%" always>
                     <div ref="dryrunChatRecords">
-                        <div v-for="item in chatRecords" :key="item.id" :class="item.cssClass">
+                        <div v-for="item in chatRecords" :key="item.id" :class="item.textSource">
                             <!-- <span v-html="item.text"></span> -->
                             <el-text v-if="item.answerType == 'TextPlain'">{{ item.text }}</el-text>
                             <el-text v-else v-html="item.text"></el-text>

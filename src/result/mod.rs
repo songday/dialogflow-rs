@@ -201,8 +201,8 @@ impl From<zip::result::ZipError> for Error {
     }
 }
 
-impl From<quick_xml::errors::Error> for Error {
-    fn from(err: quick_xml::errors::Error) -> Self {
+impl From<quick_xml::encoding::EncodingError> for Error {
+    fn from(err: quick_xml::encoding::EncodingError) -> Self {
         Error::WithMessage(format!("Read docx file failed: {err:?}"))
     }
 }

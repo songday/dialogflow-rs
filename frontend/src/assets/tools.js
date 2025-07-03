@@ -52,6 +52,7 @@ export async function chatReq(method, uri, query, form, body) {
         options.body = data;
         delete options.headers['Content-Type']; // FormData 不要指定 content-type
     } else if (body) {
+        console.log('Request body:', JSON.stringify(body));
         options.body = JSON.stringify(body);
     }
 
