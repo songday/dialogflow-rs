@@ -16,7 +16,7 @@ const nodeData = reactive({
     exitSpecialInputs: '',
     exitLlmResultContains: '',
     maxChatTimes: 1,
-    responseStreaming: false,
+    responseStreaming: true,
     connectTimeout: 1000,
     readTimeout: 10000,
     whenTimeoutThen: 'GotoAnotherNode',
