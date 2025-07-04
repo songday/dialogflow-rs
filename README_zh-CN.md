@@ -10,6 +10,8 @@
 
 ![](./doc/assets/screenshots/flow-editor-zh.png)
 
+![Dialog flow editor](./doc/assets/screenshots/chat_demo_zh.gif)
+
 # ✨ 关键特性
 * 🛒 **轻量级** 只有一个执行文件, 可以在没有GPU的笔记本上平滑的执行 (数据文件会在运行期动态的生成).
 * 🐱‍🏍 **AI 驱动** 集成了 `Huggingface 本地模型 (Llama, Phi-3, Gemma, Multilingual E5, MiniLM L6v2, NomicEmbedTextV1_5 等其它模型)`, `Ollama` 和 `OpenAI`, 可以用于 `流程聊天`, `答案节点文本生成` 以及 `意图识别` 等.
