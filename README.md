@@ -8,6 +8,8 @@
 
 ![Dialog flow editor](./doc/assets/screenshots/flow-editor-en.png)
 
+![Dialog flow editor](./doc/assets/screenshots/chat_demo_eng.gif)
+
 # ✨ Features
 * 🛒 **Light** Only ONE executable file, it can run smoothly on laptops without GPUs (data files will be created at runtime automatically).
 * 🐱‍🏍 **AI powered** Integrated `Huggingface local models (Llama, Phi-3, Gemma, Multilingual E5, MiniLM L6v2, NomicEmbedTextV1_5, etc.)`, `Ollama` and `OpenAI`, this can be used for `Chat`, `Text generation` and `Intent detection`.

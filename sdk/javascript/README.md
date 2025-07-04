@@ -37,6 +37,7 @@ async function dryrun() {
     waitingResponse.value = true;
     if (dialogFlowAiSDK == null) {
         dialogFlowAiSDK = new DialogFlowAiSDK({
+            // Make sure to replace <code>http://127.0.0.1:12715/flow/answer</code> with your actual API endpoint.
             url: 'http://127.0.0.1:12715/flow/answer', // answer API address
             robotId: robotId, // robot id
             mainFlowId: mainFlowId, // main flow id

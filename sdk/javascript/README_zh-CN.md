@@ -37,6 +37,7 @@ async function dryrun() {
     waitingResponse.value = true;
     if (dialogFlowAiSDK == null) {
         dialogFlowAiSDK = new DialogFlowAiSDK({
+            // 确保下面的地址 <code>http://127.0.0.1:12715/flow/answer</code> 替换成您真实的地址.
             url: 'http://127.0.0.1:12715/flow/answer', // 应答接口地址
             robotId: robotId, // 机器人id
             mainFlowId: mainFlowId, // 主流程id
