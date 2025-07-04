@@ -678,9 +678,9 @@ async function dryrun() {
     });
     if (dialogFlowAiSDK.chatHasEnded) {
         dialogFlowAiSDK.addChat(t('lang.flow.guideReset'), 'terminateText', dialogFlowAiSDK.MessageKind.PLAIN_TEXT, -1);
-        dialogFlowAiSDK = null;
         dryrunDisabled.value = true;
     }
+    userAsk.value = '';
     waitingResponse.value = false;
     nextTick(() => {
         // console.log(dryrunChatRecords.value.clientHeight);
@@ -820,9 +820,10 @@ function showAnswers(r, idx) {
 }
 */
 async function dryrunClear() {
+    dialogFlowAiSDK = null;
     chatRecords.value.splice(0, chatRecords.value.length);
     userAsk.value = '';
-    sessionId = '';
+    // sessionId = '';
     dryrunDisabled.value = false;
     await dryrun();
 }

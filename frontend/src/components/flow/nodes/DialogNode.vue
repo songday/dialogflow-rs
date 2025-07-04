@@ -83,7 +83,7 @@ export default defineComponent({
                 dialogFallbackText: '',
                 branches: [],
                 nextStep: 'WaitUserResponse',
-                responseStreaming: false,
+                responseStreaming: true,
                 connectTimeout: -1,
                 readTimeout: -1,
                 contextLength: 5,
