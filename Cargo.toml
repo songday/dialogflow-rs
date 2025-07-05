@@ -11,7 +11,7 @@ name = "dialogflowai"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 # https://github.com/djkoloski/rust_serialization_benchmark
-gtokil
+
 [dependencies]
 # For lancedb
 # arrow-array = "52.2.0"
