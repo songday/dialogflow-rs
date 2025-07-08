@@ -11,6 +11,7 @@ import RiRobot2Line from '~icons/ri/robot-2-line'
 import OutboundCallBotAvatar from '@/assets/outbound-bot.png'
 import InboundCallBotAvatar from '@/assets/inbound-bot.png'
 import TextBotAvatar from '@/assets/text-bot.png'
+import LanguageSwitcher from './LanguageSwitcher.vue'
 const { t, locale } = useI18n();
 // console.log('Current locale:', locale.value);
 const isZhLang = locale.value == 'zh';
@@ -25,7 +26,7 @@ const formLabelWidth = "90px"
 const checkUpdate = async () => {
   updateLoading.value = true
   const t = await httpReq('GET', 'check-new-version.json', null, null, null);
-  // console.log(t)
+  console.log(t)
   if (t.status == 200) {
     if (t.data != null) {
       newVersion.value = t.data.version;
@@ -169,6 +170,7 @@ const compareDifferentRobotTypeData = [
       <span class="text-large font-600 mr-3"> Workspace </span>
     </template>
 </el-page-header> -->
+  <LanguageSwitcher />
   <el-row class="header-row">
     <el-col :span="8">
       <span class="header"> {{ t('lang.home.workspace') }} </span>
