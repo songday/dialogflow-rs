@@ -38,7 +38,7 @@ async function save() {
     let r = await httpReq("POST", 'management/global-settings', null, null, settings)
     console.log(r);
     if (r.status == 200) {
-        ElMessage({ type: 'success', message: t('lang.common.saved'), });
+        ElMessage({ type: 'success', message: t('common.saved'), });
         await checkHfModelFiles();
     } else {
         const m = t(r.err.message);
@@ -47,12 +47,12 @@ async function save() {
 }
 </script>
 <template>
-    <el-page-header :title="$t('lang.common.back')" @back="goBack">
+    <el-page-header :title="$t('common.back')" @back="goBack">
         <template #content>
-            <span class="text-large font-600 mr-3">{{ $t('lang.settings.title') }}</span>
+            <span class="text-large font-600 mr-3">{{ $t('settings.title') }}</span>
         </template>
     </el-page-header>
-    <h3>Common settings</h3>
+    <h3>{{ t('settings.commonSettings') }}</h3>
     <el-row>
         <el-col :span="12" :offset="1">
             <el-form :model="settings">
@@ -60,27 +60,27 @@ async function save() {
                     <el-input v-model="settings.ip" placeholder="" />
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
-                    {{ $t('lang.settings.ipNote') }}
+                    {{ $t('settings.ipNote') }}
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
-                    {{ $t('lang.settings.ipNote2') }}
+                    {{ $t('settings.ipNote2') }}
                 </el-form-item>
-                <el-form-item :label="$t('lang.settings.prompt2')" :label-width="formLabelWidth">
+                <el-form-item :label="$t('settings.prompt2')" :label-width="formLabelWidth">
                     <el-input-number v-model="settings.port" :min="1024" :max="65530" @change="handleChange" />
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <input type="checkbox" id="_randomPortWhenConflict_" v-model="settings.selectRandomPortWhenConflict"
                         :checked="settings.selectRandomPortWhenConflict" />
-                    <label for="_randomPortWhenConflict_">{{ $t('lang.settings.prompt2_2') }}</label>
+                    <label for="_randomPortWhenConflict_">{{ $t('settings.prompt2_2') }}</label>
                 </el-form-item>
                 <el-form-item :label-width="formLabelWidth">
-                    {{ $t('lang.settings.note') }}
+                    {{ $t('settings.note') }}
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.cancel') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.cancel') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>
@@ -104,9 +104,9 @@ async function save() {
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.cancel') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.cancel') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>

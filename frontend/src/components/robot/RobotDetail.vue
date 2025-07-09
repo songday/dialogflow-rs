@@ -49,7 +49,7 @@ async function updateRobot() {
 }
 async function deleteRobot() {
   ElMessageBox.confirm(
-    t('lang.guide.delRoConfirm'),
+    t('guide.delRoConfirm'),
     'Warning',
     {
       confirmButtonText: 'OK',
@@ -102,26 +102,26 @@ async function deleteRobot() {
 }
 </style>
 <template>
-  <el-page-header :title="t('lang.guide.header1')" @back="goBack">
+  <el-page-header :title="t('guide.header1')" @back="goBack">
     <template #content>
-      <span class="text-large font-600 mr-3">{{ t('lang.guide.header2') }}</span>
+      <span class="text-large font-600 mr-3">{{ t('guide.header2') }}</span>
     </template>
   </el-page-header>
   <el-row class="header-row">
     <el-col :span="24">
       <span class="header"> {{ robotData.robotName }}</span>
       <el-button type="primary" text @click="dialogFormVisible = true;">
-        {{ t('lang.guide.chRoNaBtn') }}
+        {{ t('guide.chRoNaBtn') }}
       </el-button>
     </el-col>
   </el-row>
   <el-row>
     <el-col :span="20">
-      {{ t('lang.guide.robotId') }}: {{ robotId }}
+      {{ t('guide.robotId') }}: {{ robotId }}
     </el-col>
     <el-col :span="2">
       <el-button type="danger" @click="deleteRobot">
-        {{ t('lang.guide.delRoNaBtn') }}
+        {{ t('guide.delRoNaBtn') }}
       </el-button>
     </el-col>
   </el-row>
@@ -129,27 +129,27 @@ async function deleteRobot() {
     <div class="title">
       <el-icon :size="30">
         <BiChatSquareDots />
-      </el-icon>{{ $t('lang.guide.title1') }}
+      </el-icon>{{ $t('guide.title1') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'mainflows', params: { robotId: robotId } }">{{ $t('lang.guide.nav1') }}</router-link>
+      <router-link :to="{ name: 'mainflows', params: { robotId: robotId } }">{{ $t('guide.nav1') }}</router-link>
       <div class="description">
         <Demos :parentPage="robotDetail" />
         <!-- <router-link :to="{ name: 'subflow', params: { id: 'demo-repay', name: btoa('Repay Demo') } }">
-            {{ $t('lang.home.demo1') }}
+            {{ $t('home.demo1') }}
           </router-link>
           |
           <router-link
             :to="{ name: 'subflow', params: { id: 'demo-collect', name: btoa('Information Collection Demo') } }">
-            {{ $t('lang.home.demo2') }}
+            {{ $t('home.demo2') }}
           </router-link>
           |
           <router-link
             :to="{ name: 'subflow', params: { id: 'demo-notify', name: btoa('One Sentence Notification Demo') } }">
-            {{ $t('lang.home.demo3') }}
+            {{ $t('home.demo3') }}
           </router-link> -->
       </div>
     </div>
@@ -158,21 +158,21 @@ async function deleteRobot() {
       <el-icon :size="30">
         <MaterialSymbolsBook5Outline />
       </el-icon>
-      {{ t('lang.menu.kb') }}
+      {{ t('menu.kb') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'kbQA', params: { robotId: robotId } }">{{ t('lang.menu.qa') }}</router-link>
+      <router-link :to="{ name: 'kbQA', params: { robotId: robotId } }">{{ t('menu.qa') }}</router-link>
       &nbsp;&nbsp;
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'kbDoc', params: { robotId: robotId } }">{{ t('lang.menu.doc') }}</router-link>
+      <router-link :to="{ name: 'kbDoc', params: { robotId: robotId } }">{{ t('menu.doc') }}</router-link>
       <div class="description">
-        {{ $t('lang.guide.kbDesc') }}<br />
-        {{ $t('lang.guide.qaDesc') }}
+        {{ $t('guide.kbDesc') }}<br />
+        {{ $t('guide.qaDesc') }}
       </div>
     </div>
 
@@ -180,16 +180,16 @@ async function deleteRobot() {
       <el-icon :size="30">
         <RiBardLine />
       </el-icon>
-      {{ $t('lang.guide.title2') }}
+      {{ $t('guide.title2') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'intents', params: { robotId: robotId } }">{{ $t('lang.guide.nav2') }}</router-link>
+      <router-link :to="{ name: 'intents', params: { robotId: robotId } }">{{ $t('guide.nav2') }}</router-link>
       <div class="description">
-        {{ $t('lang.guide.desc2') }}<br />
-        {{ $t('lang.guide.intentsDesc') }}
+        {{ $t('guide.desc2') }}<br />
+        {{ $t('guide.intentsDesc') }}
       </div>
     </div>
 
@@ -197,77 +197,77 @@ async function deleteRobot() {
       <el-icon :size="30">
         <SolarDownloadOutline />
       </el-icon>
-      {{ $t('lang.guide.title3') }}
+      {{ $t('guide.title3') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'variables', params: { robotId: robotId } }">{{ $t('lang.guide.nav3') }}</router-link>
-      <div class="description">{{ $t('lang.guide.desc3') }}</div>
+      <router-link :to="{ name: 'variables', params: { robotId: robotId } }">{{ $t('guide.nav3') }}</router-link>
+      <div class="description">{{ $t('guide.desc3') }}</div>
     </div>
 
     <div class="title">
       <el-icon :size="30">
         <SolarRouting2Linear />
       </el-icon>
-      {{ $t('lang.guide.eApiTitle') }}
+      {{ $t('guide.eApiTitle') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'externalHttpApis', params: { robotId: robotId } }">{{ $t('lang.guide.httpApiList') }}</router-link>
-      <div class="description">{{ $t('lang.guide.eApiDesc') }}</div>
+      <router-link :to="{ name: 'externalHttpApis', params: { robotId: robotId } }">{{ $t('guide.httpApiList') }}</router-link>
+      <div class="description">{{ $t('guide.eApiDesc') }}</div>
     </div>
 
     <div class="title">
       <el-icon :size="30">
         <EpSetting />
       </el-icon>
-      {{ $t('lang.guide.title4') }}
+      {{ $t('guide.title4') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link :to="{ name: 'settings', params: { robotId: robotId } }">{{ $t('lang.guide.nav4') }}</router-link>
-      <div class="description">{{ $t('lang.guide.desc4') }}</div>
+      <router-link :to="{ name: 'settings', params: { robotId: robotId } }">{{ $t('guide.nav4') }}</router-link>
+      <div class="description">{{ $t('guide.desc4') }}</div>
     </div>
 
     <div class="title">
       <el-icon :size="30">
         <SolarDocumentTextLinear />
       </el-icon>
-      {{ $t('lang.guide.title5') }}
+      {{ $t('guide.title5') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <!-- <router-link to="/doc">{{ $t('lang.guide.nav5') }}</router-link> -->
+      <!-- <router-link to="/doc">{{ $t('guide.nav5') }}</router-link> -->
       <a href="https://dialogflowai.github.io/doc" target="_blank">
-        {{ $t('lang.guide.nav5') }}
+        {{ $t('guide.nav5') }}
         <el-icon>
           <BiBoxArrowUpRight />
         </el-icon>
       </a>
-      <div class="description">{{ $t('lang.guide.desc5') }}</div>
+      <div class="description">{{ $t('guide.desc5') }}</div>
     </div>
   </div>
-  <el-dialog v-model="dialogFormVisible" :title="t('lang.guide.chRoNaBtn')">
+  <el-dialog v-model="dialogFormVisible" :title="t('guide.chRoNaBtn')">
     <el-form :model="form">
-      <el-form-item :label="t('lang.common.name')" :label-width="formLabelWidth">
+      <el-form-item :label="t('common.name')" :label-width="formLabelWidth">
         <el-input v-model="robotData.robotName" autocomplete="off" />
       </el-form-item>
     </el-form>
     <template #footer>
       <span class="dialog-footer">
         <el-button type="primary" @click="dialogFormVisible = false; updateRobot();">
-          {{ $t('lang.common.save') }}
+          {{ $t('common.save') }}
         </el-button>
         <el-button @click="robotData.robotName = robotNameForRestore; dialogFormVisible = false">{{
-          $t('lang.common.cancel') }}</el-button>
+          $t('common.cancel') }}</el-button>
       </span>
     </template>
   </el-dialog>

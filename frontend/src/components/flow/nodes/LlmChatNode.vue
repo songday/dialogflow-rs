@@ -236,7 +236,7 @@ const hideForm = () => {
         <el-drawer v-if="nodeSetFormVisible" v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl"
             size="70%" :append-to-body="true" :destroy-on-close="true">
             <el-form :label-position="labelPosition" label-width="135px" :model="nodeData" style="max-width: 800px">
-                <el-form-item :label="t('lang.common.nodeName')" :label-width="formLabelWidth" prop="nodeName" :rules="[
+                <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth" prop="nodeName" :rules="[
                     { required: true, message: 'nodeName is required' },
                 ]">
                     <el-input v-model="nodeData.nodeName" />
@@ -309,8 +309,8 @@ const hideForm = () => {
                 </el-form-item>
             </el-form>
             <div>
-                <el-button type="primary" @click="saveForm()">{{ t('lang.common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('lang.common.cancel') }}</el-button>
+                <el-button type="primary" @click="saveForm()">{{ t('common.save') }}</el-button>
+                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
             </div>
         </el-drawer>
         <!-- </teleport> -->

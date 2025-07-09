@@ -6,7 +6,7 @@ import EpWarning from '~icons/ep/warning'
 const { t, tm, rt } = useI18n();
 const nodeSetFormVisible = ref(false);
 const nodeData = reactive({
-    nodeName: t('lang.collectNode.nodeName'),
+    nodeName: t('collectNode.nodeName'),
     collectTypeName: '',
     collectType: '',
     customizeRegex: '',
@@ -23,7 +23,7 @@ const node = getNode();
 node.on("change:data", ({ current }) => {
     nodeSetFormVisible.value = true;
 });
-const collectionTypes = [{ label: tm('lang.collectNode.cTypes')[0], value: 'UserInput' }, { label: tm('lang.collectNode.cTypes')[1], value: 'Number' }, { label: tm('lang.collectNode.cTypes')[2], value: 'CustomizeRegex' }];
+const collectionTypes = [{ label: tm('collectNode.cTypes')[0], value: 'UserInput' }, { label: tm('collectNode.cTypes')[1], value: 'Number' }, { label: tm('collectNode.cTypes')[2], value: 'CustomizeRegex' }];
 const variables = []
 onMounted(async () => {
     // console.log('collectNode')
@@ -49,7 +49,7 @@ onMounted(async () => {
             args: { x: x, y: heightOffset },
             attrs: {
                 text: {
-                    text: tm('lang.collectNode.branches')[0],
+                    text: tm('collectNode.branches')[0],
                     fontSize: 12,
                 },
             },
@@ -59,7 +59,7 @@ onMounted(async () => {
             args: { x: x, y: heightOffset + 20 },
             attrs: {
                 text: {
-                    text: tm('lang.collectNode.branches')[1],
+                    text: tm('collectNode.branches')[1],
                     fontSize: 12,
                 },
             },
@@ -77,7 +77,7 @@ onMounted(async () => {
     }
     validate();
 });
-const errors = tm('lang.collectNode.errors')
+const errors = tm('collectNode.errors')
 function validate() {
     const d = nodeData;
     const m = d.invalidMessages;
@@ -125,7 +125,7 @@ function setCollectTypeName() {
     }
 }
 
-const labels = tm('lang.collectNode.labels')
+const labels = tm('collectNode.labels')
 const formLabelWidth = '140px'
 </script>
 <style scoped>
@@ -162,13 +162,13 @@ const formLabelWidth = '140px'
                 </el-tooltip>
             </span>
         </div>
-        <div>{{ t('lang.collectNode.cTypeName') }}: {{ nodeData.collectTypeName }}</div>
-        <div>{{ t('lang.collectNode.varName') }}: {{ nodeData.collectSaveVarName }}</div>
+        <div>{{ t('collectNode.cTypeName') }}: {{ nodeData.collectTypeName }}</div>
+        <div>{{ t('collectNode.varName') }}: {{ nodeData.collectSaveVarName }}</div>
         <!-- <teleport to="body"> -->
         <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="70%"
             :append-to-body="true" :destroy-on-close="true">
             <el-form :label-position="labelPosition" label-width="100px" :model="nodeData" style="max-width: 460px">
-                <el-form-item :label="t('lang.common.nodeName')" :label-width="formLabelWidth">
+                <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth">
                     <el-input v-model="nodeData.nodeName" />
                 </el-form-item>
                 <el-form-item :label="labels[0]" :label-width="formLabelWidth">
@@ -189,8 +189,8 @@ const formLabelWidth = '140px'
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('lang.common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('lang.common.cancel') }}</el-button>
+                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
+                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
             </div>
         </el-drawer>
         <!-- </teleport> -->

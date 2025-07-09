@@ -71,8 +71,8 @@ const deleteDoc = (idx) => {
         'Confirm to delete this document?',
         'Warning',
         {
-            confirmButtonText: t('lang.common.del'),
-            cancelButtonText: t('lang.common.cancel'),
+            confirmButtonText: t('common.del'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning',
         }
     ).then(async () => {
@@ -98,7 +98,7 @@ const goBack = () => {
 
 </script>
 <template>
-    <!-- <el-page-header :title="$t('lang.common.back')" @back="goBack">
+    <!-- <el-page-header :title="$t('common.back')" @back="goBack">
         <template #content>
             <span class="text-large font-600 mr-3">Documents management</span>
         </template>
@@ -144,8 +144,8 @@ const goBack = () => {
             </el-form-item>
         </el-form>
         <div class="demo-drawer__footer">
-            <el-button type="primary" :loading="loading" @click="saveDoc()">{{ t('lang.common.save') }}</el-button>
-            <el-button @click="editFormVisible = false">{{ t('lang.common.cancel') }}</el-button>
+            <el-button type="primary" :loading="loading" @click="saveDoc()">{{ t('common.save') }}</el-button>
+            <el-button @click="editFormVisible = false">{{ t('.common.cancel') }}</el-button>
         </div>
     </el-drawer>
 </template>

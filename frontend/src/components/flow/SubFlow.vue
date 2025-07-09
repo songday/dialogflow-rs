@@ -329,15 +329,15 @@ register({
 });
 
 const nodes = [
-    { name: tm('lang.flow.nodes')[0], type: 'DialogNode', desc: tm('lang.flow.nodesDesc')[0], cnt: 1 },
-    { name: tm('lang.flow.nodes')[4], type: 'KnowledgeBaseAnswerNode', desc: 'Knowledge base answer node', cnt: 1 },
-    { name: tm('lang.flow.nodes')[5], type: 'LlmChatNode', desc: 'Llm chat node', cnt: 1 },
-    { name: tm('lang.flow.nodes')[1], type: 'ConditionNode', desc: tm('lang.flow.nodesDesc')[1], cnt: 1 },
-    { name: tm('lang.flow.nodes')[2], type: 'CollectNode', desc: tm('lang.flow.nodesDesc')[2], cnt: 1 },
-    { name: tm('lang.flow.nodes')[6], type: 'ExternalHttpNode', desc: 'Request and send data to external HTTP API with variables', cnt: 1 },
-    { name: tm('lang.flow.nodes')[7], type: 'SendEmailNode', desc: 'Sending an email an many recipients', cnt: 1 },
-    { name: tm('lang.flow.nodes')[3], type: 'GotoNode', desc: tm('lang.flow.nodesDesc')[3], cnt: 1 },
-    { name: tm('lang.flow.nodes')[8], type: 'EndNode', desc: 'Ending node', cnt: 1 },
+    { name: tm('flow.nodes')[0], type: 'DialogNode', desc: tm('flow.nodesDesc')[0], cnt: 1 },
+    { name: tm('flow.nodes')[4], type: 'KnowledgeBaseAnswerNode', desc: 'Knowledge base answer node', cnt: 1 },
+    { name: tm('flow.nodes')[5], type: 'LlmChatNode', desc: 'Llm chat node', cnt: 1 },
+    { name: tm('flow.nodes')[1], type: 'ConditionNode', desc: tm('flow.nodesDesc')[1], cnt: 1 },
+    { name: tm('flow.nodes')[2], type: 'CollectNode', desc: tm('flow.nodesDesc')[2], cnt: 1 },
+    { name: tm('flow.nodes')[6], type: 'ExternalHttpNode', desc: 'Request and send data to external HTTP API with variables', cnt: 1 },
+    { name: tm('flow.nodes')[7], type: 'SendEmailNode', desc: 'Sending an email an many recipients', cnt: 1 },
+    { name: tm('flow.nodes')[3], type: 'GotoNode', desc: tm('flow.nodesDesc')[3], cnt: 1 },
+    { name: tm('flow.nodes')[8], type: 'EndNode', desc: 'Ending node', cnt: 1 },
 ]
 let selectedSubFlowIdx = -1;
 // let offsetLeft = 0;
@@ -493,14 +493,14 @@ async function newSubFlow() {
 
 function removeSubFlow(index) {
     if (subFlows.value.length < 2) {
-        ElMessage.error(t('lang.flow.needOne'));
+        ElMessage.error(t('flow.needOne'));
     } else {
         ElMessageBox.confirm(
-            t('lang.flow.delConfirm'),
+            t('flow.delConfirm'),
             'Warning',
             {
-                confirmButtonText: t('lang.common.del'),
-                cancelButtonText: t('lang.common.cancel'),
+                confirmButtonText: t('common.del'),
+                cancelButtonText: t('common.cancel'),
                 type: 'warning',
             }
         ).then(async () => {
@@ -512,7 +512,7 @@ function removeSubFlow(index) {
             }
             ElMessage({
                 type: 'success',
-                message: t('lang.common.deleted'),
+                message: t('common.deleted'),
             })
         }).catch(() => {
             // ElMessage({
@@ -529,11 +529,11 @@ async function showSubFlow(idx) {
     if (editedSubFlow) {
         // console.log('editedSubFlow')
         ElMessageBox.confirm(
-            t('lang.flow.changeSaveTip'),
+            t('flow.changeSaveTip'),
             'Warning',
             {
-                confirmButtonText: t('lang.common.save'),
-                cancelButtonText: t('lang.common.cancel'),
+                confirmButtonText: t('common.save'),
+                cancelButtonText: t('common.cancel'),
                 type: 'warning',
             }
         ).then(async () => {
@@ -600,8 +600,8 @@ async function saveSubFlow() {
     // console.log(r);
     cacheSubFlows(r);
     ElNotification({
-        title: t('lang.common.successTip'),
-        message: h('b', { style: 'color: teal' }, t('lang.common.saved')),
+        title: t('common.successTip'),
+        message: h('b', { style: 'color: teal' }, t('common.saved')),
         type: 'success',
     });
     saveLoading.value = false;
@@ -630,13 +630,13 @@ async function release() {
     // console.log(r);
     if (r.status == 200) {
         ElNotification({
-            title: t('lang.common.successTip'),
-            message: h('b', { style: 'color: teal' }, t('lang.flow.subFlowReleased')),
+            title: t('common.successTip'),
+            message: h('b', { style: 'color: teal' }, t('flow.subFlowReleased')),
             type: 'success',
         });
     } else {
         ElNotification({
-            title: t('lang.common.errTip'),
+            title: t('common.errTip'),
             message: h('b', { style: 'color: teal' }, r.err.message),
             type: 'error',
         });
@@ -677,7 +677,7 @@ async function dryrun() {
         content: userAsk.value,
     });
     if (dialogFlowAiSDK.chatHasEnded) {
-        dialogFlowAiSDK.addChat(t('lang.flow.guideReset'), 'terminateText', dialogFlowAiSDK.MessageKind.PLAIN_TEXT, -1);
+        dialogFlowAiSDK.addChat(t('flow.guideReset'), 'terminateText', dialogFlowAiSDK.MessageKind.PLAIN_TEXT, -1);
         dryrunDisabled.value = true;
     }
     userAsk.value = '';
@@ -778,7 +778,7 @@ async function dryrun2() {
     //     for (let i = 0; i < answers.length; i++)
     //         newIdx = addChat(answers[i].content, 'responseText', answers[i].contentType, idx);
     //     if (data.nextAction == 'Terminate') {
-    //         addChat(t('lang.flow.guideReset'), 'terminateText', 'TextPlain', idx);
+    //         addChat(t('flow.guideReset'), 'terminateText', 'TextPlain', idx);
     //         dryrunDisabled.value = true;
     //     }
     //     nextTick(() => {
@@ -801,7 +801,7 @@ function showAnswers(r, idx) {
                 newIdx = addChat(answers[i].content, 'responseText', answers[i].contentType, idx);
         }
         if (data.nextAction === 'Terminate') {
-            addChat(t('lang.flow.guideReset'), 'terminateText', 'TextPlain', -1);
+            addChat(t('flow.guideReset'), 'terminateText', 'TextPlain', -1);
             dryrunDisabled.value = true;
         }
         nextTick(() => {
@@ -811,7 +811,7 @@ function showAnswers(r, idx) {
         return newIdx;
     } else {
         ElNotification({
-            title: t('lang.common.errTip'),
+            title: t('common.errTip'),
             message: h('b', { style: 'color: teal' }, r.err.message),
             type: 'error',
         });
@@ -972,14 +972,14 @@ const popupRundryWindow = async () => {
         <!-- <div id="modal-container"></div> -->
         <el-container style="min-height: 100vh;max-height: 100vh;">
             <el-header height="40px">
-                <el-page-header :title="t('lang.common.back')" @back="goBack">
+                <el-page-header :title="t('common.back')" @back="goBack">
                     <template #content>
                         <span class="text-large font-600 mr-3">{{ mainFlowName }}</span>
                     </template>
                     <template #extra>
                         <div class="flex items-center">
                             <el-text v-show="isDemo">
-                                {{ $tm('lang.flow.steps')[0] }}
+                                {{ $tm('flow.steps')[0] }}
                                 <el-icon :size="20">
                                     <EpDArrowRight />
                                 </el-icon>
@@ -988,12 +988,12 @@ const popupRundryWindow = async () => {
                                 size="large" v-show="!isDemo">
                                 <el-icon :size="20">
                                     <EpEdit />
-                                </el-icon>{{ $t('lang.flow.save') }}
+                                </el-icon>{{ $t('flow.save') }}
                             </el-button>
                             <el-button type="success" @click="release" :loading="releaseLoading" size="large">
                                 <el-icon :size="20">
                                     <EpFinished />
-                                </el-icon>{{ $t('lang.flow.pub') }}
+                                </el-icon>{{ $t('flow.pub') }}
                             </el-button>
                             <!-- <div class="testBtn" @click="dryrun(); testingFormVisible = true">
                                 <el-icon>
@@ -1002,7 +1002,7 @@ const popupRundryWindow = async () => {
                                 测试流程
                             </div> -->
                             <el-text v-show="isDemo">
-                                {{ $tm('lang.flow.steps')[1] }}
+                                {{ $tm('flow.steps')[1] }}
                                 <el-icon>
                                     <EpDArrowRight />
                                 </el-icon>
@@ -1011,7 +1011,7 @@ const popupRundryWindow = async () => {
                                 <el-icon :size="20">
                                     <EpPromotion />
                                 </el-icon>
-                                {{ $t('lang.flow.test') }}
+                                {{ $t('flow.test') }}
                             </el-button>
                         </div>
                     </template>
@@ -1023,7 +1023,7 @@ const popupRundryWindow = async () => {
                         <el-icon size="16px">
                             <EpPlus />
                         </el-icon>
-                        {{ $t('lang.flow.addSubFlow') }}
+                        {{ $t('flow.addSubFlow') }}
                     </div>
                     <div v-for="(item, index) in subFlows" :id="subFlowId(index)" :key="item.label"
                         @click="showSubFlow(index)" class="subFlowBtn">
@@ -1050,24 +1050,24 @@ const popupRundryWindow = async () => {
                 </el-main>
             </el-container>
         </el-container>
-        <el-dialog v-model="dialogFormVisible" :title="$t('lang.flow.addSubFlow')">
+        <el-dialog v-model="dialogFormVisible" :title="$t('flow.addSubFlow')">
             <el-form :model="form">
-                <el-form-item :label="t('lang.flow.form.name')" label-width="110px">
+                <el-form-item :label="t('flow.form.name')" label-width="110px">
                     <el-input v-model="flowName" autocomplete="off" />
                 </el-form-item>
             </el-form>
             <template #footer>
                 <span class="dialog-footer">
                     <el-button type="primary" @click="dialogFormVisible = false; newSubFlow();">
-                        {{ $t('lang.common.add') }}
+                        {{ $t('common.add') }}
                     </el-button>
-                    <el-button @click="dialogFormVisible = false">{{ $t('lang.common.cancel') }}</el-button>
+                    <el-button @click="dialogFormVisible = false">{{ $t('common.cancel') }}</el-button>
                 </span>
             </template>
         </el-dialog>
         <el-drawer v-model="testingFormVisible" direction="rtl">
             <template #header>
-                <b>{{ $t('lang.flow.test') }}</b>
+                <b>{{ $t('flow.test') }}</b>
             </template>
             <template #default>
                 <el-scrollbar ref="chatScrollbarRef" height="100%" always>
@@ -1086,9 +1086,9 @@ const popupRundryWindow = async () => {
                         style="width: 200px" @keypress="(e) => { if (e.keyCode == 13) dryrun(); }" />
                     <el-button-group>
                         <el-button type="primary" :disabled="dryrunDisabled" @click="dryrun"
-                            :loading="waitingResponse">{{ waitingResponse ? 'Sending' : $t('lang.flow.send')
+                            :loading="waitingResponse">{{ waitingResponse ? 'Sending' : $t('flow.send')
                             }}</el-button>
-                        <el-button @click="dryrunClear">{{ $t('lang.flow.reset') }}</el-button>
+                        <el-button @click="dryrunClear">{{ $t('flow.reset') }}</el-button>
                     </el-button-group>
                 </div>
             </template>

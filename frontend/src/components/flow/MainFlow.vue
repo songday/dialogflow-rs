@@ -58,11 +58,11 @@ const editMainFlow = (idx, d) => {
 
 const deleteMainFlow = async (idx, d) => {
     ElMessageBox.confirm(
-        t('lang.mainflow.delConfirm'),
+        t('mainflow.delConfirm'),
         'Warning',
         {
-            confirmButtonText: t('lang.common.del'),
-            cancelButtonText: t('lang.common.cancel'),
+            confirmButtonText: t('common.del'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning',
         }
     ).then(async () => {
@@ -73,7 +73,7 @@ const deleteMainFlow = async (idx, d) => {
         hideForm();
         ElMessage({
             type: 'success',
-            message: t('lang.common.deleted'),
+            message: t('common.deleted'),
         })
     }).catch(() => {
         // ElMessage({
@@ -112,22 +112,22 @@ const saveForm = async () => {
 </script>
 <style scoped></style>
 <template>
-    <!-- <el-page-header :title="t('lang.common.back')" @back="goBack">
+    <!-- <el-page-header :title="t('common.back')" @back="goBack">
         <template #content>
-            <span class="text-large font-600 mr-3"> {{ $t('lang.mainflow.title') }} </span>
+            <span class="text-large font-600 mr-3"> {{ $t('mainflow.title') }} </span>
         </template>
 <template #extra>
             <div class="flex items-center">
-                <el-button type="primary" class="ml-2" @click="newMainFlow()">{{ $t('lang.mainflow.add') }}</el-button>
+                <el-button type="primary" class="ml-2" @click="newMainFlow()">{{ $t('mainflow.add') }}</el-button>
             </div>
         </template>
 </el-page-header> -->
-    <h1>{{ $t('lang.mainflow.title') }}</h1>
-    <el-button type="primary" class="ml-2" @click="newMainFlow()">{{ $t('lang.mainflow.add') }}</el-button>
+    <h1>{{ $t('mainflow.title') }}</h1>
+    <el-button type="primary" class="ml-2" @click="newMainFlow()">{{ $t('mainflow.add') }}</el-button>
     <el-table :data="tableData" stripe style="width: 100%">
         <el-table-column prop="id" label="Id" width="240" />
-        <!-- <el-table-column prop="name" :label="tm('lang.mainflow.table')[0]" width="500" /> -->
-        <el-table-column :label="tm('lang.mainflow.table')[0]" width="500">
+        <!-- <el-table-column prop="name" :label="tm('mainflow.table')[0]" width="500" /> -->
+        <el-table-column :label="tm('mainflow.table')[0]" width="500">
             <template #default="scope">
                 <el-text style="cursor: pointer;" type="primary" size="large" @click="toSubflow(scope.$index, scope.row)">
                     {{ scope.row.name }}
@@ -135,30 +135,30 @@ const saveForm = async () => {
             </template>
         </el-table-column>
 
-        <!-- <el-table-column prop="enabled" :label="tm('lang.mainflow.table')[1]" width="80" /> -->
-        <el-table-column fixed="right" :label="tm('lang.mainflow.table')[2]" min-width="40">
+        <!-- <el-table-column prop="enabled" :label="tm('mainflow.table')[1]" width="80" /> -->
+        <el-table-column fixed="right" :label="tm('mainflow.table')[2]" min-width="40">
             <template #default="scope">
                 <el-button link type="primary" @click="toSubflow(scope.$index, scope.row)">
-                    {{ $t('lang.common.edit') }}
+                    {{ $t('common.edit') }}
                 </el-button> |
                 <el-button link type="primary" @click="editMainFlow(scope.$index, scope.row)">
-                    {{ $t('lang.common.edit') }} name
+                    {{ $t('common.changeName') }}
                 </el-button> |
                 <el-button link type="danger" @click="deleteMainFlow(scope.$index, scope.row)">
-                    {{ $t('lang.common.del') }}
+                    {{ $t('common.del') }}
                 </el-button>
             </template>
         </el-table-column>
     </el-table>
-    <el-dialog v-model="setFormVisible" :title="$t('lang.mainflow.form.title')" width="60%">
+    <el-dialog v-model="setFormVisible" :title="$t('mainflow.form.title')" width="60%">
         <el-form :model="nodeData">
-            <el-form-item :label="$t('lang.mainflow.form.name')" :label-width="formLabelWidth">
+            <el-form-item :label="$t('mainflow.form.name')" :label-width="formLabelWidth">
                 <el-input v-model="mainFlowData.name" autocomplete="off" />
             </el-form-item>
         </el-form>
         <template #footer>
-            <el-button type="primary" :loading="loading" @click="saveForm()">{{ $t('lang.common.save') }}</el-button>
-            <el-button @click="hideForm()">{{ $t('lang.common.cancel') }}</el-button>
+            <el-button type="primary" :loading="loading" @click="saveForm()">{{ $t('common.save') }}</el-button>
+            <el-button @click="hideForm()">{{ $t('common.cancel') }}</el-button>
         </template>
     </el-dialog>
 </template>

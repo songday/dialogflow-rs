@@ -84,7 +84,7 @@ const resetPorts = () => {
             args: { x: x, y: heightOffset },
             attrs: {
                 text: {
-                    text: tm('lang.dialogNode.nextSteps')[1],
+                    text: tm('dialogNode.nextSteps')[1],
                     fontSize: 12,
                 },
             },
@@ -95,7 +95,7 @@ const resetPorts = () => {
             args: { x: x, y: heightOffset },
             attrs: {
                 text: {
-                    text: tm('lang.collectNode.branches')[0],
+                    text: tm('collectNode.branches')[0],
                     fontSize: 12,
                 },
             },
@@ -105,7 +105,7 @@ const resetPorts = () => {
             args: { x: x, y: heightOffset + 20 },
             attrs: {
                 text: {
-                    text: tm('lang.collectNode.branches')[1],
+                    text: tm('collectNode.branches')[1],
                     fontSize: 12,
                 },
             },
@@ -221,7 +221,7 @@ const hideForm = () => {
         <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="70%"
             :append-to-body="true" :destroy-on-close="true">
             <el-form :label-position="labelPosition" label-width="100px" :model="nodeData" style="max-width: 500px">
-                <el-form-item :label="t('lang.common.nodeName')">
+                <el-form-item :label="t('common.nodeName')">
                     <el-input v-model="nodeData.nodeName" />
                 </el-form-item>
                 <el-form-item label="From" :label-width="formLabelWidth" prop="from" :rules="[
@@ -283,8 +283,8 @@ const hideForm = () => {
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('lang.common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('lang.common.cancel') }}</el-button>
+                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
+                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
             </div>
         </el-drawer>
         <!-- </teleport> -->

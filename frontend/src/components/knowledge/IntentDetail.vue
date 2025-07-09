@@ -252,13 +252,13 @@ const goBack = () => {
 </script>
 <style scoped></style>
 <template>
-    <el-page-header :title="t('lang.common.back')" @back="goBack">
+    <el-page-header :title="t('common.back')" @back="goBack">
         <template #content>
-            <span class="text-large font-600 mr-3">{{ $t('lang.intent.detail.edit') }}: {{ intentName }} </span>
+            <span class="text-large font-600 mr-3">{{ $t('intent.detail.edit') }}: {{ intentName }} </span>
         </template>
     </el-page-header>
 
-    <h3>{{ $t('lang.intent.detail.kw') }}</h3>
+    <h3>{{ $t('intent.detail.kw') }}</h3>
     <div style="color: gray;">Case insensitive</div>
     <el-tag v-for="tag in intentData.keywords" type="info" :key="tag" class="mx-1" closable :disable-transitions="false"
         @close="removeKeyword(tag)">
@@ -267,10 +267,10 @@ const goBack = () => {
     <el-input v-if="keywordInputVisible" ref="keywordInputRef" v-model="keywordValue" class="ml-1 w-20" size="small"
         @keyup.enter="newKeyword" @blur="newKeyword" />
     <el-button v-else class="button-new-tag ml-1" size="small" @click="showKeyWordInput">
-        + {{ $t('lang.intent.detail.addKw') }}
+        + {{ $t('intent.detail.addKw') }}
     </el-button>
 
-    <h3>{{ $t('lang.intent.detail.re') }}</h3>
+    <h3>{{ $t('intent.detail.re') }}</h3>
     <el-tag v-for="tag in intentData.regexes" type="info" :key="tag" class="mx-1" closable :disable-transitions="false"
         @close="removeRegex(tag)">
         {{ tag }}
@@ -278,10 +278,10 @@ const goBack = () => {
     <el-input v-if="regexInputVisible" ref="regexInputRef" v-model="regexValue" class="ml-1 w-20" size="small"
         @keyup.enter="newRegex" @blur="newRegex" />
     <el-button v-else class="button-new-tag ml-1" size="small" @click="showRegexInput">
-        + {{ $t('lang.intent.detail.addRe') }}
+        + {{ $t('intent.detail.addRe') }}
     </el-button>
 
-    <h3>{{ $t('lang.intent.detail.sp') }}</h3>
+    <h3>{{ $t('intent.detail.sp') }}</h3>
     <el-tag v-for="tag in intentData.phrases" type="info" :key="tag" class="mx-1" closable :disable-transitions="false"
         @close="removePhrase(tag)">
         {{ tag }}
@@ -289,7 +289,7 @@ const goBack = () => {
     <el-input v-if="phraseInputVisible" ref="phraseInputRef" v-model="phraseValue" class="ml-1 w-20" size="small"
         @keyup.enter="newPhrase" @blur="newPhrase" />
     <el-button v-else class="button-new-tag ml-1" size="small" @click="showPhraseInput" :disabled="phraseInputDisabled">
-        + {{ $t('lang.intent.detail.addSp') }}
+        + {{ $t('intent.detail.addSp') }}
     </el-button>
     <div v-show="phraseInputDisabled">
         This feature was disabled because <b>local model files were missing</b> or <b>api-key of OpenAI is empty</b>,

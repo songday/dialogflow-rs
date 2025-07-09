@@ -257,7 +257,7 @@ async function saveSettings() {
     let r = await httpReq("POST", 'management/settings', { robotId: robotId }, null, settings)
     console.log(r);
     if (r.status == 200) {
-        ElMessage({ type: 'success', message: t('lang.common.saved'), });
+        ElMessage({ type: 'success', message: t('common.saved'), });
         await checkHfModelFiles();
     } else {
         const m = t(r.err.message);
@@ -737,31 +737,31 @@ const usedByTextGenerationBig = [textGenerationPic]
 const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
 </script>
 <template>
-    <!-- <el-page-header :title="$t('lang.common.back')" @back="goBack">
+    <!-- <el-page-header :title="$t('common.back')" @back="goBack">
         <template #content>
-            <span class="text-large font-600 mr-3">{{ $t('lang.settings.title') }}</span>
+            <span class="text-large font-600 mr-3">{{ $t('settings.title') }}</span>
         </template>
 </el-page-header> -->
-    <h1>{{ $t('lang.settings.title') }}</h1>
-    <h3>Common settings</h3>
+    <h1>{{ $t('settings.title') }}</h1>
+    <h3>{{ t('settings.commonSettings') }}</h3>
     <el-row>
         <el-col :span="12" :offset="1">
             <el-form :model="settings">
-                <el-form-item :label="$t('lang.settings.prompt3')" :label-width="formLabelWidth">
+                <el-form-item :label="$t('botSettings.prompt3')" :label-width="formLabelWidth">
                     <el-input-number v-model="maxSessionIdleMin" :min="2" :max="1440" @change="handleChange" />
-                    {{ $t('lang.settings.prompt4') }}
+                    {{ $t('botSettings.prompt4') }}
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.back') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>
     </el-row>
     <h3>
-        Chat bot
+        {{ t('botSettings.chatModel') }}
         <el-tooltip effect="light" placement="right">
             <template #content>
                 You don’t need to download the large model file unless you want to use the functionalities
@@ -776,20 +776,20 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
     <el-row>
         <el-col :span="11" :offset="1">
             <el-form :model="settings.chatProvider" :label-width="formLabelWidth" style="max-width: 600px">
-                <el-form-item label="Provider">
+                <el-form-item :label="t('botSettings.provider')">
                     <el-radio-group v-model="settings.chatProvider.provider.id" size="large"
                         @change="changeChatProvider">
                         <el-radio-button v-for="item in chatProviders" :id="item.id" :key="item.id" :label="item.id"
                             :value="item.id" />
                     </el-radio-group>
                 </el-form-item>
-                <el-form-item label="Request address">
+                <el-form-item :label="t('botSettings.reqAddr')">
                     <el-input v-model="settings.chatProvider.apiUrl" :disabled="settings.chatProvider.apiUrlDisabled" />
                 </el-form-item>
                 <el-form-item label="OpenAI API key" v-show="settings.chatProvider.showApiKeyInput">
                     <el-input v-model="settings.chatProvider.apiKey" />
                 </el-form-item>
-                <el-form-item label="Model">
+                <el-form-item :label="t('botSettings.model')">
                     <el-select ref="chatModelSelector" v-model="settings.chatProvider.provider.model"
                         placeholder="Choose a model">
                         <el-option v-for="item in chatModelOptions" :id="item.value" :key="item.value"
@@ -811,21 +811,21 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                         </template>
                     </el-select>
                 </el-form-item>
-                <el-form-item label="Max response token">
+                <el-form-item :label="t('botSettings.maxResTokenLen')">
                     <el-input-number v-model="settings.chatProvider.maxResponseTokenLength" :min="10" :max="100000"
                         :step="5" />
                 </el-form-item>
-                <el-form-item label="Connect timeout" v-show="settings.chatProvider.provider.id != 'HuggingFace'">
+                <el-form-item :label="t('botSettings.connTimeout')" v-show="settings.chatProvider.provider.id != 'HuggingFace'">
                     <el-input-number v-model="settings.chatProvider.connectTimeoutMillis" :min="100" :max="65500"
                         :step="100" />
-                    millis
+                    {{ t('common.millis') }}
                 </el-form-item>
-                <el-form-item label="Read timeout" v-show="settings.chatProvider.provider.id != 'HuggingFace'">
+                <el-form-item :label="t('botSettings.readTimeout')" v-show="settings.chatProvider.provider.id != 'HuggingFace'">
                     <el-input-number v-model="settings.chatProvider.readTimeoutMillis" :min="200" :max="65500"
                         :step="100" />
-                    millis
+                    {{ t('common.millis') }}
                 </el-form-item>
-                <el-form-item label="Proxy" v-show="settings.chatProvider.provider.id != 'HuggingFace'">
+                <el-form-item :label="t('botSettings.proxy')" v-show="settings.chatProvider.provider.id != 'HuggingFace'">
                     <el-checkbox v-model="chatProviderProxyEnabled" label="Enable" />
                     <el-input v-model="input" placeholder="http://127.0.0.1:9270"
                         :disabled="!chatProviderProxyEnabled" />
@@ -843,9 +843,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.back') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>
@@ -857,7 +857,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
         </el-col>
     </el-row>
     <h3>
-        Text generation
+        {{ t('botSettings.txtGen') }}
         <el-tooltip effect="light" placement="right">
             <template #content>
                 You don’t need to download the large model file unless you want to use the functionalities
@@ -872,21 +872,21 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
     <el-row>
         <el-col :span="11" :offset="1">
             <el-form :model="settings.textGenerationProvider" :label-width="formLabelWidth" style="max-width: 600px">
-                <el-form-item label="Provider">
+                <el-form-item :label="t('botSettings.provider')">
                     <el-radio-group v-model="settings.textGenerationProvider.provider.id" size="large"
                         @change="changeTextGenerationProvider">
                         <el-radio-button v-for="item in textGenerationProviders" :id="item.id" :key="item.id"
                             :label="item.id" :value="item.id" />
                     </el-radio-group>
                 </el-form-item>
-                <el-form-item label="Request address">
+                <el-form-item :label="t('botSettings.reqAddr')">
                     <el-input v-model="settings.textGenerationProvider.apiUrl"
                         :disabled="settings.textGenerationProvider.apiUrlDisabled" />
                 </el-form-item>
                 <el-form-item label="OpenAI API key" v-show="settings.textGenerationProvider.showApiKeyInput">
                     <el-input v-model="settings.textGenerationProvider.apiKey" />
                 </el-form-item>
-                <el-form-item label="Model">
+                <el-form-item :label="t('botSettings.model')">
                     <el-select ref="textGenerationModelSelector"
                         v-model="settings.textGenerationProvider.provider.model" placeholder="Choose a model">
                         <el-option v-for="item in textGenerationModelOptions" :id="item.value" :key="item.value"
@@ -909,23 +909,23 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                         </template>
                     </el-select>
                 </el-form-item>
-                <el-form-item label="Max response token">
+                <el-form-item :label="t('botSettings.maxResTokenLen')">
                     <el-input-number v-model="settings.textGenerationProvider.maxResponseTokenLength" :min="10"
                         :max="100000" :step="5" />
                 </el-form-item>
-                <el-form-item label="Connect timeout"
+                <el-form-item :label="t('botSettings.connTimeout')"
                     v-show="settings.textGenerationProvider.provider.id != 'HuggingFace'">
                     <el-input-number v-model="settings.textGenerationProvider.connectTimeoutMillis" :min="100"
                         :max="65500" :step="100" />
-                    millis
+                    {{ t('common.millis') }}
                 </el-form-item>
-                <el-form-item label="Read timeout"
+                <el-form-item :label="t('botSettings.readTimeout')"
                     v-show="settings.textGenerationProvider.provider.id != 'HuggingFace'">
                     <el-input-number v-model="settings.textGenerationProvider.readTimeoutMillis" :min="1000"
                         :max="65500" :step="100" />
-                    millis
+                    {{ t('common.millis') }}
                 </el-form-item>
-                <el-form-item label="Proxy" v-show="settings.textGenerationProvider.provider.id != 'HuggingFace'">
+                <el-form-item :label="t('botSettings.proxy')" v-show="settings.textGenerationProvider.provider.id != 'HuggingFace'">
                     <el-checkbox v-model="textGenerationProviderProxyEnabled" label="Enable" />
                     <el-input v-model="input" placeholder="http://127.0.0.1:9270"
                         :disabled="!textGenerationProviderProxyEnabled" />
@@ -943,9 +943,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.back') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>
@@ -957,7 +957,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
         </el-col>
     </el-row>
     <h3>
-        Sentence embedding provider
+        {{ t('botSettings.sentenceEmbedding') }}
         <el-tooltip effect="light" placement="right">
             <template #content>
                 Downloading model files is not necessary.<br />
@@ -974,21 +974,21 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
     <el-row>
         <el-col :span="11" :offset="1">
             <el-form :model="settings.sentenceEmbeddingProvider" :label-width="formLabelWidth" style="max-width: 600px">
-                <el-form-item label="Provider">
+                <el-form-item :label="t('botSettings.provider')">
                     <el-radio-group v-model="settings.sentenceEmbeddingProvider.provider.id" size="large"
                         @change="changeSentenceEmbeddingProvider">
                         <el-radio-button v-for="item in sentenceEmbeddingProviders" :id="item.id" :key="item.id"
                             :label="item.id" :value="item.id" />
                     </el-radio-group>
                 </el-form-item>
-                <el-form-item label="Request address">
+                <el-form-item :label="t('botSettings.reqAddr')">
                     <el-input v-model="settings.sentenceEmbeddingProvider.apiUrl"
                         :disabled="settings.sentenceEmbeddingProvider.apiUrlDisabled" />
                 </el-form-item>
                 <el-form-item label="OpenAI API key" v-show="settings.sentenceEmbeddingProvider.showApiKeyInput">
                     <el-input v-model="settings.sentenceEmbeddingProvider.apiKey" />
                 </el-form-item>
-                <el-form-item label="Model">
+                <el-form-item :label="t('botSettings.model')">
                     <el-select ref="sentenceEmbeddingModelSelector"
                         v-model="settings.sentenceEmbeddingProvider.provider.model" placeholder="Choose a model">
                         <el-option v-for="item in sentenceEmbeddingModelOptions" :id="item.value" :key="item.value"
@@ -1012,7 +1012,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                         </template>
                     </el-select>
                 </el-form-item>
-                <el-form-item label="Similarity threshold">
+                <el-form-item :label="t('botSettings.simThres')">
                     ≥<el-input-number v-model="similarityThreshold" :min="1" :max="99" :step="1" />%
                     <el-tooltip effect="light" placement="right">
                         <template #content>
@@ -1021,19 +1021,19 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                         <el-button circle>?</el-button>
                     </el-tooltip>
                 </el-form-item>
-                <el-form-item label="Connect timeout"
+                <el-form-item :label="t('botSettings.connTimeout')"
                     v-show="settings.sentenceEmbeddingProvider.provider.id != 'HuggingFace'">
                     <el-input-number v-model="settings.sentenceEmbeddingProvider.connectTimeoutMillis" :min="100"
                         :max="65500" :step="100" />
-                    millis
+                    {{ t('common.millis') }}
                 </el-form-item>
-                <el-form-item label="Read timeout"
+                <el-form-item :label="t('botSettings.readTimeout')"
                     v-show="settings.sentenceEmbeddingProvider.provider.id != 'HuggingFace'">
                     <el-input-number v-model="settings.sentenceEmbeddingProvider.readTimeoutMillis" :min="500"
                         :max="65500" :step="100" />
-                    millis
+                    {{ t('common.millis') }}
                 </el-form-item>
-                <el-form-item label="Proxy" v-show="settings.sentenceEmbeddingProvider.provider.id != 'HuggingFace'">
+                <el-form-item :label="t('botSettings.proxy')" v-show="settings.sentenceEmbeddingProvider.provider.id != 'HuggingFace'">
                     <el-checkbox v-model="sentenceEmbeddingProviderProxyEnabled" label="Enable" />
                     <el-input v-model="input" placeholder="http://127.0.0.1:9270"
                         :disabled="!sentenceEmbeddingProviderProxyEnabled" />
@@ -1050,9 +1050,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.back') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>
@@ -1112,9 +1112,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.back') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>
@@ -1173,9 +1173,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.back') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>
@@ -1195,9 +1195,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 <el-form-item label="Password" :label-width="formLabelWidth">
                     <el-input v-model="settings.smtpPassword" placeholder="" type="password" />
                 </el-form-item>
-                <el-form-item label="Timeout" :label-width="formLabelWidth">
+                <el-form-item :label="t('botSettings.connTimeout')" :label-width="formLabelWidth">
                     <el-input-number v-model="settings.smtpTimeoutSec" :min="1" :max="600" @change="handleChange" />
-                    Seconds
+                    {{ t('common.sec') }}
                 </el-form-item>
                 <el-form-item label="Email verification regex" label-width="200px">
                     <el-input v-model="settings.emailVerificationRegex" :placeholder="defaultEmailVerificationRegex" />
@@ -1215,9 +1215,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <el-button type="primary" @click="save">
-                        {{ $t('lang.common.save') }}
+                        {{ $t('common.save') }}
                     </el-button>
-                    <el-button @click="goBack()">{{ $t('lang.common.back') }}</el-button>
+                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
                 </el-form-item>
             </el-form>
         </el-col>
