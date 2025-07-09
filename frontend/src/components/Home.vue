@@ -197,7 +197,7 @@ const compareDifferentRobotTypeData = [
   </el-row>
   <el-popover ref="popover" placement="right" title="Changelog" :width="300" trigger="hover">
     <template #reference>
-      <el-button v-show="checkUpdateResult == 1" class="m-2" type="warning" text>Found new verion: {{
+      <el-button v-show="checkUpdateResult === 1" class="m-2" type="warning" text>Found new verion: {{
         newVersion
       }}</el-button>
     </template>
@@ -210,10 +210,12 @@ const compareDifferentRobotTypeData = [
       <a href="https://github.com/dialogflowai/dialogflow/releases">Go to download</a>
     </template>
   </el-popover>
-  <el-alert v-show="checkUpdateResult == 2" title="You're using the latest verion." type="success"
-    @close="checkUpdateResult = 0" />
-  <el-alert v-show="checkUpdateResult == 3" title="Failed to check update information, please try again later."
-    type="danger" @close="checkUpdateResult = 0" />
+  <div v-show="checkUpdateResult === 2">
+    <el-alert title="You're using the latest verion." type="success" @close="checkUpdateResult = 0" />
+  </div>
+  <div v-show="checkUpdateResult === 3">
+    <el-alert title="Failed to check update information, please try again later." type="danger" @close="checkUpdateResult = 0" />
+  </div>
   <!-- <el-button v-show="checkUpdateResult == 2" type="success" text>You're using the latest verion</el-button>
   <el-button v-show="checkUpdateResult == 3" type="danger" text>Failed to query update information, please try
     again
