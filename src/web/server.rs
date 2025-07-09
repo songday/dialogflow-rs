@@ -498,47 +498,47 @@ where
     }
 }
 
-pub(crate) enum ResponseDataHolder<D> {
-    Normal(D),
-    Chunked(tokio::sync::mpsc::UnboundedReceiver<D>),
-}
+// pub(crate) enum ResponseDataHolder<D> {
+//     Normal(D),
+//     Chunked(tokio::sync::mpsc::UnboundedReceiver<D>),
+// }
 
-pub(crate) fn t<D>(d: ResponseDataHolder<D>) -> axum::response::Response
-where
-    D: serde::Serialize + 'static + std::marker::Send,
-{
-    let builder = Response::builder().status(200);
-    match d {
-        ResponseDataHolder::Normal(d) => {
-            let res = ResponseData {
-                status: StatusCode::OK.as_u16(),
-                data: Some(d),
-                err: None,
-            };
-            let body = axum::body::Body::from(serde_json::to_string(&res).unwrap());
-            builder
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(body)
-                .unwrap()
-        }
-        ResponseDataHolder::Chunked(r) => {
-            let s = tokio_stream::wrappers::UnboundedReceiverStream::new(r);
-            let body = axum::body::Body::from_stream(s.map(|d| {
-                let res = ResponseData {
-                    status: StatusCode::OK.as_u16(),
-                    data: Some(d),
-                    err: None,
-                };
-                let body = serde_json::to_string(&res).unwrap();
-                Ok::<_, std::convert::Infallible>(body)
-            }));
-            builder
-                .header(header::TRANSFER_ENCODING, "chunked")
-                .body(body)
-                .unwrap()
-        }
-    }
-}
+// pub(crate) fn t<D>(d: ResponseDataHolder<D>) -> axum::response::Response
+// where
+//     D: serde::Serialize + 'static + std::marker::Send,
+// {
+//     let builder = Response::builder().status(200);
+//     match d {
+//         ResponseDataHolder::Normal(d) => {
+//             let res = ResponseData {
+//                 status: StatusCode::OK.as_u16(),
+//                 data: Some(d),
+//                 err: None,
+//             };
+//             let body = axum::body::Body::from(serde_json::to_string(&res).unwrap());
+//             builder
+//                 .header(header::CONTENT_TYPE, "application/json")
+//                 .body(body)
+//                 .unwrap()
+//         }
+//         ResponseDataHolder::Chunked(r) => {
+//             let s = tokio_stream::wrappers::UnboundedReceiverStream::new(r);
+//             let body = axum::body::Body::from_stream(s.map(|d| {
+//                 let res = ResponseData {
+//                     status: StatusCode::OK.as_u16(),
+//                     data: Some(d),
+//                     err: None,
+//                 };
+//                 let body = serde_json::to_string(&res).unwrap();
+//                 Ok::<_, std::convert::Infallible>(body)
+//             }));
+//             builder
+//                 .header(header::TRANSFER_ENCODING, "chunked")
+//                 .body(body)
+//                 .unwrap()
+//         }
+//     }
+// }
 
 pub(crate) fn to_res<D>(r: Result<D, Error>) -> impl IntoResponse
 where

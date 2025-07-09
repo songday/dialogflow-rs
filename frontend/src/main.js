@@ -25,6 +25,7 @@ import RobotDetail from './components/robot/RobotDetail.vue'
 import RobotFrame from './components/robot/RobotFrame.vue'
 import DocList from './components/knowledge/DocList.vue'
 import QnAList from './components/knowledge/QnAList.vue'
+import NotFound from './components/404.vue'
 
 // import 'element-plus/dist/index.css'
 // import ElementTiptapPlugin from 'element-tiptap-vue3-fixed';
@@ -74,6 +75,7 @@ const routes = [
   { path: '/robot/:robotId/subflow/:id/:name', name: 'subflow', component: SubFlow, props: true },
   { path: '/settings', component: GlobalSettings },
   // { path: '/tutorial', component: Tutorial },
+  { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound },
 ]
 
 const router = createRouter({

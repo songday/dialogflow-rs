@@ -11,6 +11,7 @@ import RiRobot2Line from '~icons/ri/robot-2-line'
 import OutboundCallBotAvatar from '@/assets/outbound-bot.png'
 import InboundCallBotAvatar from '@/assets/inbound-bot.png'
 import TextBotAvatar from '@/assets/text-bot.png'
+import LanguageSwitcher from './LanguageSwitcher.vue'
 const { t, locale } = useI18n();
 // console.log('Current locale:', locale.value);
 const isZhLang = locale.value == 'zh';
@@ -25,7 +26,7 @@ const formLabelWidth = "90px"
 const checkUpdate = async () => {
   updateLoading.value = true
   const t = await httpReq('GET', 'check-new-version.json', null, null, null);
-  // console.log(t)
+  console.log(t)
   if (t.status == 200) {
     if (t.data != null) {
       newVersion.value = t.data.version;
@@ -169,6 +170,7 @@ const compareDifferentRobotTypeData = [
       <span class="text-large font-600 mr-3"> Workspace </span>
     </template>
 </el-page-header> -->
+  <LanguageSwitcher />
   <el-row class="header-row">
     <el-col :span="8">
       <span class="header"> {{ t('lang.home.workspace') }} </span>
@@ -195,7 +197,7 @@ const compareDifferentRobotTypeData = [
   </el-row>
   <el-popover ref="popover" placement="right" title="Changelog" :width="300" trigger="hover">
     <template #reference>
-      <el-button v-show="checkUpdateResult == 1" class="m-2" type="warning" text>Found new verion: {{
+      <el-button v-show="checkUpdateResult === 1" class="m-2" type="warning" text>Found new verion: {{
         newVersion
       }}</el-button>
     </template>
@@ -208,10 +210,12 @@ const compareDifferentRobotTypeData = [
       <a href="https://github.com/dialogflowai/dialogflow/releases">Go to download</a>
     </template>
   </el-popover>
-  <el-alert v-show="checkUpdateResult == 2" title="You're using the latest verion." type="success"
-    @close="checkUpdateResult = 0" />
-  <el-alert v-show="checkUpdateResult == 3" title="Failed to check update information, please try again later."
-    type="danger" @close="checkUpdateResult = 0" />
+  <div v-show="checkUpdateResult === 2">
+    <el-alert title="You're using the latest verion." type="success" @close="checkUpdateResult = 0" />
+  </div>
+  <div v-show="checkUpdateResult === 3">
+    <el-alert title="Failed to check update information, please try again later." type="danger" @close="checkUpdateResult = 0" />
+  </div>
   <!-- <el-button v-show="checkUpdateResult == 2" type="success" text>You're using the latest verion</el-button>
   <el-button v-show="checkUpdateResult == 3" type="danger" text>Failed to query update information, please try
     again
