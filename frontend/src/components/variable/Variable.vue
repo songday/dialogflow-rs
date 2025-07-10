@@ -20,8 +20,8 @@ const varData = reactive({
     cacheEnabled: true,
 });
 const varTypes = [
-    { label: tm('lang.var.types')[0], value: 'Str' },
-    { label: tm('lang.var.types')[1], value: 'Num' },
+    { label: tm('var.types')[0], value: 'Str' },
+    { label: tm('var.types')[1], value: 'Num' },
 ];
 const varTypesMap = new Map()
 varTypes.forEach(function (item, index, arr) {
@@ -29,11 +29,11 @@ varTypes.forEach(function (item, index, arr) {
 }, varTypesMap);
 
 const varValueSources = [
-    { label: tm('lang.var.sources')[0], value: 'Import', disabled: false },
-    { label: tm('lang.var.sources')[1], value: 'Collect', disabled: false },
+    { label: tm('var.sources')[0], value: 'Import', disabled: false },
+    { label: tm('var.sources')[1], value: 'Collect', disabled: false },
     { label: 'User input', value: 'UserInput', disabled: false },
     { label: 'Constant value', value: 'Constant', disabled: false },
-    { label: tm('lang.var.sources')[2], value: 'ExternalHttp', disabled: false },
+    { label: tm('var.sources')[2], value: 'ExternalHttp', disabled: false },
 ];
 const varValueSourcesMap = new Map()
 varValueSources.forEach(function (item, index, arr) {
@@ -154,46 +154,46 @@ async function saveForm() {
 </script>
 <style scoped></style>
 <template>
-    <!-- <el-page-header :title="t('lang.common.back')" @back="goBack">
+    <!-- <el-page-header :title="t('common.back')" @back="goBack">
         <template #content>
-            <span class="text-large font-600 mr-3"> {{ $t('lang.var.title') }} </span>
+            <span class="text-large font-600 mr-3"> {{ $t('var.title') }} </span>
         </template>
 <template #extra>
             <div class="flex items-center">
-                <el-button type="primary" class="ml-2" @click="newVar()">{{ $t('lang.var.add') }}</el-button>
+                <el-button type="primary" class="ml-2" @click="newVar()">{{ $t('var.add') }}</el-button>
             </div>
         </template>
 </el-page-header> -->
-    <h1>{{ $t('lang.var.title') }}</h1>
-    <el-button type="primary" class="ml-2" @click="newVar()">{{ $t('lang.var.add') }}</el-button>
+    <h1>{{ $t('var.title') }}</h1>
+    <el-button type="primary" class="ml-2" @click="newVar()">{{ $t('var.add') }}</el-button>
     <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="varName" :label="tm('lang.var.table')[0]" width="300" />
-        <el-table-column prop="varTypeT" :label="tm('lang.var.table')[1]" width="180" />
-        <el-table-column prop="varValueSourceT" :label="tm('lang.var.table')[2]" width="200" />
-        <el-table-column fixed="right" :label="tm('lang.var.table')[3]" min-width="40">
+        <el-table-column prop="varName" :label="tm('var.table')[0]" width="300" />
+        <el-table-column prop="varTypeT" :label="tm('var.table')[1]" width="180" />
+        <el-table-column prop="varValueSourceT" :label="tm('var.table')[2]" width="200" />
+        <el-table-column fixed="right" :label="tm('var.table')[3]" min-width="40">
             <template #default="scope">
                 <el-button link type="primary" @click="editVar(scope.$index, scope.row)">
-                    {{ $t('lang.common.edit') }}
+                    {{ $t('common.edit') }}
                 </el-button>
                 <el-button link type="danger" @click="deleteVar(scope.$index, scope.row)">
-                    {{ $t('lang.common.del') }}
+                    {{ $t('common.del') }}
                 </el-button>
             </template>
         </el-table-column>
     </el-table>
-    <el-drawer v-model="varSetFormVisible" :title="$t('lang.var.form.title')" direction="rtl" size="50%">
+    <el-drawer v-model="varSetFormVisible" :title="$t('var.form.title')" direction="rtl" size="50%">
         <el-form :model="nodeData">
-            <el-form-item :label="$t('lang.var.form.name')" :label-width="formLabelWidth">
+            <el-form-item :label="$t('var.form.name')" :label-width="formLabelWidth">
                 <el-input v-model="varData.varName" autocomplete="off" />
             </el-form-item>
-            <el-form-item :label="$t('lang.var.form.type')" :label-width="formLabelWidth">
-                <el-select v-model="varData.varType" :placeholder="$t('lang.var.form.choose1')">
+            <el-form-item :label="$t('var.form.type')" :label-width="formLabelWidth">
+                <el-select v-model="varData.varType" :placeholder="$t('var.form.choose1')">
                     <el-option v-for="item in varTypes" :key="item.label" :label="item.label" :value="item.value"
                         :disabled="item.disabled" />
                 </el-select>
             </el-form-item>
-            <el-form-item :label="$t('lang.var.form.source')" :label-width="formLabelWidth">
-                <el-select v-model="varData.varValueSource" :placeholder="$t('lang.var.form.choose2')">
+            <el-form-item :label="$t('var.form.source')" :label-width="formLabelWidth">
+                <el-select v-model="varData.varValueSource" :placeholder="$t('var.form.choose2')">
                     <el-option v-for="item in varValueSources" :key="item.label" :label="item.label"
                         :value="item.value" />
                 </el-select>
@@ -240,8 +240,8 @@ async function saveForm() {
             </el-form-item>
         </el-form>
         <div class="demo-drawer__footer">
-            <el-button type="primary" :loading="loading" @click="saveForm()">{{ $t('lang.common.save') }}</el-button>
-            <el-button @click="hideForm()">{{ $t('lang.common.cancel') }}</el-button>
+            <el-button type="primary" :loading="loading" @click="saveForm()">{{ $t('common.save') }}</el-button>
+            <el-button @click="hideForm()">{{ $t('common.cancel') }}</el-button>
         </div>
     </el-drawer>
 </template>

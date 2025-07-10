@@ -128,27 +128,27 @@ const toSettings = () => {
   <div class="title">
     <el-icon :size="30">
       <BiChatSquareDots />
-    </el-icon>{{ $t('lang.guide.title1') }}
+    </el-icon>{{ $t('guide.title1') }}
   </div>
   <p>
     <el-icon :size="15">
       <EpArrowRightBold />
     </el-icon>
-    <router-link to="/mainflows">{{ $t('lang.guide.nav1') }}</router-link>
+    <router-link to="/mainflows">{{ $t('guide.nav1') }}</router-link>
   <div class="description">
     <Demos :parentPage="fromPage" />
     <!-- <router-link :to="{ name: 'subflow', params: { id: 'demo-repay', name: btoa('Repay Demo') } }">
-            {{ $t('lang.home.demo1') }}
+            {{ $t('home.demo1') }}
           </router-link>
           |
           <router-link
             :to="{ name: 'subflow', params: { id: 'demo-collect', name: btoa('Information Collection Demo') } }">
-            {{ $t('lang.home.demo2') }}
+            {{ $t('home.demo2') }}
           </router-link>
           |
           <router-link
             :to="{ name: 'subflow', params: { id: 'demo-notify', name: btoa('One Sentence Notification Demo') } }">
-            {{ $t('lang.home.demo3') }}
+            {{ $t('home.demo3') }}
           </router-link> -->
   </div>
   </p>
@@ -157,15 +157,15 @@ const toSettings = () => {
     <el-icon :size="30">
       <RiBardLine />
     </el-icon>
-    {{ $t('lang.guide.title2') }}
+    {{ $t('guide.title2') }}
   </div>
   <p>
     <el-icon :size="15">
       <EpArrowRightBold />
     </el-icon>
-    <router-link to="/intents">{{ $t('lang.guide.nav2') }}</router-link>
+    <router-link to="/intents">{{ $t('guide.nav2') }}</router-link>
   <div class="description">
-    {{ $t('lang.guide.desc2') }}<br />
+    {{ $t('guide.desc2') }}<br />
     We have built-in "Positive" and "Negative" intentions. If that's not enough, you can add your own
   </div>
   </p>
@@ -174,14 +174,14 @@ const toSettings = () => {
     <el-icon :size="30">
       <SolarDownloadOutline />
     </el-icon>
-    {{ $t('lang.guide.title3') }}
+    {{ $t('guide.title3') }}
   </div>
   <p>
     <el-icon :size="15">
       <EpArrowRightBold />
     </el-icon>
-    <router-link to="/variables">{{ $t('lang.guide.nav3') }}</router-link>
-  <div class="description">{{ $t('lang.guide.desc3') }}</div>
+    <router-link to="/variables">{{ $t('guide.nav3') }}</router-link>
+  <div class="description">{{ $t('guide.desc3') }}</div>
   </p>
 
   <div class="title">
@@ -202,34 +202,34 @@ const toSettings = () => {
     <el-icon :size="30">
       <EpSetting />
     </el-icon>
-    {{ $t('lang.guide.title4') }}
+    {{ $t('guide.title4') }}
   </div>
   <p>
     <el-icon :size="15">
       <EpArrowRightBold />
     </el-icon>
-    <router-link to="/settings">{{ $t('lang.guide.nav4') }}</router-link>
-  <div class="description">{{ $t('lang.guide.desc4') }}</div>
+    <router-link to="/settings">{{ $t('guide.nav4') }}</router-link>
+  <div class="description">{{ $t('guide.desc4') }}</div>
   </p>
 
   <div class="title">
     <el-icon :size="30">
       <SolarDocumentTextLinear />
     </el-icon>
-    {{ $t('lang.guide.title5') }}
+    {{ $t('guide.title5') }}
   </div>
   <p>
     <el-icon :size="15">
       <EpArrowRightBold />
     </el-icon>
-    <!-- <router-link to="/docs">{{ $t('lang.guide.nav5') }}</router-link> -->
+    <!-- <router-link to="/docs">{{ $t('guide.nav5') }}</router-link> -->
     <a href="https://dialogflowai.github.io/docs" target="_blank">
-      {{ $t('lang.guide.nav5') }}
+      {{ $t('guide.nav5') }}
       <el-icon>
         <BiBoxArrowUpRight />
       </el-icon>
     </a>
-  <div class="description">{{ $t('lang.guide.desc5') }}</div>
+  <div class="description">{{ $t('guide.desc5') }}</div>
   </p>
   </p>
 </template>

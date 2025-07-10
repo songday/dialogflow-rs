@@ -30,7 +30,7 @@ defaultCondition.conditionType = '';
 // }
 // resetDefaultCondition(defaultCondition);
 const fallbackBranch = getDefaultBranch();
-fallbackBranch.branchName = t('lang.common.else');
+fallbackBranch.branchName = t('common.else');
 fallbackBranch.branchType = 'GotoAnotherNode';
 fallbackBranch.editable = false;
 // const defaultCondition = {
@@ -41,7 +41,7 @@ fallbackBranch.editable = false;
 //     inputVariable: false,
 // };
 const defaultConditionGroup = [[]];
-const types18 = tm('lang.conditionNode.types')
+const types18 = tm('conditionNode.types')
 const conditionTypes = [
     { label: types18[0], value: 'UserIntent' },
     // { label: 'Zero-Shot Classification', value: 'ZeroShotTextClassification' },
@@ -51,7 +51,7 @@ const conditionTypes = [
 const refOptionsSet = {
     "FlowVariable": [],
 };
-const compares18 = tm('lang.conditionNode.compares')
+const compares18 = tm('conditionNode.compares')
 const compareOptionsSet = {
     "UserIntent": [{ label: compares18[0], value: 'Eq', inputType: 0, showCS: false }],
     "UserInput": [
@@ -80,7 +80,7 @@ const targetOptionsSet = {
 const loading = false;
 let editConditionIndex = -1;
 const nodeData = reactive({
-    nodeName: t('lang.conditionNode.nodeName'),
+    nodeName: t('conditionNode.nodeName'),
     branches: [fallbackBranch],
     valid: false,
     invalidMessages: [],
@@ -146,7 +146,7 @@ onMounted(async () => {
     nodeData.newNode = false;
     validate();
 });
-const errors18 = tm('lang.conditionNode.errors')
+const errors18 = tm('conditionNode.errors')
 const validateBranchName = (rule, value, callback) => {
     if (value == '')
         callback(new Error(errors18[0]));
@@ -219,8 +219,8 @@ function removeBranch(i) {
         'Do you delete this branch?',
         'Warning',
         {
-            confirmButtonText: t('lang.common.del'),
-            cancelButtonText: t('lang.common.cancel'),
+            confirmButtonText: t('common.del'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning',
         }
     ).then(() => {
@@ -402,32 +402,32 @@ function removeConditionGroup(groupIdx) {
             </span>
         </div>
         <!-- <teleport to="body"> -->
-        <el-dialog v-model="branchSetFormVisible" :title="t('lang.conditionNode.newBranch')" width="75%"
+        <el-dialog v-model="branchSetFormVisible" :title="t('conditionNode.newBranch')" width="75%"
             :append-to-body="true" :destroy-on-close="true">
             <el-form :model="branch" :rules="branchValidators">
-                <el-form-item :label="t('lang.conditionNode.condName')" :label-width="formLabelWidth" prop="branchName">
+                <el-form-item :label="t('conditionNode.condName')" :label-width="formLabelWidth" prop="branchName">
                     <el-input v-model="branch.branchName" autocomplete="off" minlength="1" maxlength="15" />
                 </el-form-item>
                 <el-form-item v-for="(g, groupIndex) in branch.conditionGroup" :key="groupIndex"
-                    :label="t('lang.conditionNode.condType')" :label-width="formLabelWidth">
+                    :label="t('conditionNode.condType')" :label-width="formLabelWidth">
                     <div v-for="(c, index) in g" :key="index">
-                        <el-select v-model="c.conditionType" :placeholder="t('lang.conditionNode.condTypePH')"
+                        <el-select v-model="c.conditionType" :placeholder="t('conditionNode.condTypePH')"
                             @change="(v) => showOptions(v, groupIndex, index)" style="width:116px;">
                             <el-option v-for="item in conditionTypes" :key="item.label" :label="item.label"
                                 :value="item.value" />
                         </el-select>
-                        <el-select v-model="c.refChoice" :placeholder="t('lang.conditionNode.comparedPH')"
+                        <el-select v-model="c.refChoice" :placeholder="t('conditionNode.comparedPH')"
                             v-show="c.refOptions.length > 0" class="optionWidth"
                             @change="(v) => percolateCompareOptions(c.conditionType, groupIndex, index, v)">
                             <el-option v-for="item in c.refOptions" :key="item.label" :label="item.label"
                                 :value="item.value" />
                         </el-select>
-                        <el-select v-model="c.compareType" :placeholder="t('lang.conditionNode.compareTypePH')"
+                        <el-select v-model="c.compareType" :placeholder="t('conditionNode.compareTypePH')"
                             v-show="c.compareOptions.length > 0" class="optionWidth">
                             <el-option v-for="item in c.compareOptions" :key="item.label" :label="item.label"
                                 :value="item.value" @click.native="selectCompareOption(groupIndex, index, item)" />
                         </el-select>
-                        <el-select v-model="c.targetValue" :placeholder="t('lang.conditionNode.targetPH')"
+                        <el-select v-model="c.targetValue" :placeholder="t('conditionNode.targetPH')"
                             v-show="c.targetOptions.length > 0" class="optionWidth">
                             <el-option v-for="item in c.targetOptions" :key="item.label" :label="item.label"
                                 :value="item.value" />
@@ -450,7 +450,7 @@ function removeConditionGroup(groupIdx) {
                                 <el-icon>
                                     <EpPlus />
                                 </el-icon>
-                                <!-- {{ t('lang.conditionNode.andCond') }} -->
+                                <!-- {{ t('conditionNode.andCond') }} -->
                             </el-button>
                             <el-button type="danger" v-show="g.length > 1" @click="g.splice(index, 1); console.log(g)">
                                 <el-icon>
@@ -471,28 +471,28 @@ function removeConditionGroup(groupIdx) {
                         <el-icon>
                             <EpPlus />
                         </el-icon>
-                        <!-- {{ t('lang.conditionNode.orCond') }} -->
+                        <!-- {{ t('conditionNode.orCond') }} -->
                     </el-button>
                 </el-form-item>
             </el-form>
             <template #footer>
                 <span class="dialog-footer">
                     <el-button type="primary" @click="saveBranch()">
-                        {{ t('lang.common.save') }}
+                        {{ t('common.save') }}
                     </el-button>
-                    <el-button v-on:click="hideBranchForm()">{{ t('lang.common.cancel') }}</el-button>
+                    <el-button v-on:click="hideBranchForm()">{{ t('common.cancel') }}</el-button>
                     <el-button type="danger" :disabled="editConditionIndex == -1"
-                        v-on:click="removeBranch(editConditionIndex)">{{ t('lang.common.del') }}</el-button>
+                        v-on:click="removeBranch(editConditionIndex)">{{ t('common.del') }}</el-button>
                 </span>
             </template>
         </el-dialog>
         <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="70%"
             :append-to-body="true" :destroy-on-close="true">
             <el-form :model="nodeData">
-                <el-form-item :label="t('lang.common.nodeName')" :label-width="formLabelWidth">
+                <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth">
                     <el-input v-model="nodeData.nodeName" autocomplete="off" />
                 </el-form-item>
-                <el-form-item :label="t('lang.conditionNode.newCond')" :label-width="formLabelWidth">
+                <el-form-item :label="t('conditionNode.newCond')" :label-width="formLabelWidth">
                     <el-button type="primary" @click="addNewBranch()">
                         <el-icon>
                             <EpPlus />
@@ -503,8 +503,8 @@ function removeConditionGroup(groupIdx) {
                 </el-form-item>
             </el-form>
             <div>
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('lang.common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('lang.common.cancel') }}</el-button>
+                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
+                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
             </div>
         </el-drawer>
         <!-- </teleport> -->

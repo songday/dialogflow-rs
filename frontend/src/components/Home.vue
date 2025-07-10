@@ -173,7 +173,7 @@ const compareDifferentRobotTypeData = [
   <LanguageSwitcher />
   <el-row class="header-row">
     <el-col :span="8">
-      <span class="header"> {{ t('lang.home.workspace') }} </span>
+      <span class="header"> {{ t('home.workspace') }} </span>
       <!-- <el-button size="large">
         <el-icon size="large">
           <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 24 24"><path d="M21 4H7V2H5v20h2v-8h14l-2-5l2-5zm-3.86 5.74l.9 2.26H7V6h11.05l-.9 2.26l-.3.74l.29.74zM14 9c0 1.1-.9 2-2 2s-2-.9-2-2s.9-2 2-2s2 .9 2 2z" fill="currentColor"></path></svg>
@@ -227,9 +227,9 @@ const compareDifferentRobotTypeData = [
           <el-icon :size="50">
             <RiRobot2Line />
           </el-icon>
-          {{ t('lang.home.robotListTitle') }}
+          {{ t('home.robotListTitle') }}
           <el-button size="large" @click="showRobotForm" type="success">
-            {{ t('lang.home.createRobotBtnTxt') }}
+            {{ t('home.createRobotBtnTxt') }}
           </el-button>
         </h1>
       </el-col>
@@ -246,7 +246,7 @@ const compareDifferentRobotTypeData = [
           </template>
           <template #extra>
             <el-button size="large" type="primary" @click="robotDetail(n.robotId, n.robotName)">{{
-              t('lang.common.toDetail') }}</el-button>
+              t('common.toDetail') }}</el-button>
           </template>
         </el-result>
       </div>
@@ -269,34 +269,34 @@ const compareDifferentRobotTypeData = [
       <el-icon :size="30">
         <EpSetting />
       </el-icon>
-      {{ $t('lang.home.globalSettings') }}
+      {{ $t('home.globalSettings') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <router-link to="/settings">{{ $t('lang.home.globalSettings') }}</router-link>
-      <div class="description">{{ $t('lang.guide.desc4') }}</div>
+      <router-link to="/settings">{{ $t('home.globalSettings') }}</router-link>
+      <div class="description">{{ $t('guide.desc4') }}</div>
     </div>
 
     <div class="title">
       <el-icon :size="30">
         <SolarDocumentTextLinear />
       </el-icon>
-      {{ $t('lang.guide.title5') }}
+      {{ $t('guide.title5') }}
     </div>
     <div>
       <el-icon :size="15">
         <EpArrowRightBold />
       </el-icon>
-      <!-- <router-link to="/docs">{{ $t('lang.guide.nav5') }}</router-link> -->
+      <!-- <router-link to="/docs">{{ $t('guide.nav5') }}</router-link> -->
       <a href="https://dialogflowai.github.io/doc" target="_blank">
-        {{ $t('lang.guide.nav5') }}
+        {{ $t('guide.nav5') }}
         <el-icon>
           <BiBoxArrowUpRight />
         </el-icon>
       </a>
-      <div class="description">{{ $t('lang.guide.desc5') }}</div>
+      <div class="description">{{ $t('guide.desc5') }}</div>
     </div>
   </div>
   <div>
@@ -314,14 +314,14 @@ const compareDifferentRobotTypeData = [
       <a href="https://www.flaticon.com/" target="_blank">Flaticon</a>
     </div>
   </div>
-  <el-dialog v-model="setFormVisible" :title="t('lang.home.createRobotBtnTxt')" width="60%">
+  <el-dialog v-model="setFormVisible" :title="t('home.createRobotBtnTxt')" width="60%">
     <el-form :model="robotData">
-      <el-form-item :label="t('lang.common.name')" :label-width="formLabelWidth" prop="robotName" :rules="[
+      <el-form-item :label="t('common.name')" :label-width="formLabelWidth" prop="robotName" :rules="[
         { required: true, message: 'Robot name is required' },
       ]">
         <el-input v-model="robotData.robotName" autocomplete="off" />
       </el-form-item>
-      <el-form-item :label="t('lang.common.type')" :label-width="formLabelWidth" prop="robotType" :rules="[
+      <el-form-item :label="t('common.type')" :label-width="formLabelWidth" prop="robotType" :rules="[
         { required: true, message: 'Please choose a type of robot' },
       ]">
         <el-select v-model="robotData.robotType" placeholder="">
@@ -338,8 +338,8 @@ const compareDifferentRobotTypeData = [
         width="200" />
     </el-table>
     <template #footer>
-      <el-button type="primary" @click="newRobot()">{{ $t('lang.common.create') }}</el-button>
-      <el-button @click="setFormVisible = false">{{ $t('lang.common.cancel') }}</el-button>
+      <el-button type="primary" @click="newRobot()">{{ $t('common.create') }}</el-button>
+      <el-button @click="setFormVisible = false">{{ $t('common.cancel') }}</el-button>
     </template>
   </el-dialog>
 </template>

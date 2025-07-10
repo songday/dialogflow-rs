@@ -41,11 +41,11 @@ function editIntent(idx, row) {
 }
 async function deleteIntent(idx, row) {
     ElMessageBox.confirm(
-        t('lang.intent.delConfirm'),
+        t('intent.delConfirm'),
         'Warning',
         {
-            confirmButtonText: t('lang.common.del'),
-            cancelButtonText: t('lang.common.cancel'),
+            confirmButtonText: t('common.del'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning',
         }
     ).then(async () => {
@@ -56,7 +56,7 @@ async function deleteIntent(idx, row) {
             await list();
             ElMessage({
                 type: 'success',
-                message: t('lang.common.deleted'),
+                message: t('common.deleted'),
             })
         } else {
             ElMessage({
@@ -103,60 +103,60 @@ function detectIntent() {
 }
 </script>
 <template>
-    <!-- <el-page-header :title="t('lang.common.back')" @back="goBack">
+    <!-- <el-page-header :title="t('common.back')" @back="goBack">
         <template #content>
-            <span class="text-large font-600 mr-3">{{ $t('lang.intent.title') }}</span>
+            <span class="text-large font-600 mr-3">{{ $t('intent.title') }}</span>
         </template>
 <template #extra>
             <div class="flex items-center">
-                <el-button type="primary" class="ml-2" @click="dialogFormVisible = true">{{ $t('lang.intent.add')
+                <el-button type="primary" class="ml-2" @click="dialogFormVisible = true">{{ $t('intent.add')
                     }}</el-button>
             </div>
         </template>
 </el-page-header> -->
-    <h1>{{ $t('lang.intent.title') }}</h1>
-    <el-button type="primary" class="ml-2" @click="dialogFormVisible = true">{{ $t('lang.intent.add')
+    <h1>{{ $t('intent.title') }}</h1>
+    <el-button type="primary" class="ml-2" @click="dialogFormVisible = true">{{ $t('intent.add')
         }}</el-button>
     <el-button type="primary" @click="dryRunFormVisible = true">Test intent detection</el-button>
     <el-table :data="intentData" stripe style="width: 100%">
-        <el-table-column prop="intent_name" :label="tm('lang.intent.table')[0]" width="220" />
-        <el-table-column :label="tm('lang.intent.table')[1]" width="180">
+        <el-table-column prop="intent_name" :label="tm('intent.table')[0]" width="220" />
+        <el-table-column :label="tm('intent.table')[1]" width="180">
             <template #default="scope">
                 {{ scope.row.keywords.length }}
             </template>
         </el-table-column>
-        <el-table-column :label="tm('lang.intent.table')[2]" width="180">
+        <el-table-column :label="tm('intent.table')[2]" width="180">
             <template #default="scope">
                 {{ scope.row.regexes.length }}
             </template>
         </el-table-column>
-        <el-table-column :label="tm('lang.intent.table')[3]" width="230">
+        <el-table-column :label="tm('intent.table')[3]" width="230">
             <template #default="scope">
                 {{ scope.row.phrases.length }}
             </template>
         </el-table-column>
-        <el-table-column fixed="right" :label="tm('lang.intent.table')[4]" min-width="100">
+        <el-table-column fixed="right" :label="tm('intent.table')[4]" min-width="100">
             <template #default="scope">
                 <el-button link type="primary" @click="editIntent(scope.$index, scope.row)">{{
-                    $t('lang.common.edit') }}</el-button>
+                    $t('common.edit') }}</el-button>
                 <el-button link type="danger" @click="deleteIntent(scope.$index, scope.row)">{{
-                    $t('lang.common.del') }}</el-button>
+                    $t('common.del') }}</el-button>
             </template>
         </el-table-column>
     </el-table>
     <el-divider />
-    <el-dialog v-model="dialogFormVisible" :title="t('lang.intent.form.title')">
+    <el-dialog v-model="dialogFormVisible" :title="t('intent.form.title')">
         <el-form :model="form">
-            <el-form-item :label="t('lang.intent.form.name')" :label-width="formLabelWidth">
+            <el-form-item :label="t('intent.form.name')" :label-width="formLabelWidth">
                 <el-input v-model="intentName" autocomplete="off" />
             </el-form-item>
         </el-form>
         <template #footer>
             <span class="dialog-footer">
                 <el-button type="primary" @click="dialogFormVisible = false; newIntent();">
-                    {{ $t('lang.common.add') }}
+                    {{ $t('common.add') }}
                 </el-button>
-                <el-button @click="dialogFormVisible = false">{{ $t('lang.common.cancel') }}</el-button>
+                <el-button @click="dialogFormVisible = false">{{ $t('common.cancel') }}</el-button>
             </span>
         </template>
     </el-dialog>

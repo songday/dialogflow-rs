@@ -173,7 +173,7 @@ onMounted(async () => {
         <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="70%"
             :append-to-body="true" :destroy-on-close="true">
             <el-form :label-position="labelPosition" label-width="70px" :model="nodeData" style="max-width: 850px">
-                <el-form-item :label="t('lang.common.nodeName')" :label-width="formLabelWidth">
+                <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth">
                     <el-input v-model="nodeData.nodeName" />
                 </el-form-item>
                 <el-form-item label="HTTP APIs" :label-width="formLabelWidth">
@@ -208,8 +208,8 @@ onMounted(async () => {
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('lang.common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('lang.common.cancel') }}</el-button>
+                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
+                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
             </div>
         </el-drawer>
         <!-- </teleport> -->

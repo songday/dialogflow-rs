@@ -39,53 +39,53 @@ const isCollapse = ref(false)
                     <el-icon>
                         <MaterialSymbolsHouseOutline />
                     </el-icon>
-                    <template #title>{{ t('lang.menu.home') }}</template>
+                    <template #title>{{ t('menu.home') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId">
                     <el-icon>
                         <RiRobot2Line />
                     </el-icon>
-                    <template #title>{{ t('lang.menu.thisRobot') }}</template>
+                    <template #title>{{ t('menu.thisRobot') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId + '/mainflows'">
                     <el-icon>
                         <BiChatSquareDots />
                     </el-icon>
-                    <template #title>{{ t('lang.menu.dialogFlows') }}</template>
+                    <template #title>{{ t('menu.dialogFlows') }}</template>
                 </el-menu-item>
                 <el-sub-menu index="kbMenu">
                     <template #title>
                         <el-icon>
                             <MaterialSymbolsBook5Outline />
                         </el-icon>
-                        <span>{{ t('lang.menu.kb') }}</span>
+                        <span>{{ t('menu.kb') }}</span>
                     </template>
-                    <el-menu-item :index="'/robot/' + robotId + '/kb/qa'">{{ t('lang.menu.qa') }}</el-menu-item>
-                    <el-menu-item :index="'/robot/' + robotId + '/kb/doc'">{{ t('lang.menu.doc') }}</el-menu-item>
+                    <el-menu-item :index="'/robot/' + robotId + '/kb/qa'">{{ t('menu.qa') }}</el-menu-item>
+                    <el-menu-item :index="'/robot/' + robotId + '/kb/doc'">{{ t('menu.doc') }}</el-menu-item>
                 </el-sub-menu>
                 <el-menu-item :index="'/robot/' + robotId + '/intents'">
                     <el-icon>
                         <RiBardLine />
                     </el-icon>
-                    <template #title>{{ t('lang.menu.intents') }}</template>
+                    <template #title>{{ t('menu.intents') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId + '/variables'">
                     <el-icon>
                         <SolarDownloadOutline />
                     </el-icon>
-                    <template #title>{{ t('lang.menu.vars') }}</template>
+                    <template #title>{{ t('menu.vars') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId + '/external/httpApis'">
                     <el-icon>
                         <SolarRouting2Linear />
                     </el-icon>
-                    <template #title>{{ t('lang.menu.vars') }}</template>
+                    <template #title>{{ t('menu.eApi') }}</template>
                 </el-menu-item>
                 <el-menu-item :index="'/robot/' + robotId + '/settings'">
                     <el-icon>
                         <EpSetting />
                     </el-icon>
-                    <template #title>{{ t('lang.menu.rs') }}</template>
+                    <template #title>{{ t('menu.rs') }}</template>
                 </el-menu-item>
             </el-menu>
         </el-aside>

@@ -60,7 +60,7 @@ const delApi = (idx, row) => {
 }
 </script>
 <template>
-    <!-- <el-page-header :title="t('lang.common.back')" @back="goBack">
+    <!-- <el-page-header :title="t('common.back')" @back="goBack">
         <template #content>
             <span class="text-large font-600 mr-3"> External HTTP API list </span>
         </template>
@@ -70,17 +70,17 @@ const delApi = (idx, row) => {
             </div>
         </template>
     </el-page-header> -->
-    <h1>External HTTP APIs list</h1>
-    <el-button type="primary" class="ml-2" @click="newApi()">Add new external HTTP API</el-button>
+    <h1>{{ t('eApi.title') }}</h1>
+    <el-button type="primary" class="ml-2" @click="newApi()">{{ t('eApi.add') }}</el-button>
     <div style="padding:10px;border: 1px solid #E6A23C; background-color: #fdf6ec;margin:10px">
         Now you can not only send data to the outside, but also get data from the outside and save it in variables
         by setting value source to a HTTP API.
-        <router-link :to="{ name: 'variables', params: { robotId: robotId } }">Add new variable</router-link>
+        <router-link :to="{ name: 'variables', params: { robotId: robotId } }">{{ t('var.add') }}</router-link>
     </div>
     <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="name" label="HTTP name" width="450" />
-        <el-table-column prop="description" label="Description" width="500" />
-        <el-table-column fixed="right" :label="tm('lang.mainflow.table')[2]" min-width="40">
+        <el-table-column prop="name" :label="t('common.name')" width="450" />
+        <el-table-column prop="description" :label="t('common.desc')" width="500" />
+        <el-table-column fixed="right" :label="tm('mainflow.table')[2]" min-width="40">
             <template #default="scope">
                 <el-button link type="primary" @click="editApi(scope.$index, scope.row)">
                     Edit

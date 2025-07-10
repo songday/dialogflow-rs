@@ -162,7 +162,7 @@ const changeTab = (v) => {
 </style>
 <template>
   <div class="mainBody">
-    <el-page-header :title="t('lang.common.back')" @back="goBack">
+    <el-page-header :title="t('common.back')" @back="goBack">
       <template #content>
         <span class="text-large font-600 mr-3"> External HTTP API </span>
       </template>
@@ -203,7 +203,7 @@ const changeTab = (v) => {
             <el-table :data="httpApiData.headers" stripe style="width: 100%">
               <el-table-column prop="name" label="Parameter name" width="300" />
               <el-table-column prop="value" label="Parameter value" width="200" />
-              <el-table-column fixed="right" :label="tm('lang.mainflow.table')[2]" width="270">
+              <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="270">
                 <template #default="scope">
                   <el-button link type="primary" size="small" @click="editParam(scope.$index)">
                     Edit
@@ -220,7 +220,7 @@ const changeTab = (v) => {
             <el-table :data="httpApiData.queryParams" stripe style="width: 100%">
               <el-table-column prop="name" label="Parameter name" width="300" />
               <el-table-column prop="value" label="Parameter value" width="200" />
-              <el-table-column fixed="right" :label="tm('lang.mainflow.table')[2]" width="270">
+              <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="270">
                 <template #default="scope">
                   <el-button link type="primary" size="small" @click="editParam(scope.$index)">
                     Edit
@@ -244,7 +244,7 @@ const changeTab = (v) => {
               style="width: 100%">
               <el-table-column prop="name" label="Parameter name" width="300" />
               <el-table-column prop="value" label="Parameter value" width="200" />
-              <el-table-column fixed="right" :label="tm('lang.mainflow.table')[2]" width="270">
+              <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="270">
                 <template #default="scope">
                   <el-button link type="primary" size="small" @click="editParam(scope.$index)">
                     Edit
@@ -300,8 +300,8 @@ const changeTab = (v) => {
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button type="primary" :loading="loading" @click="addParam">{{ $t('lang.common.save') }}</el-button>
-        <el-button @click="setFormVisible = false">{{ $t('lang.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="loading" @click="addParam">{{ $t('common.save') }}</el-button>
+        <el-button @click="setFormVisible = false">{{ $t('common.cancel') }}</el-button>
       </template>
     </el-dialog>
     <el-dialog v-model="varDialogVisible" title="Insert a variable" width="30%">
@@ -311,9 +311,9 @@ const changeTab = (v) => {
       <template #footer>
         <span class="dialog-footer">
           <el-button type="primary" @click="insertVar">
-            {{ t('lang.common.insert') }}
+            {{ t('common.insert') }}
           </el-button>
-          <el-button @click="varDialogVisible = false">{{ t('lang.common.cancel') }}</el-button>
+          <el-button @click="varDialogVisible = false">{{ t('common.cancel') }}</el-button>
         </span>
       </template>
     </el-dialog>

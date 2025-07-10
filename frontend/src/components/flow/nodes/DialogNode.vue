@@ -75,7 +75,7 @@ export default defineComponent({
             selectedVar: '',
             overrideTimeoutEnabled: false,
             nodeData: {
-                nodeName: this.t('lang.dialogNode.nodeName'),
+                nodeName: this.t('dialogNode.nodeName'),
                 dialogText: '',
                 dialogTextType: '',
                 dialogTextSource: 'FixedText',
@@ -92,7 +92,7 @@ export default defineComponent({
                 newNode: true,
             },
             settings: {},
-            nextSteps: [{ label: this.tm('lang.dialogNode.nextSteps')[0], value: 'WaitUserResponse' }, { label: this.tm('lang.dialogNode.nextSteps')[1], value: 'GotoNextNode' }],
+            nextSteps: [{ label: this.tm('dialogNode.nextSteps')[0], value: 'WaitUserResponse' }, { label: this.tm('dialogNode.nextSteps')[1], value: 'GotoNextNode' }],
             loading: false,
             lastEditRange: null,
             // textEditor: '2',
@@ -284,12 +284,12 @@ export default defineComponent({
             const m = d.invalidMessages;
             m.splice(0, m.length);
             if (!d.nodeName)
-                m.push(this.tm('lang.dialogNode.errors')[0]);
+                m.push(this.tm('dialogNode.errors')[0]);
             if (d.dialogTextSource && d.dialogTextSource === 'FixedText') {
                 if (!d.dialogText || d.dialogText.length < 1)
-                    m.push(this.tm('lang.dialogNode.errors')[1]);
+                    m.push(this.tm('dialogNode.errors')[1]);
                 else if (d.dialogText.length > 5000)
-                    m.push(this.tm('lang.dialogNode.errors')[2]);
+                    m.push(this.tm('dialogNode.errors')[2]);
             } else if (d.dialogTextSource && d.dialogTextSource === 'LlmGenText') {
                 if (!d.dialogLlmGenPrompt || d.dialogLlmGenPrompt.length < 1)
                     m.push('Input prompt');
@@ -688,7 +688,7 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
         <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="72%"
             :append-to-body="true" :destroy-on-close="true">
             <el-form :model="nodeData">
-                <el-form-item :label="t('lang.common.nodeName')" :label-width="formLabelWidth" prop="nodeName" :rules="[
+                <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth" prop="nodeName" :rules="[
                     { required: true, message: 'nodeName is required' },
                 ]">
                     <el-input v-model="nodeData.nodeName" autocomplete="off" />
@@ -705,7 +705,7 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                     <el-tab-pane label="Fixed text" name="first">User</el-tab-pane>
                     <el-tab-pane label="Large model generates text" name="second">Config</el-tab-pane>
                 </el-tabs> -->
-                <el-form-item v-show="nodeData.dialogTextSource == 'FixedText'" :label="t('lang.dialogNode.form.label')"
+                <el-form-item v-show="nodeData.dialogTextSource == 'FixedText'" :label="t('dialogNode.form.label')"
                     :label-width="formLabelWidth">
                     <!-- <el-radio-group v-model="textEditor" class="ml-4" @change="changeEditorNote">
                             <el-radio value="1">Plain text</el-radio>
@@ -825,7 +825,7 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                         <el-icon>
                             <EpPlus />
                         </el-icon>
-                        {{ t('lang.dialogNode.form.addVar') }}
+                        {{ t('dialogNode.form.addVar') }}
                     </el-button>
                     <el-button @click="genTextVisible = true">
                         Generate text from LLM
@@ -867,29 +867,29 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                     :label-width="formLabelWidth">
                     <el-checkbox v-model="nodeData.responseStreaming" label="Response streaming" />
                 </el-form-item>
-                <el-form-item :label="t('lang.dialogNode.form.nextStep')" :label-width="formLabelWidth">
-                    <el-select v-model="nodeData.nextStep" :placeholder="t('lang.dialogNode.form.choose')">
+                <el-form-item :label="t('dialogNode.form.nextStep')" :label-width="formLabelWidth">
+                    <el-select v-model="nodeData.nextStep" :placeholder="t('dialogNode.form.choose')">
                         <el-option v-for="item in nextSteps" :key="item.label" :label="item.label"
                             :value="item.value" />
                     </el-select>
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('lang.common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('lang.common.cancel') }}</el-button>
+                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
+                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
             </div>
         </el-drawer>
-        <el-dialog v-model="varDialogVisible" :title="t('lang.dialogNode.var.title')" width="30%" :append-to-body="true"
+        <el-dialog v-model="varDialogVisible" :title="t('dialogNode.var.title')" width="30%" :append-to-body="true"
             :destroy-on-close="true">
-            <el-select v-model="selectedVar" class="m-2" :placeholder="t('lang.dialogNode.var.choose')" size="large">
+            <el-select v-model="selectedVar" class="m-2" :placeholder="t('dialogNode.var.choose')" size="large">
                 <el-option v-for="item in vars" :key="item.varName" :label="item.varName" :value="item.varName" />
             </el-select>
             <template #footer>
                 <span class="dialog-footer">
                     <el-button type="primary" @click="insertVar">
-                        {{ t('lang.common.insert') }}
+                        {{ t('common.insert') }}
                     </el-button>
-                    <el-button @click="varDialogVisible = false">{{ t('lang.common.cancel') }}</el-button>
+                    <el-button @click="varDialogVisible = false">{{ t('common.cancel') }}</el-button>
                 </span>
             </template>
         </el-dialog>
@@ -913,7 +913,7 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                     <el-button type="primary" @click="genText" :loading="textGenerating">
                         {{ genTextBtnText }}
                     </el-button>
-                    <el-button @click="genTextVisible = false">{{ t('lang.common.cancel') }}</el-button>
+                    <el-button @click="genTextVisible = false">{{ t('common.cancel') }}</el-button>
                 </span>
             </template>
         </el-dialog>

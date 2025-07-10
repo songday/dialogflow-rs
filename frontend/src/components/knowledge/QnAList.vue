@@ -68,8 +68,8 @@ const deleteQa = async (idx) => {
         'Confirm to delete this QnA?',
         'Warning',
         {
-            confirmButtonText: t('lang.common.del'),
-            cancelButtonText: t('lang.common.cancel'),
+            confirmButtonText: t('common.del'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning',
         }
     ).then(async () => {
@@ -139,7 +139,7 @@ td {
 } */
 </style>
 <template>
-    <!-- <el-page-header :title="$t('lang.common.back')" @back="goBack">
+    <!-- <el-page-header :title="$t('common.back')" @back="goBack">
         <template #content>
             <span class="text-large font-600 mr-3">Question and answers</span>
         </template>
@@ -215,7 +215,7 @@ td {
         <template #footer>
             <div class="dialog-footer">
                 <el-button type="primary" @click="saveQa">
-                    {{ $t('lang.common.save') }}
+                    {{ $t('common.save') }}
                 </el-button>
                 <el-button @click="dialogVisible = false">Cancel</el-button>
             </div>
