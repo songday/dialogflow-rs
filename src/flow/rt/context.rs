@@ -67,7 +67,7 @@ impl Context {
         if let Ok(Some(mut d)) = r {
             d.push(String::from(session_id));
             if let Err(e) = db::write(TABLE, CONTEXT_KEY, &d) {
-                eprint!("{:?}", e);
+                eprint!("{e:?}");
             }
         }
         Self {

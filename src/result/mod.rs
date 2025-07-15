@@ -5,13 +5,13 @@ pub(crate) type Result<D> = core::result::Result<D, Error>;
 
 #[derive(Debug)]
 pub(crate) enum Error {
-    Db(redb::Error),
-    Serde(serde_json::Error),
-    TimeFormat(time::error::Format),
+    Db(Box<redb::Error>),
+    Serde(Box<serde_json::Error>),
+    TimeFormat(Box<time::error::Format>),
     WithMessage(String),
-    NetworkConnectTimeout(reqwest::Error),
-    NetworkReadTimeout(reqwest::Error),
-    InvalidJsonStructure(serde_json::Error),
+    NetworkConnectTimeout(Box<reqwest::Error>),
+    NetworkReadTimeout(Box<reqwest::Error>),
+    InvalidJsonStructure(Box<serde_json::Error>),
 }
 
 impl Serialize for Error {
@@ -47,43 +47,43 @@ impl From<regex::Error> for Error {
 
 impl From<redb::Error> for Error {
     fn from(err: redb::Error) -> Self {
-        Error::Db(err)
+        Error::Db(Box::new(err))
     }
 }
 
 impl From<redb::TransactionError> for Error {
     fn from(err: redb::TransactionError) -> Self {
-        Error::Db(err.into())
+        Error::Db(Box::new(err.into()))
     }
 }
 
 impl From<redb::DatabaseError> for Error {
     fn from(err: redb::DatabaseError) -> Self {
-        Error::Db(err.into())
+        Error::Db(Box::new(err.into()))
     }
 }
 
 impl From<redb::StorageError> for Error {
     fn from(err: redb::StorageError) -> Self {
-        Error::Db(err.into())
+        Error::Db(Box::new(err.into()))
     }
 }
 
 impl From<redb::TableError> for Error {
     fn from(err: redb::TableError) -> Self {
-        Error::Db(err.into())
+        Error::Db(Box::new(err.into()))
     }
 }
 
 impl From<redb::CommitError> for Error {
     fn from(err: redb::CommitError) -> Self {
-        Error::Db(err.into())
+        Error::Db(Box::new(err.into()))
     }
 }
 
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {
-        Error::Serde(err)
+        Error::Serde(Box::new(err))
     }
 }
 

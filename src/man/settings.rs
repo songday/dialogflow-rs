@@ -291,7 +291,9 @@ pub(crate) fn init_global() -> Result<GlobalSettings> {
     let format = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]]")
         .expect("Invalid format description");
     let t = time::OffsetDateTime::now_utc();
-    let t_str = t.format(&format).map_err(Error::TimeFormat)?;
+    let t_str = t
+        .format(&format)
+        .map_err(|e| Error::TimeFormat(Box::new(e)))?;
     db::write(TABLE, "db_init_time", &t_str)?;
     db::write(TABLE, "version", &String::from(server::VERSION))?;
     Ok(settings)
