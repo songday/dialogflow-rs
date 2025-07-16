@@ -365,10 +365,10 @@ async fn version() -> impl IntoResponse {
 async fn check_new_version() -> impl IntoResponse {
     let r = reqwest::get("https://dialogflowai.github.io/check-new-version.json").await;
     if let Err(e) = r {
-        return to_res(Err(Error::NetworkConnectTimeout(e)));
+        return to_res(Err(Error::NetworkConnectTimeout(Box::new(e))));
     }
     r.unwrap().text().await.map_or_else(
-        |e| to_res(Err(Error::NetworkReadTimeout(e))),
+        |e| to_res(Err(Error::NetworkReadTimeout(Box::new(e)))),
         |s| {
             #[derive(Debug, Deserialize, Serialize)]
             struct VersionInfo {
@@ -377,7 +377,7 @@ async fn check_new_version() -> impl IntoResponse {
             }
             let obj: core::result::Result<VersionInfo, _> = serde_json::from_str(&s);
             if let Err(e) = obj {
-                return to_res(Err(Error::InvalidJsonStructure(e)));
+                return to_res(Err(Error::InvalidJsonStructure(Box::new(e))));
             }
             let v = obj.unwrap();
             if convert_version(&v.version) > *VERSION_NUM {

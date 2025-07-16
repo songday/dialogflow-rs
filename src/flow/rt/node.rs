@@ -1053,8 +1053,10 @@ impl KnowledgeBaseAnswerNode {
                     distance,
                     self.recall_distance
                 );
-                if answer.is_some() && distance <= self.recall_distance {
-                    Some(answer.unwrap().answer)
+                if let Some(a) = answer
+                    && distance <= self.recall_distance
+                {
+                    Some(a.answer)
                 } else {
                     None
                 }
@@ -1102,9 +1104,11 @@ impl RuntimeNode for KnowledgeBaseAnswerNode {
                 KnowledgeBaseAnswerSource::QnA => self.retrieve_qa_answer(req),
                 KnowledgeBaseAnswerSource::Doc => self.retrieve_doc_answer(req),
             };
-            if r.is_some() && !r.as_ref().unwrap().is_empty() {
+            if let Some(content) = r
+                && !content.is_empty()
+            {
                 response.answers.push(AnswerData {
-                    content: r.unwrap(),
+                    content: content,
                     content_type: AnswerContentType::TextPlain,
                 });
                 add_next_node(ctx, &self.next_node_id);

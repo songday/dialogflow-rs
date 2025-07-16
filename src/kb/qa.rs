@@ -252,11 +252,10 @@ pub(crate) async fn retrieve_answer(
 
     let sql = format!(
         "
-        SELECT qa_data, v.distance FROM {}_qa q INNER JOIN
-        (SELECT qa_id, distance FROM {} WHERE vectors MATCH ? ORDER BY distance ASC LIMIT 1) v
+        SELECT qa_data, v.distance FROM {robot_id}_qa q INNER JOIN
+        (SELECT qa_id, distance FROM {robot_id} WHERE vectors MATCH ? ORDER BY distance ASC LIMIT 1) v
         ON q.id = v.qa_id
-        ",
-        robot_id, robot_id
+        "
     );
     let results = sqlx::query::<Sqlite>(&sql)
         .bind(serde_json::to_string(&vectors.0)?)
