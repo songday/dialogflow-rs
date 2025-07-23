@@ -1,6 +1,7 @@
 <template>
     <div style="text-align: right;">
         <div class="language-switcher">
+            {{ locale === 'zh' ? 'Language' : '语言切换' }}
             <el-dropdown v-model="isOpen" @command="switchLanguage">
                 <span class="el-dropdown-link lang-button">
                     <img :src="currentFlag" alt="flag" class="flag-icon" />

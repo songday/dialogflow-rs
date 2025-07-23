@@ -126,8 +126,7 @@ pub(super) async fn save(
         transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     ) -> Result<()> {
         let sql = format!(
-            "INSERT INTO {}_doc(file_name, file_size, doc_content, created_at)VALUES(?, ?, ?, unixepoch())",
-            robot_id
+            "INSERT INTO {robot_id}_doc(file_name, file_size, doc_content, created_at)VALUES(?, ?, ?, unixepoch())"
         );
         sqlx::query::<Sqlite>(&sql)
             .bind(file_name)
