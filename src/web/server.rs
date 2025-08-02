@@ -60,11 +60,11 @@ fn get_lang() -> String {
 // }
 
 pub async fn start_app() {
-    unsafe {
-        libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute(
-            sqlite_vec::sqlite3_vec_init as *const (),
-        )));
-    }
+    // unsafe {
+    //     libsqlite3_sys::sqlite3_auto_extension(Some(std::mem::transmute(
+    //         sqlite_vec::sqlite3_vec_init as *const (),
+    //     )));
+    // }
 
     crate::intent::phrase::init_datasource()
         .await
@@ -190,10 +190,7 @@ pub async fn start_app() {
     log::info!("Current version: {VERSION}");
     log::info!("Visiting https://dialogflowai.github.io/ for the latest releases");
 
-    log::info!(
-        "-->  Press {} to terminate this application",
-        "Ctrl+C".bright_red()
-    );
+    log::info!("-->  To close the server, hit {}", "Ctrl+C".bright_red());
 
     // let addr = format!("{}:{}", settings.ip, settings.port);
     // let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

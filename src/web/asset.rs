@@ -6,8 +6,8 @@ pub(crate) static ASSETS_MAP: LazyLock<HashMap<&str, usize>> = LazyLock::new(|| 
     HashMap::from([
         (r"/assets/DialogFlowAiSDK.min.js", 0),
         (r"/assets/inbound-bot-PJJg_rST.png", 1),
-        (r"/assets/index-Bb3q3-qP.css", 2),
-        (r"/assets/index-BgpdbGOH.js", 3),
+        (r"/assets/index-CBXDnolR.css", 2),
+        (r"/assets/index-HTbpkmSB.js", 3),
         (r"/assets/outbound-bot-EmsLuWRN.png", 4),
         (r"/assets/text-bot-CWb_Poym.png", 5),
         (r"/assets/usedByDialogNodeTextGeneration-DrFqkTqi.png", 6),

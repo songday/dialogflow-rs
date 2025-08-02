@@ -177,12 +177,6 @@ impl From<std::num::ParseFloatError> for Error {
     }
 }
 
-impl From<sqlx::Error> for Error {
-    fn from(err: sqlx::Error) -> Self {
-        Error::WithMessage(format!("SQL error: {err:?}"))
-    }
-}
-
 impl From<tokio::task::JoinError> for Error {
     fn from(err: tokio::task::JoinError) -> Self {
         Error::WithMessage(format!("Thread join error: {err:?}"))
@@ -203,6 +197,12 @@ impl From<zip::result::ZipError> for Error {
 
 impl From<quick_xml::encoding::EncodingError> for Error {
     fn from(err: quick_xml::encoding::EncodingError) -> Self {
+        Error::WithMessage(format!("Read docx file failed: {err:?}"))
+    }
+}
+
+impl From<turso::Error> for Error {
+    fn from(err: turso::Error) -> Self {
         Error::WithMessage(format!("Read docx file failed: {err:?}"))
     }
 }

@@ -1,8 +1,8 @@
 [
 (include_bytes!(r#"..\resources\assets/assets\DialogFlowAiSDK.min.js.gz"#), "text/javascript"),
 (include_bytes!(r#"..\resources\assets/assets\inbound-bot-PJJg_rST.png.gz"#), ""),
-(include_bytes!(r#"..\resources\assets/assets\index-Bb3q3-qP.css.gz"#), "text/css"),
-(include_bytes!(r#"..\resources\assets/assets\index-BgpdbGOH.js.gz"#), "text/javascript"),
+(include_bytes!(r#"..\resources\assets/assets\index-CBXDnolR.css.gz"#), "text/css"),
+(include_bytes!(r#"..\resources\assets/assets\index-HTbpkmSB.js.gz"#), "text/javascript"),
 (include_bytes!(r#"..\resources\assets/assets\outbound-bot-EmsLuWRN.png.gz"#), ""),
 (include_bytes!(r#"..\resources\assets/assets\text-bot-CWb_Poym.png.gz"#), ""),
 (include_bytes!(r#"..\resources\assets/assets\usedByDialogNodeTextGeneration-DrFqkTqi.png.gz"#), ""),
