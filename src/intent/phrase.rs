@@ -2,16 +2,16 @@ use std::sync::OnceLock;
 use std::vec::Vec;
 
 use futures_util::StreamExt;
-use sqlx::{Row, Sqlite};
+// use sqlx::{Row, Sqlite};
 
 use super::dto::IntentPhraseData;
 use crate::ai::embedding::embedding;
 use crate::result::{Error, Result};
 
-type SqliteConnPool = sqlx::Pool<Sqlite>;
+// type SqliteConnPool = sqlx::Pool<Sqlite>;
 
 // static DATA_SOURCE: OnceCell<SqliteConnPool> = OnceCell::new();
-static DATA_SOURCE: OnceLock<SqliteConnPool> = OnceLock::new();
+static DATA_SOURCE: OnceLock<turso::Database> = OnceLock::new();
 // static DATA_SOURCES: OnceLock<Mutex<HashMap<String, SqliteConnPool>>> = OnceLock::new();
 // static INDEXES: LazyLock<Mutex<HashMap<String, usearch::Index>>> =
 //     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
@@ -25,30 +25,17 @@ fn get_sqlite_path() -> std::path::PathBuf {
 }
 
 pub(crate) async fn init_datasource() -> Result<()> {
-    let p = get_sqlite_path();
-    let pool = crate::db::init_sqlite_datasource(p.as_path()).await?;
+    let p = std::path::Path::new(".").join("data");
+    if !p.exists() {
+        std::fs::create_dir_all(&p).expect("Create data directory failed.");
+    }
+    p.join("qa.dat");
+    let turso = turso::Builder::new_local(p.as_path().to_str().unwrap())
+        .build()
+        .await?;
     DATA_SOURCE
-        .set(pool)
+        .set(turso)
         .map_err(|_| Error::WithMessage(String::from("Datasource has been set.")))
-}
-
-pub async fn shutdown_db() {
-    // let mut r = match DATA_SOURCES.lock() {
-    //     Ok(l) => l,
-    //     Err(e) => e.into_inner(),
-    // };
-    // let all_keys: Vec<String> = r.keys().map(|k| String::from(k)).collect();
-    // let mut pools: Vec<SqliteConnPool> = Vec::with_capacity(all_keys.len());
-    // for key in all_keys {
-    //     let v = r.remove(&key).unwrap();
-    //     pools.push(v);
-    // }
-    // tokio::task::spawn_blocking(|| async move {
-    //     for p in pools.iter() {
-    //         p.close().await;
-    //     }
-    // });
-    DATA_SOURCE.get().unwrap().close().await;
 }
 
 pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {

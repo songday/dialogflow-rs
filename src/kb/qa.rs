@@ -34,6 +34,7 @@ pub(crate) async fn init_datasource() -> Result<()> {
     //     .map_err(|_| Error::WithMessage(String::from("Datasource has been set.")))
 }
 
+/*
 pub async fn shutdown_db() {
     // let mut r = match DATA_SOURCES.lock() {
     //     Ok(l) => l,
@@ -50,8 +51,9 @@ pub async fn shutdown_db() {
     //         p.close().await;
     //     }
     // });
-    // DATA_SOURCE.get().unwrap().close().await;
+    DATA_SOURCE.get().unwrap().close().await;
 }
+*/
 
 pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
     // println!("Init database");

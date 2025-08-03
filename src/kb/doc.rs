@@ -50,8 +50,9 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
             doc_content TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
-        CREATE TABLE {robot_id}_vec_row_id (
-            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT
+        CREATE TABLE {robot_id}_doc_vec (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            doc_id NOT NULL INTEGER
         );"
     );
     // // log::info!("sql = {}", &sql);
@@ -95,10 +96,10 @@ pub(super) async fn list(robot_id: &str) -> Result<Vec<DocData>> {
     let mut results = Vec::with_capacity(10);
     while let Some(row) = rows.next().await? {
         results.push(DocData {
-            id: row.get_value(0)?.as_integer().unwrap(),
-            file_name: row.file_name,
-            file_size: row.file_size,
-            doc_content: row.doc_content,
+            id: row.get_value(0)?.as_integer().unwrap().clone(),
+            file_name: String::from(row.get_value(0)?.as_text().unwrap()),
+            file_size: row.get_value(0)?.as_integer().unwrap().clone(),
+            doc_content: String::from(row.get_value(0)?.as_text().unwrap()),
         });
     }
     Ok(results)
@@ -110,38 +111,6 @@ pub(super) async fn save(
     file_size: usize,
     doc_content: &str,
 ) -> Result<()> {
-    async fn inner(
-        robot_id: &str,
-        file_name: &str,
-        file_size: usize,
-        doc_content: &str,
-        transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    ) -> Result<()> {
-        let sql = format!(
-            "INSERT INTO {robot_id}_doc(file_name, file_size, doc_content, created_at)VALUES(?, ?, ?, unixepoch())"
-        );
-        sqlx::query::<Sqlite>(&sql)
-            .bind(file_name)
-            .bind(file_size as i64)
-            .bind(doc_content)
-            .execute(&mut **transaction)
-            .await?;
-        Ok(())
-    }
-    let mut transaction = DATA_SOURCE.get().unwrap().begin().await?;
-    let r = inner(
-        robot_id,
-        file_name,
-        file_size,
-        doc_content,
-        &mut transaction,
-    )
-    .await;
-    if r.is_ok() {
-        transaction.commit().await?;
-    } else {
-        transaction.rollback().await?;
-    }
     Ok(())
 }
 
