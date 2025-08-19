@@ -19,7 +19,7 @@ name = "dialogflowai"
 # lzma-sys = { version = "*", features = ["static"] }
 # End
 # artful = "0.1.1"
-anyhow = "1.0.98"
+anyhow = "1.0.99"
 axum = {version = "0.8.4", features = ["query", "tokio", "macros", "multipart"]}
 bigdecimal = "0.4.8"
 # bytes = "1.9"
@@ -52,7 +52,7 @@ itoa = "1.0.15"
 # paste = "1.0"
 redb = "3.0.0"
 regex = "1.11.1"
-reqwest = { version = "0.12.22", default-features = false, features = ["native-tls", "stream"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["native-tls", "stream"] }
 rkyv = {version = "0.8.11", features = ["aligned", "alloc", "bytecheck"]}
 scru128 = "3.1.0"
 serde = { version = "1.0.219", features = ["derive"] }
