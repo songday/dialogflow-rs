@@ -8,7 +8,7 @@ use std::vec::Vec;
 use serde::{Deserialize, Serialize};
 use tokio::time::{Duration, interval};
 
-use super::node::RuntimeNnodeEnum;
+use super::node::RuntimeNodeEnum;
 use crate::ai::completion::Prompt;
 use crate::db;
 use crate::man::settings;
@@ -114,7 +114,7 @@ impl Context {
         // println!("add_node used time:{:?}", now.elapsed());
     }
 
-    pub(in crate::flow::rt) fn pop_node(&mut self) -> Option<RuntimeNnodeEnum> {
+    pub(in crate::flow::rt) fn pop_node(&mut self) -> Option<RuntimeNodeEnum> {
         // log::info!("nodes len {}", self.nodes.len());
         // let now = std::time::Instant::now();
         if self.node.is_some() {
