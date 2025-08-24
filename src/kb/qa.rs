@@ -86,21 +86,21 @@ pub(crate) async fn list(robot_id: &str) -> Result<Vec<QuestionAnswerPair>> {
     Ok(d)
 }
 
-pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<u64> {
+pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i64> {
     let mut conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
     let tx = conn.transaction().await?;
-    let record_id: u64;
+    let record_id: i64;
     if d.id.is_none() {
         let sql = format!("INSERT INTO {robot_id}_qa(qa_data, created_at)VALUES(?, unixepoch())");
         let mut stmt = tx.prepare(&sql).await?;
-        let r = stmt.execute((serde_json::to_string(&d)?,)).await?;
-        record_id = r;
-        d.id = Some(r);
+        stmt.execute((serde_json::to_string(&d)?,)).await?;
+        record_id = conn.last_insert_rowid();
+        d.id = Some(record_id);
     } else {
         let sql = format!("UPDATE {robot_id}_qa SET qa_data = ? WHERE id = ?");
         let mut stmt = tx.prepare(&sql).await?;
         record_id = d.id.unwrap();
-        let _r = stmt
+        stmt
             .execute((serde_json::to_string(&d)?, record_id))
             .await?;
     }

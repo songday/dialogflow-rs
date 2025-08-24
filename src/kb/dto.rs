@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct QuestionAnswerPair {
-    pub(super) id: Option<u64>,
+    pub(super) id: Option<i64>,
     pub(super) question: QuestionData,
     #[serde(rename = "similarQuestions")]
     pub(super) similar_questions: Vec<QuestionData>,
