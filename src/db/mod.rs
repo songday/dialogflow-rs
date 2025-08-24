@@ -5,8 +5,7 @@ use std::borrow::Borrow;
 use std::sync::LazyLock;
 use std::vec::Vec;
 
-use redb::ReadableTableMetadata;
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition};
 
 use crate::flow::mainflow::crud as mainflow;
 use crate::flow::rt::context;
@@ -298,6 +297,7 @@ pub(crate) fn save_txn<'a>(
 }
 */
 
+/*
 // pub(crate) fn save_txn<V>(
 pub(crate) fn save_txn(
     // v: Vec<(TableDefinition<K, V>,impl for<'a> Borrow<K::SelfType<'a>>, Box<&dyn erased_serde::Serialize>)>,
@@ -338,6 +338,7 @@ pub(crate) fn save_txn(
     write_txn.commit()?;
     Ok(())
 }
+*/
 
 pub(crate) fn remove<'a, K, V, KEY>(table: redb::TableDefinition<K, V>, key: KEY) -> Result<()>
 where

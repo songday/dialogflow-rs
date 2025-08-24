@@ -1,7 +1,7 @@
 use core::time::Duration;
 // use std::ops::DerefMut;
 
-use enum_dispatch::enum_dispatch;
+// use enum_dispatch::enum_dispatch;
 use lettre::transport::smtp::PoolConfig;
 use rkyv::{Archive, Deserialize, Serialize, util::AlignedVec};
 
@@ -33,24 +33,50 @@ const VAR_WRAP_SYMBOL: char = '`';
 //     TerminateNode = 5,
 // }
 
-#[enum_dispatch]
+// #[enum_dispatch]
 #[derive(Archive, Deserialize, Serialize)]
 #[rkyv(compare(PartialEq))]
-pub(crate) enum RuntimeNnodeEnum {
-    TextNode,
-    LlmGenTextNode,
-    ConditionNode,
-    GotoAnotherNode,
-    GotoMainFlowNode,
-    CollectNode,
-    ExternalHttpCallNode,
-    TerminateNode,
-    SendEmailNode,
-    LlmChatNode,
-    KnowledgeBaseAnswerNode,
+pub(crate) enum RuntimeNodeEnum {
+    TextNode(TextNode),
+    LlmGenTextNode(LlmGenTextNode),
+    ConditionNode(ConditionNode),
+    GotoAnotherNode(GotoAnotherNode),
+    GotoMainFlowNode(GotoMainFlowNode),
+    CollectNode(CollectNode),
+    ExternalHttpCallNode(ExternalHttpCallNode),
+    TerminateNode(TerminateNode),
+    SendEmailNode(SendEmailNode),
+    LlmChatNode(LlmChatNode),
+    KnowledgeBaseAnswerNode(KnowledgeBaseAnswerNode),
 }
 
-#[enum_dispatch(RuntimeNnodeEnum)]
+impl RuntimeNode for RuntimeNodeEnum {
+    fn exec(
+        &mut self,
+        req: &Request,
+        ctx: &mut Context,
+        response: &mut ResponseData,
+        channel_sender: &mut ResponseChannelWrapper,
+    ) -> bool {
+        match self {
+            RuntimeNodeEnum::TextNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::LlmGenTextNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::ConditionNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::GotoAnotherNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::GotoMainFlowNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::CollectNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::ExternalHttpCallNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::TerminateNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::SendEmailNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::LlmChatNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::KnowledgeBaseAnswerNode(n) => {
+                n.exec(req, ctx, response, channel_sender)
+            }
+        }
+    }
+}
+
+// #[enum_dispatch(RuntimeNodeEnum)]
 pub(crate) trait RuntimeNode {
     fn exec(
         &mut self,
@@ -138,7 +164,7 @@ impl RuntimeNode for TextNode {
         response: &mut ResponseData,
         channel_sender: &mut ResponseChannelWrapper,
     ) -> bool {
-        log::info!("Into TextNode {}", &self.text);
+        // log::info!("Into TextNode {}", &self.text);
         // let now = std::time::Instant::now();
         match replace_vars(&self.text, req, ctx) {
             Ok(answer) => {
@@ -460,7 +486,7 @@ impl RuntimeNode for TerminateNode {
         response: &mut ResponseData,
         channel_sender: &mut ResponseChannelWrapper,
     ) -> bool {
-        log::info!("Into TerminateNode");
+        // log::info!("Into TerminateNode");
         response.next_action = NextActionType::Terminate;
         if channel_sender.sender.is_some() {
             channel_sender.send_response(response);
@@ -847,7 +873,7 @@ impl RuntimeNode for LlmChatNode {
         // log::info!("Into LlmChatNode");
         let r = self.inner_exec(req, ctx, response, channel_sender);
         if r {
-            let r = RuntimeNnodeEnum::LlmChatNode(self.clone());
+            let r = RuntimeNodeEnum::LlmChatNode(self.clone());
             let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&r).unwrap();
             ctx.node = Some(bytes.into_vec());
         } else {
@@ -1081,7 +1107,7 @@ impl KnowledgeBaseAnswerNode {
                     content: s.clone(),
                     content_type: AnswerContentType::TextPlain,
                 });
-                let r = RuntimeNnodeEnum::KnowledgeBaseAnswerNode(self.clone());
+                let r = RuntimeNodeEnum::KnowledgeBaseAnswerNode(self.clone());
                 let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&r).unwrap();
                 ctx.node = Some(bytes.into_vec());
                 true
@@ -1150,11 +1176,11 @@ impl RuntimeNode for KnowledgeBaseAnswerNode {
     }
 }
 
-pub(crate) fn deser_node(bytes: &[u8]) -> Result<RuntimeNnodeEnum> {
+pub(crate) fn deser_node(bytes: &[u8]) -> Result<RuntimeNodeEnum> {
     // let now = std::time::Instant::now();
     let mut v = AlignedVec::<256>::with_capacity(bytes.len());
     v.extend_from_slice(bytes);
-    let r = rkyv::from_bytes::<RuntimeNnodeEnum, rkyv::rancor::Error>(&v).unwrap();
+    let r = rkyv::from_bytes::<RuntimeNodeEnum, rkyv::rancor::Error>(&v).unwrap();
     // let archived = rkyv::access::<ArchivedRuntimeNnodeEnum, rkyv::rancor::Error>(bytes).unwrap();
     // let deserialized = rkyv::deserialize::<RuntimeNnodeEnum, rkyv::rancor::Error>(archived).unwrap();
     // log::info!("deser_node time {:?}", now.elapsed());
