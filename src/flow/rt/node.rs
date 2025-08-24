@@ -69,7 +69,9 @@ impl RuntimeNode for RuntimeNodeEnum {
             RuntimeNodeEnum::TerminateNode(n) => n.exec(req, ctx, response, channel_sender),
             RuntimeNodeEnum::SendEmailNode(n) => n.exec(req, ctx, response, channel_sender),
             RuntimeNodeEnum::LlmChatNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::KnowledgeBaseAnswerNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::KnowledgeBaseAnswerNode(n) => {
+                n.exec(req, ctx, response, channel_sender)
+            }
         }
     }
 }
@@ -162,7 +164,7 @@ impl RuntimeNode for TextNode {
         response: &mut ResponseData,
         channel_sender: &mut ResponseChannelWrapper,
     ) -> bool {
-        log::info!("Into TextNode {}", &self.text);
+        // log::info!("Into TextNode {}", &self.text);
         // let now = std::time::Instant::now();
         match replace_vars(&self.text, req, ctx) {
             Ok(answer) => {
@@ -484,7 +486,7 @@ impl RuntimeNode for TerminateNode {
         response: &mut ResponseData,
         channel_sender: &mut ResponseChannelWrapper,
     ) -> bool {
-        log::info!("Into TerminateNode");
+        // log::info!("Into TerminateNode");
         response.next_action = NextActionType::Terminate;
         if channel_sender.sender.is_some() {
             channel_sender.send_response(response);

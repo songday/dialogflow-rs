@@ -1,1 +1,2 @@
-npm run dev
+rem npm run dev
+pnpm dev

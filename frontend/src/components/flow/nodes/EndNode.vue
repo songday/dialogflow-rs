@@ -89,7 +89,7 @@ const formLabelWidth = '90px'
         <!-- <teleport to="body"> -->
         <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="50%"
             :append-to-body="true" :destroy-on-close="true">
-            <el-form :label-position="labelPosition" label-width="100px" :model="nodeData">
+            <el-form :label-position="labelPosition" :label-width="formLabelWidth" :model="nodeData">
                 <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth">
                     <el-input v-model="nodeData.nodeName" />
                 </el-form-item>
@@ -98,7 +98,7 @@ const formLabelWidth = '90px'
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('.common.save') }}</el-button>
+                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
                 <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
             </div>
         </el-drawer>
