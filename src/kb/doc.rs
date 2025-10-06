@@ -25,7 +25,7 @@ pub(crate) async fn init_datasource() -> Result<()> {
     if !p.exists() {
         std::fs::create_dir_all(&p).expect("Create data directory failed.");
     }
-    p.join("doc.dat");
+    let p = p.join("doc.dat");
     let turso = turso::Builder::new_local(p.as_path().to_str().unwrap())
         .build()
         .await?;

@@ -20,7 +20,7 @@ pub(crate) async fn init_datasource() -> Result<()> {
     if !p.exists() {
         std::fs::create_dir_all(&p).expect("Create data directory failed.");
     }
-    p.join("qa.dat");
+    let p = p.join("qa.dat");
     let turso = turso::Builder::new_local(p.as_path().to_str().unwrap())
         .build()
         .await?;
@@ -58,12 +58,12 @@ pub async fn shutdown_db() {
 pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
     // println!("Init database");
     let sql = format!(
-        "CREATE TABLE {robot_id}_qa (
+        "CREATE TABLE {robot_id} (
             id INTEGER NOT NULL PRIMARY KEY,
             qa_data TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
-        CREATE INDEX idx_{robot_id}_created_at ON {robot_id}_qa (created_at);"
+        CREATE INDEX idx_created_at ON {robot_id} (created_at);"
     );
     let conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
     conn.execute(&sql, ()).await?;
@@ -72,7 +72,7 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
 
 pub(crate) async fn list(robot_id: &str) -> Result<Vec<QuestionAnswerPair>> {
     let conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
-    let sql = format!("SELECT qa_data FROM {robot_id}_qa ORDER BY created_at DESC",);
+    let sql = format!("SELECT qa_data FROM {robot_id} ORDER BY created_at DESC",);
     let mut stmt = conn.prepare(&sql).await?;
     let mut rows = stmt.query(["foo@example.com"]).await?;
     let mut d: Vec<QuestionAnswerPair> = Vec::with_capacity(10);
@@ -91,17 +91,17 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
     let tx = conn.transaction().await?;
     let record_id: i64;
     if d.id.is_none() {
-        let sql = format!("INSERT INTO {robot_id}_qa(qa_data, created_at)VALUES(?, unixepoch())");
+        let sql = format!("INSERT INTO {robot_id}(qa_data, created_at)VALUES(?, unixepoch())");
         let mut stmt = tx.prepare(&sql).await?;
         stmt.execute((serde_json::to_string(&d)?,)).await?;
-        record_id = conn.last_insert_rowid();
+        // record_id = conn.last_insert_rowid();
+        record_id = time::UtcDateTime::now().unix_timestamp() - 1760025600000;
         d.id = Some(record_id);
     } else {
-        let sql = format!("UPDATE {robot_id}_qa SET qa_data = ? WHERE id = ?");
+        let sql = format!("UPDATE {robot_id} SET qa_data = ? WHERE id = ?");
         let mut stmt = tx.prepare(&sql).await?;
         record_id = d.id.unwrap();
-        stmt
-            .execute((serde_json::to_string(&d)?, record_id))
+        stmt.execute((serde_json::to_string(&d)?, record_id))
             .await?;
     }
     let mut questions: Vec<&mut QuestionData> = Vec::with_capacity(5);
@@ -124,13 +124,13 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
         if q.vec_row_id.is_none() {
             if insert_stmt.is_none() {
                 let sql = format!(
-                    "CREATE TABLE IF NOT EXISTS {}_qa_vec (
+                    "CREATE TABLE IF NOT EXISTS {}_vec (
                 id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                 qa_id INTEGER NOT NULL,
-                vectors F32_BLOB({})
+                qa_vec F32_BLOB({})
             );
-            INSERT INTO {}_qa_vec (qa_id, vectors)VALUES(?, ?)",
-                    //  ON CONFLICT(rowid) DO UPDATE SET vectors = excluded.vectors;
+            INSERT INTO {}_vec (qa_id, qa_vec)VALUES(?1, ?2)",
+                    //  ON CONFLICT(rowid) DO UPDATE SET qa_vec = excluded.qa_vec;
                     robot_id,
                     vectors.0.len(),
                     robot_id
@@ -156,8 +156,8 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
         } else {
             if update_stmt.is_none() {
                 let sql = format!(
-                    "UPDATE {robot_id}_qa_vec SET vectors = ? WHERE qa_id = ?",
-                    //  ON CONFLICT(rowid) DO UPDATE SET vectors = excluded.vectors;
+                    "UPDATE {robot_id}_vec SET qa_vec = ? WHERE qa_id = ?",
+                    //  ON CONFLICT(rowid) DO UPDATE SET qa_vec = excluded.qa_vec;
                 );
                 update_stmt = Some(tx.prepare(&sql).await?);
             }
@@ -186,11 +186,11 @@ pub(crate) async fn delete(robot_id: &str, d: QuestionAnswerPair) -> Result<()> 
     let mut conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
     let tx = conn.transaction().await?;
     let id = d.id.unwrap();
-    let sql = format!("DELETE FROM {robot_id}_qa_vec WHERE qa_id = ?1");
+    let sql = format!("DELETE FROM {robot_id}_vec WHERE qa_id = ?1");
     let mut stmt = tx.prepare(&sql).await?;
     let id = turso::Value::Integer(id as i64);
     stmt.execute([id.clone()]).await?;
-    let sql = format!("DELETE FROM {robot_id}_qa WHERE id = ?1");
+    let sql = format!("DELETE FROM {robot_id} WHERE id = ?1");
     let mut stmt = tx.prepare(&sql).await?;
     stmt.execute([id]).await?;
     tx.commit().await?;
@@ -211,8 +211,8 @@ pub(crate) async fn retrieve_answer(
 
     let sql = format!(
         "
-        SELECT qa_data, v.distance FROM {robot_id}_qa q INNER JOIN
-        (SELECT qa_id, distance FROM {robot_id} WHERE vectors MATCH ?1 ORDER BY distance ASC LIMIT 1) v
+        SELECT qa_data, v.distance FROM {robot_id} q INNER JOIN
+        (SELECT qa_id, distance FROM {robot_id}_vec WHERE qa_vec MATCH ?1 ORDER BY distance ASC LIMIT 1) v
         ON q.id = v.qa_id
         "
     );

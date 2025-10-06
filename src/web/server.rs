@@ -414,9 +414,9 @@ async fn shutdown_signal(sender: tokio::sync::oneshot::Sender<()>) {
         Err(_) => log::info!("中断 ctx 失败"),
     };
 
-    crate::intent::phrase::shutdown_db().await;
-    crate::kb::qa::shutdown_db().await;
-    crate::kb::doc::shutdown_db().await;
+    // crate::intent::phrase::shutdown_db().await;
+    // crate::kb::qa::shutdown_db().await;
+    // crate::kb::doc::shutdown_db().await;
 
     let m = if *IS_EN {
         "This program has been terminated"

@@ -191,19 +191,19 @@ impl From<axum::extract::multipart::MultipartError> for Error {
 
 impl From<zip::result::ZipError> for Error {
     fn from(err: zip::result::ZipError) -> Self {
-        Error::WithMessage(format!("Read docx file failed: {err:?}"))
+        Error::WithMessage(format!("ZipError failed: {err:?}"))
     }
 }
 
 impl From<quick_xml::encoding::EncodingError> for Error {
     fn from(err: quick_xml::encoding::EncodingError) -> Self {
-        Error::WithMessage(format!("Read docx file failed: {err:?}"))
+        Error::WithMessage(format!("quick_xml EncodingError failed: {err:?}"))
     }
 }
 
 impl From<turso::Error> for Error {
     fn from(err: turso::Error) -> Self {
-        Error::WithMessage(format!("Read docx file failed: {err:?}"))
+        Error::WithMessage(format!("turso Error failed: {err:?}"))
     }
 }
 
