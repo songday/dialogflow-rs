@@ -145,7 +145,7 @@ const goBack = () => {
         </el-form>
         <div class="demo-drawer__footer">
             <el-button type="primary" :loading="loading" @click="saveDoc()">{{ t('common.save') }}</el-button>
-            <el-button @click="editFormVisible = false">{{ t('.common.cancel') }}</el-button>
+            <el-button @click="editFormVisible = false">{{ t('common.cancel') }}</el-button>
         </div>
     </el-drawer>
 </template>

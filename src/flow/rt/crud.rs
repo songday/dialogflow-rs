@@ -1,4 +1,4 @@
-use redb::{ReadableTable, TableDefinition};
+use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::db;
 use crate::result::Result;
@@ -10,7 +10,7 @@ fn get_table_name(main_flow_id: &str) -> String {
 pub(crate) fn get_runtime_node(
     main_flow_id: &str,
     key: &str,
-) -> Result<Option<crate::flow::rt::node::RuntimeNnodeEnum>> {
+) -> Result<Option<crate::flow::rt::node::RuntimeNodeEnum>> {
     let table_name = get_table_name(main_flow_id);
     let table: TableDefinition<&str, &[u8]> = TableDefinition::new(&table_name);
     let read_txn = db::DB.begin_read()?;

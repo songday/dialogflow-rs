@@ -49,7 +49,7 @@ pub(crate) async fn req(
     let req = build_req(&info, timeout_milliseconds, vars)?;
     let res = req.send().await?;
     // println!("http status code {}", res.status().as_str());
-    if res.status().as_u16() != 200 {
+    if res.status() != reqwest::StatusCode::OK {
         return Ok(ResponseData::None);
     }
     let content_type = res

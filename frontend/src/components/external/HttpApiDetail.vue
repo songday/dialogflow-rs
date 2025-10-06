@@ -304,7 +304,7 @@ const changeTab = (v) => {
         <el-button @click="setFormVisible = false">{{ $t('common.cancel') }}</el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="varDialogVisible" title="Insert a variable" width="30%">
+    <el-dialog v-model="varDialogVisible" title="Insert a variable" width="30%" :append-to-body="true" :destroy-on-close="true">
       <el-select v-model="selectedVar" class="m-2" placeholder="Choose a variable" size="large">
         <el-option v-for="item in vars" :key="item.varName" :label="item.varName" :value="item.varName" />
       </el-select>

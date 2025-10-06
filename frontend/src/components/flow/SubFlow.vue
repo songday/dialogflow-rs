@@ -682,6 +682,7 @@ async function dryrun() {
     }
     userAsk.value = '';
     waitingResponse.value = false;
+    dryrunInput.value.focus();
     nextTick(() => {
         // console.log(dryrunChatRecords.value.clientHeight);
         chatScrollbarRef.value.setScrollTop(dryrunChatRecords.value.clientHeight);

@@ -1,6 +1,8 @@
 [
 (include_bytes!(r#"..\resources\assets/assets\DialogFlowAiSDK.min.js.gz"#), "text/javascript"),
 (include_bytes!(r#"..\resources\assets/assets\inbound-bot-PJJg_rST.png.gz"#), ""),
+(include_bytes!(r#"..\resources\assets/assets\index-BgHOwAJS.js.gz"#), "text/javascript"),
+(include_bytes!(r#"..\resources\assets/assets\index-C1HBSe1j.css.gz"#), "text/css"),
 (include_bytes!(r#"..\resources\assets/assets\index-CBXDnolR.css.gz"#), "text/css"),
 (include_bytes!(r#"..\resources\assets/assets\index-HTbpkmSB.js.gz"#), "text/javascript"),
 (include_bytes!(r#"..\resources\assets/assets\outbound-bot-EmsLuWRN.png.gz"#), ""),
