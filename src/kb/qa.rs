@@ -110,6 +110,9 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
         let similar_questions: Vec<&mut QuestionData> = d.similar_questions.iter_mut().collect();
         questions.extend(similar_questions);
     }
+
+    let mut created_table = false;
+
     let mut insert_stmt = Option::None::<turso::Statement>;
     let mut update_stmt = Option::None::<turso::Statement>;
     for q in questions.iter_mut() {
@@ -122,18 +125,21 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
 
         log::info!("vectors.0.len() = {}", vectors.0.len());
         if q.vec_row_id.is_none() {
+            if !created_table {
+                let sql = format!(
+                    "CREATE TABLE IF NOT EXISTS {robot_id}_vec (
+                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        qa_id INTEGER NOT NULL,
+                        qa_vec F32_BLOB({})
+                    );
+                    ", vectors.0.len(),);
+                tx.execute(&sql, ()).await?;
+                created_table = true;
+            }
             if insert_stmt.is_none() {
                 let sql = format!(
-                    "CREATE TABLE IF NOT EXISTS {}_vec (
-                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                qa_id INTEGER NOT NULL,
-                qa_vec F32_BLOB({})
-            );
-            INSERT INTO {}_vec (qa_id, qa_vec)VALUES(?1, ?2)",
+                    "INSERT INTO {robot_id}_vec (qa_id, qa_vec)VALUES(?1, vector32(?2))",
                     //  ON CONFLICT(rowid) DO UPDATE SET qa_vec = excluded.qa_vec;
-                    robot_id,
-                    vectors.0.len(),
-                    robot_id
                 );
                 insert_stmt = Some(tx.prepare(&sql).await?);
             }
@@ -156,7 +162,7 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
         } else {
             if update_stmt.is_none() {
                 let sql = format!(
-                    "UPDATE {robot_id}_vec SET qa_vec = ? WHERE qa_id = ?",
+                    "UPDATE {robot_id}_vec SET qa_vec = vector32(?1) WHERE qa_id = ?2",
                     //  ON CONFLICT(rowid) DO UPDATE SET qa_vec = excluded.qa_vec;
                 );
                 update_stmt = Some(tx.prepare(&sql).await?);
@@ -212,7 +218,7 @@ pub(crate) async fn retrieve_answer(
     let sql = format!(
         "
         SELECT qa_data, v.distance FROM {robot_id} q INNER JOIN
-        (SELECT qa_id, distance FROM {robot_id}_vec WHERE qa_vec MATCH ?1 ORDER BY distance ASC LIMIT 1) v
+        (SELECT qa_id, vector_distance_cos(phrase_vec, vector32(?1)) AS distance FROM {robot_id}_vec ORDER BY distance ASC LIMIT 1) v
         ON q.id = v.qa_id
         "
     );
