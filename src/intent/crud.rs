@@ -325,6 +325,7 @@ pub(crate) async fn add_phrase(
                 id: vec_row_id,
                 phrase: String::from(params.data.as_str()),
             });
+            // log::info!("intent detail {} {}", intent_id, serde_json::to_string(&d).unwrap());
             db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, intent_id, &d)
         });
     to_res(r)

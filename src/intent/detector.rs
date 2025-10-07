@@ -28,6 +28,7 @@ pub(crate) async fn detect(robot_id: &str, s: &str) -> Result<Option<String>> {
     // log::info!("intents.len {}", intents.len());
     let mut empty_phrase = true;
     for detail in intents.iter() {
+        // log::info!("intent detail {} {}", detail.intent_id, serde_json::to_string(&detail).unwrap());
         // log::info!("detail.keywords.len {}", detail.keywords.len());
         let unicase_s = UniCase::new(s);
         for k in detail.keywords.iter() {
@@ -43,7 +44,7 @@ pub(crate) async fn detect(robot_id: &str, s: &str) -> Result<Option<String>> {
                 return Ok(Some(detail.intent_name.clone()));
             }
         }
-        empty_phrase = detail.phrases.is_empty();
+        empty_phrase = empty_phrase && detail.phrases.is_empty();
     }
     if empty_phrase {
         return Ok(None);
