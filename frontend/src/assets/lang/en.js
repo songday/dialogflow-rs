@@ -2,6 +2,7 @@ export default {
     common: {
         add: 'Add',
         back: 'Back',
+        close: 'Close',
         save: 'Save',
         saved: 'Successfully saved',
         create: 'Create',
@@ -127,6 +128,7 @@ export default {
             title: 'Add new intent',
             name: 'Name',
         },
+        test: 'Test intent detection',
         detail: {
             edit: 'Edit intent',
             kw: 'Keywords',

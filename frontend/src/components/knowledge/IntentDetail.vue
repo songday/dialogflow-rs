@@ -298,7 +298,7 @@ const goBack = () => {
         model first.
     </div>
     <el-divider />
-    <el-alert v-show="showAddedPhraseFailedTip" :title="addPhraseFailedAlertTitle" type="error"
+    <el-alert v-if="showAddedPhraseFailedTip" :title="addPhraseFailedAlertTitle" type="error"
         description="But don't worry, maybe you switched different embedding provider caused this. You can press 'Regenerate all similar sentences.' button below to fix this issue."
         show-icon />
     <div v-show="!phraseInputDisabled">

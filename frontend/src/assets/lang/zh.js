@@ -3,6 +3,7 @@ export default {
     common: {
         add: '新增',
         back: '返回',
+        close: '关闭',
         save: '保存',
         saved: '保存成功',
         cancel: '取消',
@@ -128,6 +129,7 @@ export default {
             title: '新增意图',
             name: '意图名',
         },
+        test: '测试意图检测',
         detail: {
             edit: '编辑意图',
             kw: '关键词',
