@@ -185,6 +185,7 @@ pub async fn clean_expired_session(mut recv: tokio::sync::oneshot::Receiver<()>)
           _ = interval.tick() => {
           }
           _ = &mut recv => {
+            log::info!("Closing this app.");
             break;
           }
         }

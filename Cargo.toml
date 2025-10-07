@@ -73,21 +73,22 @@ log = "0.4.28"
 env_logger = "0.11.8"
 lettre = { version = "0.11.18", default-features = false, features = ["builder", "tokio1", "smtp-transport", "tokio1-native-tls", "pool"]}
 unicase = "2.8.1"
-sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }
+# sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }
 lopdf = "0.38.0"
 # docx-rs = "0.4.17"
 # lancedb = "0.13.0"
-libsqlite3-sys = { version = "0.30", features = ["bundled"] }
+# libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 validator = "0.20"
 zip = "5.1.1"
 quick-xml = "0.38.3"
 # usearch = "2.17"
 # cxx = "1.0"
 # triple_accel = "0.4.0"
-# [target.'cfg(not(target_os = "linux"))'.dependencies]
-sqlite-vec = "0.1.6"
+# # [target.'cfg(not(target_os = "linux"))'.dependencies]
+# sqlite-vec = "0.1.6"
 text-splitter = { version = "0.28.0", default-features = false, features = ["tokenizers"] }
 num_cpus = "1.17.0"
+turso = "0.2.1"
 # sqlite-vec = { path = "/mnt/d/work/sqlite-vec/bindings/rust/" }
 
 [build-dependencies]

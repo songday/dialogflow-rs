@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct QuestionAnswerPair {
-    pub(super) id: Option<String>,
+    pub(super) id: Option<i64>,
     pub(super) question: QuestionData,
     #[serde(rename = "similarQuestions")]
     pub(super) similar_questions: Vec<QuestionData>,
@@ -21,10 +21,10 @@ pub(crate) struct QuestionAnswerPair {
 #[derive(Deserialize, Serialize)]
 pub(crate) struct QuestionData {
     pub(super) question: String,
-    pub(super) vec_row_id: Option<i64>,
+    pub(super) vec_row_id: Option<u64>,
 }
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize)] // , sqlx::FromRow
 pub(crate) struct DocData {
     pub(crate) id: i64,
     #[serde(rename = "fileName")]

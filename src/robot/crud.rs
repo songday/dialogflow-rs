@@ -64,7 +64,7 @@ async fn new(d: &RobotData, is_en: bool) -> Result<()> {
     persist(d)?;
     // 机器人意图
     settings::init(&d.robot_id)?;
-    crate::intent::phrase::init_tables(&d.robot_id).await?;
+    // crate::intent::phrase::init_tables(&d.robot_id).await?;
     crate::kb::qa::init_tables(&d.robot_id).await?;
     crate::kb::doc::init_tables(&d.robot_id).await?;
     // 意图
