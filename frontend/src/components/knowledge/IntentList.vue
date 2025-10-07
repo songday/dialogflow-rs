@@ -117,7 +117,7 @@ function detectIntent() {
     <h1>{{ $t('intent.title') }}</h1>
     <el-button type="primary" class="ml-2" @click="dialogFormVisible = true">{{ $t('intent.add')
         }}</el-button>
-    <el-button type="primary" @click="dryRunFormVisible = true">Test intent detection</el-button>
+    <el-button type="primary" @click="dryRunFormVisible = true">{{ t('intent.test')}}</el-button>
     <el-table :data="intentData" stripe style="width: 100%">
         <el-table-column prop="intent_name" :label="tm('intent.table')[0]" width="220" />
         <el-table-column :label="tm('intent.table')[1]" width="180">
@@ -160,7 +160,7 @@ function detectIntent() {
             </span>
         </template>
     </el-dialog>
-    <el-drawer v-model="dryRunFormVisible" title="Test intent detection" direction="rtl" size="50%">
+    <el-drawer v-model="dryRunFormVisible" :title="t('intent.test')" direction="rtl" size="50%">
         <el-form>
             <el-form-item label="">
                 <el-input v-model="testIntentDetectionText" style="width: 240px"
@@ -172,7 +172,7 @@ function detectIntent() {
         </el-form>
         <div class="demo-drawer__footer">
             <el-button type="primary" :loading="loading" @click="detectIntent">Test</el-button>
-            <el-button @click="dryRunFormVisible = false">Close</el-button>
+            <el-button @click="dryRunFormVisible = false">{{ $t('common.close') }}</el-button>
         </div>
     </el-drawer>
 </template>

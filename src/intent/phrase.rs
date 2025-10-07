@@ -16,13 +16,13 @@ static DATA_SOURCE: OnceLock<turso::Database> = OnceLock::new();
 // static INDEXES: LazyLock<Mutex<HashMap<String, usearch::Index>>> =
 //     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
 
-fn get_sqlite_path() -> std::path::PathBuf {
-    let p = std::path::Path::new(".").join("data");
-    if !p.exists() {
-        std::fs::create_dir_all(&p).expect("Create data directory failed.");
-    }
-    p.join("ripd.dat")
-}
+// fn get_sqlite_path() -> std::path::PathBuf {
+//     let p = std::path::Path::new(".").join("data");
+//     if !p.exists() {
+//         std::fs::create_dir_all(&p).expect("Create data directory failed.");
+//     }
+//     p.join("ripd.dat")
+// }
 
 pub(crate) async fn init_datasource() -> Result<()> {
     let p = std::path::Path::new(".").join("data");
@@ -67,10 +67,24 @@ pub(crate) async fn init_datasource() -> Result<()> {
 // }
 
 pub(crate) async fn search(robot_id: &str, vectors: &Vec<f32>) -> Result<Vec<(String, f64)>> {
-    let sql = format!(
-        "SELECT intent_id, intent_name, distance FROM {robot_id} WHERE phrase_vec MATCH ? ORDER BY distance ASC LIMIT 1",
-    );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
+    //*
+    let sql = format!(
+        "SELECT intent_name, vector_distance_cos(phrase_vec, vector32(?1)) AS distance FROM {robot_id}",
+    );
+    let mut results = conn.query(&sql, [serde_json::to_string(vectors)?]).await?;
+    while let Some(r) = results.next().await? {
+        log::info!(
+            "intent_name = {}, distance = {}",
+            r.get_value(0)?.as_text().unwrap(),
+            r.get_value(1)?.as_real().unwrap()
+        );
+    }
+    //*/
+    let sql = format!(
+        "SELECT intent_id, intent_name, vector_distance_cos(phrase_vec, vector32(?1)) AS distance FROM {robot_id} ORDER BY distance ASC LIMIT 1",
+    );
+    // log::info!("sql = {} {}", &sql, serde_json::to_string(vectors)?);
     let mut results = conn.query(&sql, [serde_json::to_string(vectors)?]).await?;
     // let results = sqlx::query::<Sqlite>(&sql)
     //     .bind(serde_json::to_string(vectors)?)
@@ -131,21 +145,22 @@ pub(crate) async fn add(
     let conn = DATA_SOURCE.get().unwrap().connect()?;
     if vec_row_id.is_none() {
         let sql = format!(
-                "CREATE TABLE IF NOT EXISTS {robot_id} (
-                            id INTEGER NOT NULL PRIMARY KEY,
-                            intent_id TEXT NOT NULL,
-                            intent_name TEXT NOT NULL,
-                            phrase TEXT NOT NULL,
-                            phrase_vec F32_BLOB({})
-                        );
-                INSERT INTO {robot_id} (id, intent_id, intent_name, phrase, phrase_vec)VALUES(?1, ?2, ?3, ?4, ?5)",
-                vectors.0.len()
-            );
-        let id = time::UtcDateTime::now().unix_timestamp() - 1760025600000;
+            "CREATE TABLE IF NOT EXISTS {robot_id} (
+                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                intent_id TEXT NOT NULL,
+                intent_name TEXT NOT NULL,
+                phrase TEXT NOT NULL,
+                phrase_vec F32_BLOB({})
+            )",
+            vectors.0.len()
+        );
+        conn.execute(&sql, ()).await?;
+        let sql = format!(
+            "INSERT INTO {robot_id} (intent_id, intent_name, phrase, phrase_vec)VALUES(?1, ?2, ?3, vector32(?4))",
+        );
         conn.execute(
             &sql,
             (
-                id,
                 intent_id,
                 intent_name,
                 phrase,
@@ -161,9 +176,12 @@ pub(crate) async fn add(
         //     .bind(serde_json::to_string(vec)?)
         //     .execute(&mut **txn)
         //     .await?;
+        let id = conn.last_insert_rowid();
+        log::info!("last_insert_rowid = {}", id);
         Ok(id)
     } else {
-        let sql = format!("UPDATE {robot_id} SET phrase = ?1, phrase_vec = ?2 WHERE id = ?3",);
+        let sql =
+            format!("UPDATE {robot_id} SET phrase = ?1, phrase_vec = vector32(?2) WHERE id = ?3",);
         let vec_row_id = vec_row_id.unwrap();
         conn.execute(
             &sql,
