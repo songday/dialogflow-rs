@@ -30,7 +30,7 @@ fn main() {
     builder.init();
 
     let runtime = Builder::new_multi_thread()
-        .worker_threads(num_cpus::get() * 5)
+        .worker_threads(num_cpus::get() + 5)
         .thread_name("dialogflowai")
         .thread_stack_size(3 * 1024 * 1024)
         .enable_io()
