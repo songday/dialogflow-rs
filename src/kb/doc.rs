@@ -43,14 +43,14 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
     // println!("Init database");
     // let ddl = include_str!("./embedding_ddl.sql");
     let sql = format!(
-        "CREATE TABLE {robot_id}_doc (
+        "CREATE TABLE {robot_id} (
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
             file_name TEXT NOT NULL,
             file_size INTEGER NOT NULL,
             doc_content TEXT NOT NULL,
             created_at INTEGER NOT NULL
         );
-        CREATE TABLE {robot_id}_doc_vec (
+        CREATE TABLE {robot_id}_vec (
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
             doc_id NOT NULL INTEGER
         );"
@@ -76,7 +76,7 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
 //         file_size: usize,
 //         doc_content: &str) -> Result<()> {
 //             let sql = format!(
-//                 "INSERT INTO {}_doc(file_name, file_size, doc_content, created_at)VALUES(?, ?, ?, unixepoch())",
+//                 "INSERT INTO {}(file_name, file_size, doc_content, created_at)VALUES(?, ?, ?, unixepoch())",
 //                 robot_id
 //             );
 //             sqlx::query::<Sqlite>(&sql)
@@ -90,7 +90,7 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
 // }
 
 pub(super) async fn list(robot_id: &str) -> Result<Vec<DocData>> {
-    let sql = format!("SELECT * FROM {robot_id}_doc ORDER BY created_at DESC");
+    let sql = format!("SELECT * FROM {robot_id} ORDER BY created_at DESC");
     let conn = DATA_SOURCE.get().unwrap().connect()?;
     let mut rows = conn.query(&sql, ()).await?;
     let mut results = Vec::with_capacity(10);

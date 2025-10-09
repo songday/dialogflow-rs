@@ -73,15 +73,12 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
 pub(crate) async fn list(robot_id: &str) -> Result<Vec<QuestionAnswerPair>> {
     let conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
     let sql = format!("SELECT qa_data FROM {robot_id} ORDER BY created_at DESC",);
-    let mut stmt = conn.prepare(&sql).await?;
-    let mut rows = stmt.query(["foo@example.com"]).await?;
+    let mut rows = conn.query(&sql, ()).await?;
     let mut d: Vec<QuestionAnswerPair> = Vec::with_capacity(10);
-    while let Ok(op) = rows.next().await {
-        if let Some(row) = op {
-            d.push(serde_json::from_str(dbg!(
-                row.get_value(0)?.as_text().unwrap()
-            ))?);
-        }
+    while let Some(row) = rows.next().await? {
+        d.push(serde_json::from_str(dbg!(
+            row.get_value(0)?.as_text().unwrap()
+        ))?);
     }
     Ok(d)
 }
@@ -132,7 +129,9 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
                         qa_id INTEGER NOT NULL,
                         qa_vec F32_BLOB({})
                     );
-                    ", vectors.0.len(),);
+                    ",
+                    vectors.0.len(),
+                );
                 tx.execute(&sql, ()).await?;
                 created_table = true;
             }
