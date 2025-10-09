@@ -134,6 +134,11 @@ pub(crate) async fn add(
     intent_name: &str,
     phrase: &str,
 ) -> Result<i64> {
+    if intent_name.is_empty() {
+        let err = format!("{phrase} intent_name is empty");
+        log::warn!("{}", &err);
+        return Err(Error::WithMessage(err));
+    }
     // check_datasource(robot_id, intent_id).await?;
     let vectors = embedding(robot_id, phrase).await?;
     if vectors.0.is_empty() {

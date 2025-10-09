@@ -171,7 +171,7 @@ async function newPhrase() {
         formData.id = route.query.id;
         formData.data = phraseValue.value;
         const t = await httpReq('POST', 'intent/phrase', { robotId: robotId, id: formData.id, data: route.query.idx }, null, formData);
-        console.log(t.data);
+        // console.log(t.data);
         if (t.status == 200)
             intentData.phrases.push(phraseValue.value)
         else {
@@ -287,7 +287,7 @@ const goBack = () => {
         {{ tag }}
     </el-tag>
     <el-input v-if="phraseInputVisible" ref="phraseInputRef" v-model="phraseValue" class="ml-1 w-20" size="small"
-        @keyup.enter="newPhrase" @blur="newPhrase" />
+        @keyup.enter="newPhrase" /><!-- @blur="newPhrase"-->
     <el-button v-else class="button-new-tag ml-1" size="small" @click="showPhraseInput" :disabled="phraseInputDisabled">
         + {{ $t('intent.detail.addSp') }}
     </el-button>

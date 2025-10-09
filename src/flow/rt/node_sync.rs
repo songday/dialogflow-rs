@@ -294,7 +294,7 @@ impl RuntimeNode for LlmGenTextNode {
             let now = std::time::Instant::now();
             let mut s = String::with_capacity(1024);
             if let Err(e) = tokio::task::block_in_place(|| {
-                // log::info!("prompt |{}|", &self.prompt);
+                log::info!("prompt |{}|", &self.prompt);
                 tokio::runtime::Handle::current().block_on(crate::ai::chat::chat(
                     &req.robot_id,
                     Some(chat_history),

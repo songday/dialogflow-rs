@@ -55,6 +55,8 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
             doc_id NOT NULL INTEGER
         );"
     );
+    let conn = DATA_SOURCE.get().unwrap().connect()?;
+    conn.execute(&sql, ()).await?;
     // // log::info!("sql = {}", &sql);
     // let mut stream = sqlx::raw_sql(&sql).execute_many(DATA_SOURCE.get().unwrap());
     // while let Some(res) = stream.next().await {
