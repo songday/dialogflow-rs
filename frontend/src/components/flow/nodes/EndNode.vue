@@ -23,7 +23,10 @@ onMounted(async () => {
     // const node = getNode();
     const data = node.getData();
     // console.log(data);
-    copyProperties(data, nodeData);
+    if (data == null)
+        node.setData(nodeData, { silent: true });
+    else
+        copyProperties(data, nodeData);
     if (nodeData.newNode) {
         nodeData.nodeName += data.nodeCnt.toString();
         nodeData.newNode = false;
