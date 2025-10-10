@@ -58,7 +58,7 @@ pub(in crate::flow::rt) async fn process(
         role: String::from("user"),
         content: HTML_TAG_REGEX.replace_all(&req.user_input, "").to_string(),
     });
-    let r = exec(req, &mut ctx);
+    let r = exec(req, &mut ctx).await;
     if r.is_ok() {
         let (res, _receiver) = r.as_ref().unwrap();
         if !res.answers.is_empty() {
@@ -77,7 +77,7 @@ pub(in crate::flow::rt) async fn process(
     r
 }
 
-pub(in crate::flow::rt) fn exec(
+pub(in crate::flow::rt) async fn exec(
     req: &Request,
     ctx: &mut Context,
 ) -> Result<(
@@ -94,7 +94,7 @@ pub(in crate::flow::rt) fn exec(
         // let now = std::time::Instant::now();
         if let Some(mut n) = ctx.pop_node() {
             // println!("pop node {:?}", now.elapsed());
-            let ret = n.exec(req, ctx, &mut response, &mut sender_wapper);
+            let ret = n.exec(req, ctx, &mut response, &mut sender_wapper).await;
             // println!("node exec {:?}", now.elapsed());
             if ret {
                 // log::info!("exec time {:?}", now.elapsed());

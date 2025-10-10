@@ -51,7 +51,7 @@ pub(crate) enum RuntimeNodeEnum {
 }
 
 impl RuntimeNode for RuntimeNodeEnum {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -59,18 +59,22 @@ impl RuntimeNode for RuntimeNodeEnum {
         channel_sender: &mut ResponseChannelWrapper,
     ) -> bool {
         match self {
-            RuntimeNodeEnum::TextNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::LlmGenTextNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::ConditionNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::GotoAnotherNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::GotoMainFlowNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::CollectNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::ExternalHttpCallNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::TerminateNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::SendEmailNode(n) => n.exec(req, ctx, response, channel_sender),
-            RuntimeNodeEnum::LlmChatNode(n) => n.exec(req, ctx, response, channel_sender),
+            RuntimeNodeEnum::TextNode(n) => n.exec(req, ctx, response, channel_sender).await,
+            RuntimeNodeEnum::LlmGenTextNode(n) => n.exec(req, ctx, response, channel_sender).await,
+            RuntimeNodeEnum::ConditionNode(n) => n.exec(req, ctx, response, channel_sender).await,
+            RuntimeNodeEnum::GotoAnotherNode(n) => n.exec(req, ctx, response, channel_sender).await,
+            RuntimeNodeEnum::GotoMainFlowNode(n) => {
+                n.exec(req, ctx, response, channel_sender).await
+            }
+            RuntimeNodeEnum::CollectNode(n) => n.exec(req, ctx, response, channel_sender).await,
+            RuntimeNodeEnum::ExternalHttpCallNode(n) => {
+                n.exec(req, ctx, response, channel_sender).await
+            }
+            RuntimeNodeEnum::TerminateNode(n) => n.exec(req, ctx, response, channel_sender).await,
+            RuntimeNodeEnum::SendEmailNode(n) => n.exec(req, ctx, response, channel_sender).await,
+            RuntimeNodeEnum::LlmChatNode(n) => n.exec(req, ctx, response, channel_sender).await,
             RuntimeNodeEnum::KnowledgeBaseAnswerNode(n) => {
-                n.exec(req, ctx, response, channel_sender)
+                n.exec(req, ctx, response, channel_sender).await
             }
         }
     }
@@ -78,16 +82,6 @@ impl RuntimeNode for RuntimeNodeEnum {
 
 // #[enum_dispatch(RuntimeNodeEnum)]
 pub(crate) trait RuntimeNode {
-    fn exec(
-        &mut self,
-        req: &Request,
-        ctx: &mut Context,
-        response: &mut ResponseData,
-        channel_sender: &mut ResponseChannelWrapper,
-    ) -> bool;
-}
-
-pub(crate) trait AsyncRuntimeNode {
     async fn exec(
         &mut self,
         req: &Request,
@@ -167,7 +161,7 @@ pub(crate) struct TextNode {
 }
 
 impl RuntimeNode for TextNode {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -215,7 +209,7 @@ pub(crate) struct LlmGenTextNode {
 }
 
 impl RuntimeNode for LlmGenTextNode {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -293,16 +287,15 @@ impl RuntimeNode for LlmGenTextNode {
         } else {
             let now = std::time::Instant::now();
             let mut s = String::with_capacity(1024);
-            if let Err(e) = tokio::task::block_in_place(|| {
-                // log::info!("prompt |{}|", &self.prompt);
-                tokio::runtime::Handle::current().block_on(crate::ai::chat::chat(
-                    &req.robot_id,
-                    Some(chat_history),
-                    self.connect_timeout,
-                    self.read_timeout,
-                    ResultSender::StrBuf(&mut s),
-                ))
-            }) {
+            if let Err(e) = crate::ai::chat::chat(
+                &req.robot_id,
+                Some(chat_history),
+                self.connect_timeout,
+                self.read_timeout,
+                ResultSender::StrBuf(&mut s),
+            )
+            .await
+            {
                 log::error!("LlmGenTextNode response failed, err: {:?}", &e);
                 s.push_str(&self.fallback_text);
             } else {
@@ -376,7 +369,7 @@ pub(crate) struct GotoMainFlowNode {
 }
 
 impl RuntimeNode for GotoMainFlowNode {
-    fn exec(
+    async fn exec(
         &mut self,
         _req: &Request,
         ctx: &mut Context,
@@ -398,7 +391,7 @@ pub(crate) struct GotoAnotherNode {
 }
 
 impl RuntimeNode for GotoAnotherNode {
-    fn exec(
+    async fn exec(
         &mut self,
         _req: &Request,
         ctx: &mut Context,
@@ -421,7 +414,7 @@ pub(crate) struct CollectNode {
 }
 
 impl RuntimeNode for CollectNode {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -456,7 +449,7 @@ pub(crate) struct ConditionNode {
 }
 
 impl RuntimeNode for ConditionNode {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -487,7 +480,7 @@ impl RuntimeNode for ConditionNode {
 pub(crate) struct TerminateNode {}
 
 impl RuntimeNode for TerminateNode {
-    fn exec(
+    async fn exec(
         &mut self,
         _req: &Request,
         _ctx: &mut Context,
@@ -514,7 +507,7 @@ pub(crate) struct ExternalHttpCallNode {
 }
 
 impl RuntimeNode for ExternalHttpCallNode {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -533,22 +526,16 @@ impl RuntimeNode for ExternalHttpCallNode {
                     ctx.vars.clone(),
                 ));
             } else {
-                tokio::task::block_in_place(/*move*/ || {
-                    match tokio::runtime::Handle::current().block_on(http::status_code(
-                        api,
-                        self.timeout_milliseconds,
-                        ctx.vars.clone(),
-                    )) {
-                        Ok(r) => {
-                            if r == 200u16 {
-                                goto_node_id = &self.successful_node_id;
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("{e:?}");
+                match http::status_code(api, self.timeout_milliseconds, ctx.vars.clone()).await {
+                    Ok(r) => {
+                        if r == 200u16 {
+                            goto_node_id = &self.successful_node_id;
                         }
                     }
-                });
+                    Err(e) => {
+                        log::error!("{e:?}");
+                    }
+                };
             }
         }
         add_next_node(ctx, goto_node_id);
@@ -649,7 +636,7 @@ impl SendEmailNode {
 }
 
 impl RuntimeNode for SendEmailNode {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -701,7 +688,7 @@ pub(crate) struct LlmChatNode {
 }
 
 impl LlmChatNode {
-    fn inner_exec(
+    async fn inner_exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -783,16 +770,15 @@ impl LlmChatNode {
         } else {
             let now = std::time::Instant::now();
             let mut s = String::with_capacity(1024);
-            if let Err(e) = tokio::task::block_in_place(|| {
-                // log::info!("prompt |{}|", &self.prompt);
-                tokio::runtime::Handle::current().block_on(crate::ai::chat::chat(
-                    &req.robot_id,
-                    chat_history,
-                    self.connect_timeout,
-                    self.read_timeout,
-                    ResultSender::StrBuf(&mut s),
-                ))
-            }) {
+            if let Err(e) = crate::ai::chat::chat(
+                &req.robot_id,
+                chat_history,
+                self.connect_timeout,
+                self.read_timeout,
+                ResultSender::StrBuf(&mut s),
+            )
+            .await
+            {
                 log::error!("LlmChatNode response failed, err: {:?}", &e);
                 match &self.answer_timeout_then {
                     LlmChatAnswerTimeoutThen::GotoAnotherNode => {
@@ -869,7 +855,7 @@ impl LlmChatNode {
 }
 
 impl RuntimeNode for LlmChatNode {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -877,7 +863,7 @@ impl RuntimeNode for LlmChatNode {
         channel_sender: &mut ResponseChannelWrapper,
     ) -> bool {
         // log::info!("Into LlmChatNode");
-        let r = self.inner_exec(req, ctx, response, channel_sender);
+        let r = self.inner_exec(req, ctx, response, channel_sender).await;
         if r {
             let r = RuntimeNodeEnum::LlmChatNode(self.clone());
             let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&r).unwrap();
@@ -1071,14 +1057,8 @@ pub(crate) struct KnowledgeBaseAnswerNode {
 }
 
 impl KnowledgeBaseAnswerNode {
-    fn retrieve_qa_answer(&self, req: &Request) -> Option<String> {
-        let result = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(crate::kb::qa::retrieve_answer(
-                &req.robot_id,
-                &req.user_input,
-            ))
-        });
-        match result {
+    async fn retrieve_qa_answer(&self, req: &Request) -> Option<String> {
+        match crate::kb::qa::retrieve_answer(&req.robot_id, &req.user_input).await {
             Ok((answer, distance)) => {
                 log::info!(
                     "distance {} recall_distance {}",
@@ -1123,7 +1103,7 @@ impl KnowledgeBaseAnswerNode {
 }
 
 impl RuntimeNode for KnowledgeBaseAnswerNode {
-    fn exec(
+    async fn exec(
         &mut self,
         req: &Request,
         ctx: &mut Context,
@@ -1133,7 +1113,7 @@ impl RuntimeNode for KnowledgeBaseAnswerNode {
         // log::info!("Into LlmChaKnowledgeBaseAnswerNodetNode");
         for answer_source in &self.retrieve_answer_sources {
             let r = match answer_source {
-                KnowledgeBaseAnswerSource::QnA => self.retrieve_qa_answer(req),
+                KnowledgeBaseAnswerSource::QnA => self.retrieve_qa_answer(req).await,
                 KnowledgeBaseAnswerSource::Doc => self.retrieve_doc_answer(req),
             };
             if let Some(content) = r
