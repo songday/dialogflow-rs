@@ -12,7 +12,7 @@ use crate::result::{Error, Result};
 
 // // static DATA_SOURCE: OnceCell<SqliteConnPool> = OnceCell::new();
 // static DATA_SOURCE: OnceLock<SqliteConnPool> = OnceLock::new();
-static TURSO_DATA_SOURCE: OnceLock<turso::Database> = OnceLock::new();
+static DATA_SOURCE: OnceLock<turso::Database> = OnceLock::new();
 // static DATA_SOURCES: OnceLock<Mutex<HashMap<String, SqliteConnPool>>> = OnceLock::new();
 
 pub(crate) async fn init_datasource() -> Result<()> {
@@ -24,7 +24,7 @@ pub(crate) async fn init_datasource() -> Result<()> {
     let turso = turso::Builder::new_local(p.as_path().to_str().unwrap())
         .build()
         .await?;
-    TURSO_DATA_SOURCE
+    DATA_SOURCE
         .set(turso)
         .map_err(|_| Error::WithMessage(String::from("Datasource has been set.")))
     // let p = get_sqlite_path();
@@ -65,13 +65,13 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
         );
         CREATE INDEX idx_created_at ON {robot_id} (created_at);"
     );
-    let conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
+    let conn = DATA_SOURCE.get().unwrap().connect()?;
     conn.execute(&sql, ()).await?;
     Ok(())
 }
 
 pub(crate) async fn list(robot_id: &str) -> Result<Vec<QuestionAnswerPair>> {
-    let conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
+    let conn = DATA_SOURCE.get().unwrap().connect()?;
     let sql = format!("SELECT qa_data FROM {robot_id} ORDER BY created_at DESC",);
     let mut rows = conn.query(&sql, ()).await?;
     let mut d: Vec<QuestionAnswerPair> = Vec::with_capacity(10);
@@ -84,7 +84,7 @@ pub(crate) async fn list(robot_id: &str) -> Result<Vec<QuestionAnswerPair>> {
 }
 
 pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i64> {
-    let mut conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
+    let mut conn = DATA_SOURCE.get().unwrap().connect()?;
     let tx = conn.transaction().await?;
     let record_id: i64;
     if d.id.is_none() {
@@ -188,7 +188,7 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
 }
 
 pub(crate) async fn delete(robot_id: &str, d: QuestionAnswerPair) -> Result<()> {
-    let mut conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
+    let mut conn = DATA_SOURCE.get().unwrap().connect()?;
     let tx = conn.transaction().await?;
     let id = d.id.unwrap();
     let sql = format!("DELETE FROM {robot_id}_vec WHERE qa_id = ?1");
@@ -212,7 +212,7 @@ pub(crate) async fn retrieve_answer(
         log::warn!("{}", &err);
         return Err(Error::WithMessage(err));
     }
-    let conn = TURSO_DATA_SOURCE.get().unwrap().connect()?;
+    let conn = DATA_SOURCE.get().unwrap().connect()?;
 
     let sql = format!(
         "
