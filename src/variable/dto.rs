@@ -114,6 +114,7 @@ impl Variable {
             ctx.none_persistent_vars.get(&self.var_name)
         }
     }
+    /*
     pub(crate) fn get_value<'a, 'b>(
         &'a self,
         req: &'b Request,
@@ -196,6 +197,91 @@ impl Variable {
                             }
                         },
                     );
+                }
+                None
+            }
+        }
+    }
+    */
+    pub(crate) async fn get_value2<'a, 'b>(
+        &'a self,
+        req: &'b Request,
+        ctx: &'b mut Context,
+    ) -> Option<&'b VariableValue> {
+        if self.cache_enabled && ctx.vars.contains_key(&self.var_name) {
+            // println!("get from cache");
+            ctx.vars.get(&self.var_name)
+        } else {
+            self.get_value_inner2(req, ctx).await
+        }
+        /*
+        fn get_or_update(key: u32, map: &mut HashMap<u32, String>) -> Result<&str, Error> {
+            use std::collections::hash_map::Entry;
+
+            Ok(match map.entry(key) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => entry.insert(get_value()?),
+            })
+        }
+        */
+    }
+    async fn get_value_inner2<'a, 'b>(
+        &'a self,
+        req: &'b Request,
+        ctx: &'b mut Context,
+    ) -> Option<&'b VariableValue> {
+        match &self.var_val_source {
+            VariableValueSource::Collect | VariableValueSource::Import => {
+                // println!("{:?}", ctx.vars.get(&self.var_name));
+                ctx.vars.get(&self.var_name)
+            }
+            VariableValueSource::UserInput => {
+                let v = VariableValue::new(&req.user_input, &self.var_type);
+                ctx.vars.insert(self.var_name.clone(), v);
+                ctx.vars.get(&self.var_name)
+            }
+            VariableValueSource::Constant => {
+                let v = VariableValue::new(&self.var_constant_value, &self.var_type);
+                ctx.vars.insert(self.var_name.clone(), v);
+                ctx.vars.get(&self.var_name)
+            }
+            VariableValueSource::ExternalHttp => {
+                let cache = {
+                    if let Some(c) = ctx.none_persistent_data.get(&self.var_associate_data) {
+                        let mut cache = String::with_capacity(512);
+                        cache.push_str(c);
+                        Some(cache)
+                    } else {
+                        None
+                    }
+                };
+                if let Some(c) = &cache {
+                    return self.get_data_from_res(ctx, c);
+                }
+                if let Ok(Some(api)) =
+                    crate::external::http::crud::get_detail(&req.robot_id, &self.var_associate_data)
+                {
+                    return match crate::external::http::client::req(
+                        api,
+                        self.timeout_milliseconds,
+                        &ctx.vars,
+                    )
+                    .await
+                    {
+                        Ok(r) => match r {
+                            crate::external::http::dto::ResponseData::Str(s) => {
+                                // 下面这句，需要在get_data_from_res的上方，否则会报*ctx可变借用了两次，因为返回值，对ctx有引用
+                                ctx.none_persistent_data
+                                    .insert(self.var_associate_data.clone(), s.clone());
+                                self.get_data_from_res(ctx, &s)
+                            }
+                            _ => None,
+                        },
+                        Err(e) => {
+                            log::error!("{e:?}");
+                            None
+                        }
+                    };
                 }
                 None
             }

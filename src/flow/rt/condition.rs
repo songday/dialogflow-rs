@@ -66,7 +66,7 @@ macro_rules! compare_numbers {
         if v.var_type == VariableType::Str {
             return false;
         }
-        let val = v.get_value($req, $ctx);
+        let val = v.get_value2($req, $ctx).await;
         if val.is_none() {
             return false;
         }
@@ -78,7 +78,7 @@ macro_rules! compare_numbers {
                 return false;
             }
         };
-        let n2 = match BigDecimal::from_str(&$self.get_target_data($req, $ctx)) {
+        let n2 = match BigDecimal::from_str(&$self.get_target_data($req, $ctx).await) {
             Ok(n) => n,
             Err(e) => {
                 log::warn!("{:?}",&e);
@@ -101,10 +101,10 @@ pub(crate) struct ConditionData {
 }
 
 impl ConditionData {
-    fn get_target_data(&self, req: &Request, ctx: &mut Context) -> String {
+    async fn get_target_data(&self, req: &Request, ctx: &mut Context) -> String {
         match self.target_data_variant {
             TargetDataVariant::Const => self.target_data.clone(),
-            TargetDataVariant::Variable => variable::get_value(&self.target_data, req, ctx),
+            TargetDataVariant::Variable => variable::get_value(&self.target_data, req, ctx).await,
             TargetDataVariant::ZeroShotTextClassification => {
                 //todo
                 //do text zero shot classification of user input
@@ -113,7 +113,7 @@ impl ConditionData {
             }
         }
     }
-    pub(in crate::flow::rt) fn compare(&self, req: &Request, ctx: &mut Context) -> bool {
+    pub(in crate::flow::rt) async fn compare(&self, req: &Request, ctx: &mut Context) -> bool {
         // let target_data = match self.target_data_variant {
         //     TargetDataVariant::Const => self.target_data.clone(),
         //     TargetDataVariant::Variable => variable::get_value(&self.target_data, req, ctx),
@@ -123,22 +123,23 @@ impl ConditionData {
             ConditionType::UserInput => match self.compare_type {
                 CompareType::Eq => {
                     if self.case_sensitive_comparison {
-                        println!(
-                            "{} {} {}",
-                            self.get_target_data(req, ctx),
-                            &req.user_input,
-                            self.get_target_data(req, ctx).eq(&req.user_input)
-                        );
-                        self.get_target_data(req, ctx).eq(&req.user_input)
+                        // log::info!(
+                        //     "{} {} {}",
+                        //     self.get_target_data(req, ctx).await,
+                        //     &req.user_input,
+                        //     self.get_target_data(req, ctx).await.eq(&req.user_input)
+                        // );
+                        self.get_target_data(req, ctx).await.eq(&req.user_input)
                     } else {
-                        unicase::eq(&self.get_target_data(req, ctx), &req.user_input)
+                        unicase::eq(&self.get_target_data(req, ctx).await, &req.user_input)
                     }
                 }
                 CompareType::Contains => {
                     if self.case_sensitive_comparison {
-                        req.user_input.contains(&self.get_target_data(req, ctx))
+                        req.user_input
+                            .contains(&self.get_target_data(req, ctx).await)
                     } else {
-                        let mut s = self.get_target_data(req, ctx);
+                        let mut s = self.get_target_data(req, ctx).await;
                         s.make_ascii_lowercase();
                         s.contains(&req.user_input.to_lowercase())
                     }
@@ -152,19 +153,20 @@ impl ConditionData {
                 req.user_input_intent.is_some()
                     && self
                         .get_target_data(req, ctx)
+                        .await
                         .eq(req.user_input_intent.as_ref().unwrap())
             }
             ConditionType::FlowVariable => match self.compare_type {
                 CompareType::HasValue => {
                     if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
-                        v.get_value(req, ctx).is_some()
+                        v.get_value2(req, ctx).await.is_some()
                     } else {
                         false
                     }
                 }
                 CompareType::DoesNotHaveValue => {
                     if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
-                        v.get_value(req, ctx).is_none()
+                        v.get_value2(req, ctx).await.is_none()
                     } else {
                         true
                     }
@@ -174,7 +176,7 @@ impl ConditionData {
                         if v.var_type == VariableType::Num {
                             false
                         } else {
-                            let val = v.get_value(req, ctx);
+                            let val = v.get_value2(req, ctx).await;
                             val.is_none() || val.as_ref().unwrap().val_to_string().is_empty()
                         }
                     } else {
@@ -183,11 +185,15 @@ impl ConditionData {
                 }
                 CompareType::Eq => {
                     if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
-                        if let Some(val) = v.get_value(req, ctx) {
+                        if let Some(val) = v.get_value2(req, ctx).await {
                             if self.case_sensitive_comparison {
-                                val.val_to_string().eq(&self.get_target_data(req, ctx))
+                                val.val_to_string()
+                                    .eq(&self.get_target_data(req, ctx).await)
                             } else {
-                                unicase::eq(&val.val_to_string(), &self.get_target_data(req, ctx))
+                                unicase::eq(
+                                    &val.val_to_string(),
+                                    &self.get_target_data(req, ctx).await,
+                                )
                             }
                         } else {
                             false
@@ -198,11 +204,15 @@ impl ConditionData {
                 }
                 CompareType::NotEq => {
                     if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
-                        if let Some(val) = v.get_value(req, ctx) {
+                        if let Some(val) = v.get_value2(req, ctx).await {
                             if self.case_sensitive_comparison {
-                                !val.val_to_string().eq(&self.get_target_data(req, ctx))
+                                !val.val_to_string()
+                                    .eq(&self.get_target_data(req, ctx).await)
                             } else {
-                                !unicase::eq(&val.val_to_string(), &self.get_target_data(req, ctx))
+                                !unicase::eq(
+                                    &val.val_to_string(),
+                                    &self.get_target_data(req, ctx).await,
+                                )
                             }
                         } else {
                             true
@@ -215,14 +225,14 @@ impl ConditionData {
                     if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
                         if v.var_type == VariableType::Num {
                             false
-                        } else if let Some(val) = v.get_value(req, ctx) {
+                        } else if let Some(val) = v.get_value2(req, ctx).await {
                             if self.case_sensitive_comparison {
                                 val.val_to_string()
-                                    .contains(&self.get_target_data(req, ctx))
+                                    .contains(&self.get_target_data(req, ctx).await)
                             } else {
                                 let mut s = val.val_to_string();
                                 s.make_ascii_lowercase();
-                                s.contains(&self.get_target_data(req, ctx).to_lowercase())
+                                s.contains(&self.get_target_data(req, ctx).await.to_lowercase())
                             }
                             // val.val_to_string()
                             //     .find(&self.get_target_data(req, ctx))
@@ -238,9 +248,9 @@ impl ConditionData {
                     if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
                         if v.var_type == VariableType::Num {
                             false
-                        } else if let Some(val) = v.get_value(req, ctx) {
+                        } else if let Some(val) = v.get_value2(req, ctx).await {
                             !val.val_to_string()
-                                .contains(&self.get_target_data(req, ctx))
+                                .contains(&self.get_target_data(req, ctx).await)
                         } else {
                             true
                         }
@@ -382,7 +392,7 @@ impl ConditionData {
             },
             ConditionType::CustomJavascript => todo!(),
             ConditionType::CustomRegex => {
-                if let Ok(re) = Regex::new(&self.get_target_data(req, ctx)) {
+                if let Ok(re) = Regex::new(&self.get_target_data(req, ctx).await) {
                     return re.is_match(&req.user_input);
                 }
                 false

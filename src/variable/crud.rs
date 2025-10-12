@@ -173,9 +173,9 @@ pub(crate) fn get(robot_id: &str, name: &str) -> Result<Option<Variable>> {
     db_executor!(db::query, robot_id, TABLE_SUFFIX, name)
 }
 
-pub(crate) fn get_value(name: &str, req: &Request, ctx: &mut Context) -> String {
+pub(crate) async fn get_value(name: &str, req: &Request, ctx: &mut Context) -> String {
     if let Ok(Some(v)) = get(&req.robot_id, name) {
-        if let Some(val) = v.get_value(req, ctx) {
+        if let Some(val) = v.get_value2(req, ctx).await {
             return val.val_to_string();
         }
     }

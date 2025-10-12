@@ -91,7 +91,7 @@ pub(crate) trait RuntimeNode {
     ) -> bool;
 }
 
-fn replace_vars(text: &str, req: &Request, ctx: &mut Context) -> Result<String> {
+async fn replace_vars(text: &str, req: &Request, ctx: &mut Context) -> Result<String> {
     let mut new_str = String::with_capacity(128);
     let mut start = 0usize;
     while let Some(mut begin) = text[start..].find(VAR_WRAP_SYMBOL) {
@@ -102,7 +102,7 @@ fn replace_vars(text: &str, req: &Request, ctx: &mut Context) -> Result<String> 
             // println!("{} {} {} {}", &text[begin + 1..],start, begin,end);
             let var = variable::get(&req.robot_id, &text[begin + 1..end])?;
             if let Some(v) = var {
-                if let Some(value) = v.get_value(req, ctx) {
+                if let Some(value) = v.get_value2(req, ctx).await {
                     new_str.push_str(&value.val_to_string());
                 }
                 start = end + 1;
@@ -170,7 +170,7 @@ impl RuntimeNode for TextNode {
     ) -> bool {
         // log::info!("Into TextNode {}", &self.text);
         // let now = std::time::Instant::now();
-        match replace_vars(&self.text, req, ctx) {
+        match replace_vars(&self.text, req, ctx).await {
             Ok(answer) => {
                 if channel_sender.sender.is_some() {
                     let sender = channel_sender.sender.as_ref().unwrap().clone();
@@ -460,7 +460,7 @@ impl RuntimeNode for ConditionNode {
         let mut r = false;
         for and_conditions in self.conditions.iter() {
             for cond in and_conditions.iter() {
-                r = cond.compare(req, ctx);
+                r = cond.compare(req, ctx).await;
                 if !r {
                     break;
                 }
