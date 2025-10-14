@@ -119,6 +119,21 @@ export default {
         gotoSubFlowPH: 'Select a goto sub-flow',
         externalLink: 'External link',
     },
+    knowledgeBaseAnswerNode: {
+        nodeName: 'Knowledge base answer node',
+    },
+    llmChatNode: {
+        nodeName: 'LLM chat node',
+    },
+    externalHttpNode: {
+        nodeName: 'External HTTP node',
+    },
+    sendEmailNode: {
+        nodeName: 'Send email node',
+    },
+    theEndNode: {
+        nodeName: 'The end node',
+    },
     intent: {
         title: 'Intent management',
         add: 'Add new intent',

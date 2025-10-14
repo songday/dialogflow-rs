@@ -13,6 +13,7 @@ const { robotId } = inject('robotId');
 // const getGraph = inject('getGraph');
 const getNode = inject('getNode');
 const { subflowNames, updateSubFlowNames } = inject('subFlowNamesFn');
+const allNodeNameSet = inject('allNodeNameSet');
 const nodeSetFormVisible = ref(false);
 const mainFlows = ref([])
 const subFlowNames = ref([])
@@ -63,7 +64,14 @@ onMounted(async () => {
     //         nodeData.newNode = data.newNode;
     // }
     if (nodeData.newNode)
-        nodeData.nodeName += data.nodeCnt.toString();
+        nodeData.nodeName += data.nodeCnt.toString(); {
+        let n = null;
+        do {
+            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t('gotoNode.nodeName') + '-' + n;
+        } while (allNodeNameSet.value.has(nodeData.nodeName));
+    }
+    allNodeNameSet.value.add(nodeData.nodeName);
     nodeData.newNode = false;
     validate();
 

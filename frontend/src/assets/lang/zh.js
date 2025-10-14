@@ -120,6 +120,21 @@ export default {
         gotoSubFlowPH: '选择跳转的子流程',
         externalLink: '外部链接',
     },
+    knowledgeBaseAnswerNode: {
+        nodeName: '知识库回答节点',
+    },
+    llmChatNode: {
+        nodeName: '大模型聊天节点',
+    },
+    externalHttpNode: {
+        nodeName: '请求外部HTTP节点',
+    },
+    sendEmailNode: {
+        nodeName: '邮件发送节点',
+    },
+    theEndNode: {
+        nodeName: '结束节点',
+    },
     intent: {
         title: '意图管理',
         add: '新增意图',

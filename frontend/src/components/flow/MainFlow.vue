@@ -157,7 +157,7 @@ const saveForm = async () => {
             </el-form-item>
         </el-form>
         <template #footer>
-            <el-button type="primary" :loading="loading" @click="saveForm()">{{ $t('common.save') }}</el-button>
+            <el-button type="primary" @click="saveForm()">{{ $t('common.save') }}</el-button>
             <el-button @click="hideForm()">{{ $t('common.cancel') }}</el-button>
         </template>
     </el-dialog>
