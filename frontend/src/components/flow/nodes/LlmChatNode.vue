@@ -29,6 +29,7 @@ const settings = reactive({})
 const getNode = inject('getNode');
 const { robotId } = inject('robotId');
 // const { ollamaModels } = inject('ollamaModels');
+const allNodeNameSet = inject('allNodeNameSet');
 const nodeSetFormVisible = ref(false)
 const intents = reactive([])
 const modelId = ref('')
@@ -48,7 +49,7 @@ onMounted(async () => {
     // console.log('llmChatNode')
     const node = getNode();
     const data = node.getData();
-    console.log('data', data);
+    // console.log('data', data);
     copyProperties(data, nodeData);
     // if (data) {
     //     if (data.nodeName)
@@ -63,7 +64,11 @@ onMounted(async () => {
     //         nodeData.newNode = data.newNode;
     // }
     if (nodeData.newNode) {
-        nodeData.nodeName += data.nodeCnt.toString();
+        let n = null;
+        do {
+            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t('llmChatNode.nodeName') + '-' + n;
+        } while (allNodeNameSet.value.has(nodeData.nodeName));
         // node.removePorts();
         node.addPort({
             group: 'absolute',
@@ -90,6 +95,7 @@ onMounted(async () => {
             },
         });
     }
+    allNodeNameSet.value.add(nodeData.nodeName);
     nodeData.newNode = false;
     validate();
     httpReq("GET", 'management/settings', { robotId: robotId }, null, null).then((res) => {

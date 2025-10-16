@@ -14,6 +14,7 @@ const nodeData = reactive({
 });
 const nodeName = ref();
 const getNode = inject('getNode');
+const allNodeNameSet = inject('allNodeNameSet');
 const node = getNode();
 // node.setData(nodeData, { silent: false });
 node.on("change:data", ({ current }) => {
@@ -25,10 +26,16 @@ onMounted(async () => {
     // console.log(data);
     copyProperties(data, nodeData);
     if (nodeData.newNode) {
-        node.setData(nodeData, { silent: true });
-        nodeData.nodeName += data.nodeCnt.toString();
+        let n = null;
+        do {
+            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t('theEndNode.nodeName') + '-' + n;
+        } while (allNodeNameSet.value.has(nodeData.nodeName));
         nodeData.newNode = false;
+        node.setData(nodeData, { silent: true });
     }
+    allNodeNameSet.value.add(nodeData.nodeName);
+    // console.log(allNodeNameSet.value.size);
     validate();
 });
 function validate() {
@@ -99,7 +106,7 @@ const formLabelWidth = '90px'
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
+                <el-button type="primary" @click="saveForm()">{{ t('common.save') }}</el-button>
                 <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
             </div>
         </el-drawer>

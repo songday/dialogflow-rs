@@ -10,6 +10,7 @@ const { t, tm, rt } = useI18n();
 const lastTimeBranchIdMap = new Map();
 const getNode = inject('getNode');
 const { robotId } = inject('robotId');
+const allNodeNameSet = inject('allNodeNameSet');
 const nodeSetFormVisible = ref(false);
 const branchSetFormVisible = ref(false);
 const formLabelWidth = '85px';
@@ -104,22 +105,22 @@ defaultConditionGroup[0].push(cloneObj(defaultCondition));
 
 onMounted(async () => {
     // console.log('conditionNode')
-    let t = await httpReq('GET', 'intent', { robotId: robotId }, null, null);
+    let r = await httpReq('GET', 'intent', { robotId: robotId }, null, null);
     // console.log(t);
-    if (t && t.status == 200 && t.data) {
+    if (r && r.status == 200 && r.data) {
         const d = targetOptionsSet.UserIntent;
         d.splice(0, d.length);
-        t.data.forEach(function (item, index, arr) {
+        r.data.forEach(function (item, index, arr) {
             // console.log(item.name)
             this.push({ label: item.intent_name, value: item.intent_name });
         }, d);
     }
-    t = await httpReq('GET', 'variable', { robotId: robotId }, null, null);
+    r = await httpReq('GET', 'variable', { robotId: robotId }, null, null);
     // console.log(t);
-    if (t && t.status == 200 && t.data) {
+    if (r && r.status == 200 && r.data) {
         const d = refOptionsSet.FlowVariable;
         d.splice(0, d.length);
-        t.data.forEach(function (item, index, arr) {
+        r.data.forEach(function (item, index, arr) {
             this.push({ label: item.varName, value: item.varName, vtype: item.varType });
         }, d);
     }
@@ -136,13 +137,18 @@ onMounted(async () => {
     //     nodeData.branches = data.branches;
     //     console.log(nodeData.branches);
     // }
-    if (nodeData.newNode)
-        nodeData.nodeName += data.nodeCnt.toString();
-    else {
+    if (nodeData.newNode) {
+        let n = null;
+        do {
+            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t('conditionNode.nodeName') + '-' + n;
+        } while (allNodeNameSet.value.has(nodeData.nodeName));
+    } else {
         nodeData.branches.forEach(function (b, idx) {
             lastTimeBranchIdMap.set(b.branchId, idx)
         })
     }
+    allNodeNameSet.value.add(nodeData.nodeName);
     nodeData.newNode = false;
     validate();
 });

@@ -8,6 +8,7 @@ const { t, tm, rt } = useI18n();
 const nodeSetFormVisible = ref(false);
 const getNode = inject('getNode');
 const { robotId } = inject('robotId');
+const allNodeNameSet = inject('allNodeNameSet');
 const node = getNode();
 const formLabelWidth = '100px'
 const apis = reactive([])
@@ -119,17 +120,25 @@ const addBranches = () => {
 }
 onMounted(async () => {
     // console.log('httpNode')
-    const t = await httpReq('GET', 'external/http', { robotId: robotId }, null, null);
+    const r = await httpReq('GET', 'external/http', { robotId: robotId }, null, null);
     // console.log(t);
-    if (t.status == 200) {
-        for (var x in t.data) {
-            if (t.data.hasOwnProperty(x)) {
+    if (r.status == 200) {
+        for (var x in r.data) {
+            if (r.data.hasOwnProperty(x)) {
                 // console.log(t.data[x])
-                apis.push(t.data[x]);
+                apis.push(r.data[x]);
             }
         }
     }
     copyProperties(node.getData(), nodeData);
+    if (nodeData.newNode) {
+        let n = null;
+        do {
+            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t('externalHttpNode.nodeName') + '-' + n;
+        } while (allNodeNameSet.value.has(nodeData.nodeName));
+    }
+    allNodeNameSet.value.add(nodeData.nodeName);
     nodeData.newNode = false;
     // addBranches()
 })

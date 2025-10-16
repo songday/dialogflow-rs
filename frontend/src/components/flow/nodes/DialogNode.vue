@@ -168,8 +168,13 @@ export default defineComponent({
         //         this.nodeData.newNode = data.newNode;
         // }
         // console.log(node.getData().dialogText);
+        const allNodeNameSet = inject('allNodeNameSet');
         if (this.nodeData.newNode) {
-            this.nodeData.nodeName += data.nodeCnt.toString();
+            let n = null;
+            do {
+                n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+                this.nodeData.nodeName = this.t('dialogNode.nodeName') + '-' + n;
+            } while (allNodeNameSet.value.has(this.nodeData.nodeName));
             const b = getDefaultBranch();
             b.branchType = 'GotoAnotherNode';
             // b.conditionGroup[0][0].conditionType = 'UserInput';
@@ -204,6 +209,7 @@ export default defineComponent({
             node.removeData({ silent: true });
             node.setData(this.nodeData, { silent: false });
         }
+        allNodeNameSet.value.add(this.nodeData.nodeName);
         this.validate();
         node.on("change:data", ({ current }) => {
             // console.log(current);

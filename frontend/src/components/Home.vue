@@ -214,7 +214,7 @@ const compareDifferentRobotTypeData = [
     <el-alert title="You're using the latest verion." type="success" @close="checkUpdateResult = 0" />
   </div>
   <div v-show="checkUpdateResult === 3">
-    <el-alert title="Failed to check update information, please try again later." type="danger" @close="checkUpdateResult = 0" />
+    <el-alert title="Failed to check update information, please try again later." type="error" @close="checkUpdateResult = 0" />
   </div>
   <!-- <el-button v-show="checkUpdateResult == 2" type="success" text>You're using the latest verion</el-button>
   <el-button v-show="checkUpdateResult == 3" type="danger" text>Failed to query update information, please try

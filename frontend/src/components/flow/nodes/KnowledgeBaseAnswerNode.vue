@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import EpWarning from '~icons/ep/warning'
 const { t, tm, rt } = useI18n();
 const getNode = inject('getNode');
+const allNodeNameSet = inject('allNodeNameSet');
 const node = getNode();
 node.on("change:data", ({ current }) => {
     nodeSetFormVisible.value = true;
@@ -67,9 +68,14 @@ onMounted(async () => {
                 }
             },
         });
-        nodeData.nodeName += data.nodeCnt.toString();
+        let n = null;
+        do {
+            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t('knowledgeBaseAnswerNode.nodeName') + '-' + n;
+        } while (allNodeNameSet.value.has(nodeData.nodeName));
         nodeData.newNode = false;
     }
+    allNodeNameSet.value.add(nodeData.nodeName);
     validate();
 })
 const validate = () => {

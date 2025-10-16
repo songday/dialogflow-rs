@@ -33,6 +33,7 @@ const TeleportContainer = getTeleport();
 
 const subFlows = ref([]);
 const subflowNames = ref([])
+const allNodeNameSet = ref(new Set());
 
 function updateSubFlowNames() {
     // console.log(subFlows);
@@ -48,6 +49,7 @@ function updateSubFlowNames() {
 // provide('getSubFlowNames', {readonly(subflowNames), updateSubFlowNames})
 provide('subFlowNamesFn', { subflowNames, updateSubFlowNames })
 provide('robotId', { robotId })
+provide('allNodeNameSet', allNodeNameSet)
 
 register({
     shape: "CollectNode",

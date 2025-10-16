@@ -19,6 +19,7 @@ const nodeData = reactive({
 const nodeName = ref();
 const getNode = inject('getNode');
 const { robotId } = inject('robotId');
+const allNodeNameSet = inject('allNodeNameSet');
 const node = getNode();
 node.on("change:data", ({ current }) => {
     nodeSetFormVisible.value = true;
@@ -41,7 +42,11 @@ onMounted(async () => {
     // }
     // console.log(nodeData.newNode);
     if (nodeData.newNode) {
-        nodeData.nodeName += data.nodeCnt.toString();
+        let n = null;
+        do {
+            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t('collectNode.nodeName') + '-' + n;
+        } while (allNodeNameSet.value.has(nodeData.nodeName));
         const heightOffset = nodeName.value.offsetHeight + 50;
         const x = nodeName.value.offsetWidth - 15;
         node.addPort({
@@ -67,11 +72,12 @@ onMounted(async () => {
         nodeData.newNode = false;
         // console.log(nodeData);
     }
-    const t = await httpReq('GET', 'variable', { robotId: robotId }, null, null);
+    allNodeNameSet.value.add(nodeData.nodeName);
+    const r = await httpReq('GET', 'variable', { robotId: robotId }, null, null);
     // console.log(t);
-    if (t && t.status == 200 && t.data) {
+    if (r && r.status == 200 && r.data) {
         variables.splice(0, variables.length);
-        t.data.forEach(function (item, index, arr) {
+        r.data.forEach(function (item, index, arr) {
             this.push({ label: item.varName, value: item.varName });
         }, variables);
     }

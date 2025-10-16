@@ -30,6 +30,7 @@ const emailVerificationRegex = ref('')
 const nodeSetFormVisible = ref(false)
 const getNode = inject('getNode');
 const { robotId } = inject('robotId');
+const allNodeNameSet = inject('allNodeNameSet');
 const node = getNode();
 const variables = []
 node.on("change:data", ({ current }) => {
@@ -50,27 +51,32 @@ onMounted(async () => {
     // }
     // console.log(nodeData.newNode);
     if (nodeData.newNode) {
-        nodeData.nodeName += data.nodeCnt.toString();
+        let n = null;
+        do {
+            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t('sendEmailNode.nodeName') + '-' + n;
+        } while (allNodeNameSet.value.has(nodeData.nodeName));
         resetPorts()
         nodeData.newNode = false;
         // console.log(nodeData);
     } else {
         lastTimeAsyncSendChoice = nodeData.asyncSend
     }
-    let t = await httpReq('GET', 'variable', null, null, null);
+    allNodeNameSet.value.add(nodeData.nodeName);
+    let r = await httpReq('GET', 'variable', null, null, null);
     // console.log(t);
-    if (t && t.status == 200 && t.data) {
+    if (r && r.status == 200 && r.data) {
         variables.splice(0, variables.length);
-        t.data.forEach(function (item, index, arr) {
+        r.data.forEach(function (item, index, arr) {
             this.push({ label: item.varName, value: item.varName });
         }, variables);
     }
-    t = await httpReq('GET', 'management/settings', { robotId: robotId }, null, null);
+    r = await httpReq('GET', 'management/settings', { robotId: robotId }, null, null);
     // console.log(t);
-    if (t && t.status == 200 && t.data) {
-        smtpHost.value = t.data.smtpHost
+    if (r && r.status == 200 && r.data) {
+        smtpHost.value = r.data.smtpHost
         // console.log(t.data.emailVerificationRegex)
-        emailVerificationRegex.value = t.data.emailVerificationRegex
+        emailVerificationRegex.value = r.data.emailVerificationRegex
     }
     validate();
 });
