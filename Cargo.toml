@@ -21,7 +21,7 @@ name = "dialogflowai"
 # artful = "0.1.1"
 anyhow = "1.0.100"
 axum = {version = "0.8.6", features = ["query", "tokio", "macros", "multipart"]}
-bigdecimal = "0.4.8"
+bigdecimal = "0.4.9"
 # bytes = "1.9"
 # candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.5.1" }
 candle = { version = "0.9.1", package = "candle-core", default-features = false }
