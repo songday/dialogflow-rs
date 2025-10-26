@@ -8,10 +8,13 @@ use std::vec::Vec;
 // use futures_util::StreamExt;
 use quick_xml::Reader;
 use quick_xml::events::Event;
+use windows::Win32::Foundation::E_BLUETOOTH_ATT_INSUFFICIENT_RESOURCES;
 // use sqlx::{Row, Sqlite};
+// use text_splitter::{ChunkConfig, TextSplitter};
 use zip::ZipArchive;
 
 use super::dto::DocData;
+use crate::ai::embedding;
 use crate::result::{Error, Result};
 
 // type SqliteConnPool = sqlx::Pool<Sqlite>;
@@ -49,10 +52,6 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
             file_size INTEGER NOT NULL,
             doc_content TEXT NOT NULL,
             created_at INTEGER NOT NULL
-        );
-        CREATE TABLE {robot_id}_vec (
-            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-            doc_id NOT NULL INTEGER
         );"
     );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
@@ -113,6 +112,64 @@ pub(super) async fn save(
     file_size: usize,
     doc_content: &str,
 ) -> Result<()> {
+    let sql = format!(
+        "INSERT INTO {robot_id}(file_name, file_size, doc_content, created_at)(?1, ?2, ?3, unixepoch())"
+    );
+    let conn = DATA_SOURCE.get().unwrap().connect()?;
+    conn.execute(
+        &sql,
+        (
+            file_name,
+            turso::Value::Integer(file_size as i64),
+            doc_content,
+        ),
+    )
+    .await?;
+    let doc_id = conn.last_insert_rowid();
+    save_doc_embedding(robot_id, doc_id, doc_content).await?;
+    Ok(())
+}
+
+fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut chunks = Vec::new();
+    let mut start = 0;
+
+    while start < words.len() {
+        let end = std::cmp::min(start + chunk_size, words.len());
+        let chunk = words[start..end].join(" ");
+        chunks.push(chunk);
+
+        if end == words.len() {
+            break;
+        }
+        start = end.saturating_sub(overlap);
+    }
+    chunks
+}
+
+async fn save_doc_embedding(robot_id: &str, doc_id: i64, doc_content: &str) -> Result<()> {
+    let chunks = chunk_text(doc_content, 500, 70);
+    let mut created_table = false;
+    let conn = DATA_SOURCE.get().unwrap().connect()?;
+    for chunk in chunks.iter() {
+        let r = embedding::embedding(robot_id, chunk).await?;
+        if !created_table {
+            let sql = format!(
+                "CREATE TABLE {robot_id}_vec (
+                    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    doc_id NOT NULL INTEGER,
+                    doc_vec F32_BLOB({})
+                );",
+                r.0.len()
+            );
+            conn.execute(&sql, ()).await?;
+            created_table = true;
+        }
+        let sql = format!("INSERT INTO {robot_id}_vec(doc_id, doc_vec) VALUES(?1, vector32(?2));");
+        conn.execute(&sql, (doc_id, embedding::vec_to_db(&r.0)))
+            .await?;
+    }
     Ok(())
 }
 
@@ -153,3 +210,13 @@ pub(super) fn parse_docx(b: Vec<u8>) -> Result<String> {
 }
 
 fn parse_pdf() {}
+
+async fn search_doc(robot_id: &str, query: &str) -> Result<()> {
+    let r = embedding::embedding(robot_id, query).await?;
+    let sql = format!(
+        "SELECT doc_id, vector_distance_cos(doc_vec, vector32(?1)) AS distance FROM {robot_id}_vec ORDER BY distance ASC LIMIT 1"
+    );
+    let conn = DATA_SOURCE.get().unwrap().connect()?;
+    let mut results = conn.query(&sql, [embedding::vec_to_db(&r.0)]);
+    Ok(())
+}

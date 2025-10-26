@@ -217,3 +217,12 @@ async fn ollama(
     // );
     Ok(embedding_result)
 }
+
+pub(crate) fn vec_to_db(v: &Vec<f32>) -> turso::Value {
+    turso::Value::Blob(
+        v.iter()
+            .map(|f| f.to_le_bytes())
+            .flatten()
+            .collect::<Vec<u8>>(),
+    )
+}

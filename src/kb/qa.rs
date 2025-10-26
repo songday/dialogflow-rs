@@ -5,7 +5,7 @@ use std::vec::Vec;
 // use sqlx::{Row, Sqlite};
 
 use super::dto::{QuestionAnswerPair, QuestionData};
-use crate::ai::embedding::embedding;
+use crate::ai::embedding;
 use crate::result::{Error, Result};
 
 // type SqliteConnPool = sqlx::Pool<Sqlite>;
@@ -113,7 +113,7 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
     let mut insert_stmt = Option::None::<turso::Statement>;
     let mut update_stmt = Option::None::<turso::Statement>;
     for q in questions.iter_mut() {
-        let vectors = embedding(robot_id, &q.question).await?;
+        let vectors = embedding::embedding(robot_id, &q.question).await?;
         if vectors.0.is_empty() {
             let err = format!("{} embedding data is empty", &q.question);
             log::warn!("{}", &err);
@@ -145,17 +145,7 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
             let id = insert_stmt
                 .as_mut()
                 .unwrap()
-                .execute((
-                    record_id,
-                    turso::Value::Blob(
-                        vectors
-                            .0
-                            .iter()
-                            .map(|f| f.to_le_bytes())
-                            .flatten()
-                            .collect(),
-                    ),
-                ))
+                .execute((record_id, embedding::vec_to_db(&vectors.0)))
                 .await?;
             q.vec_row_id = Some(id);
         } else {
@@ -169,17 +159,7 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
             update_stmt
                 .as_mut()
                 .unwrap()
-                .execute((
-                    turso::Value::Blob(
-                        vectors
-                            .0
-                            .iter()
-                            .map(|f| f.to_le_bytes())
-                            .flatten()
-                            .collect(),
-                    ),
-                    q.vec_row_id.unwrap(),
-                ))
+                .execute((embedding::vec_to_db(&vectors.0), q.vec_row_id.unwrap()))
                 .await?;
         }
     }
@@ -206,7 +186,7 @@ pub(crate) async fn retrieve_answer(
     robot_id: &str,
     question: &str,
 ) -> Result<(Option<QuestionAnswerPair>, f64)> {
-    let vectors = embedding(robot_id, question).await?;
+    let vectors = embedding::embedding(robot_id, question).await?;
     if vectors.0.is_empty() {
         let err = format!("{question} embedding data is empty");
         log::warn!("{}", &err);
@@ -221,19 +201,7 @@ pub(crate) async fn retrieve_answer(
         ON q.id = v.qa_id
         "
     );
-    let mut results = conn
-        .query(
-            &sql,
-            [turso::Value::Blob(
-                vectors
-                    .0
-                    .iter()
-                    .map(|f| f.to_le_bytes())
-                    .flatten()
-                    .collect::<Vec<u8>>(),
-            )],
-        )
-        .await?;
+    let mut results = conn.query(&sql, [embedding::vec_to_db(&vectors.0)]).await?;
     if let Some(row) = results.next().await? {
         return Ok((
             Some(serde_json::from_str(row.get_value(0)?.as_text().unwrap())?),
