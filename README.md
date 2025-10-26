@@ -2,7 +2,7 @@
 
 # Dialog flow AI
 **only ONE executable file**, you can use it directly, including intent detection, AI management, a visual process editor and a response system.  
-**ZERO installation**, no need to install any middleware such as Redis, Elastic Search, etc.
+**ZERO installation**, no need to install any middleware such as Redis, Elastic Search, etc.  
 <img src="https://img.shields.io/badge/Latest_version-v1.19.3-blue" /> <img src="https://img.shields.io/badge/MSRV-1.88.0-green" /> [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/dialogflowai/dialogflow)
 
 ![All in ONE](./doc/assets/allinone.png)
