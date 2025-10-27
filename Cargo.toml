@@ -86,13 +86,13 @@ quick-xml = "0.38.3"
 # triple_accel = "0.4.0"
 # # [target.'cfg(not(target_os = "linux"))'.dependencies]
 # sqlite-vec = "0.1.6"
-text-splitter = { version = "0.28.0", default-features = false, features = ["tokenizers"] }
+# text-splitter = { version = "0.28.0", default-features = false, features = ["tokenizers"] }
 num_cpus = "1.17.0"
 turso = "0.2.2"
 # sqlite-vec = { path = "/mnt/d/work/sqlite-vec/bindings/rust/" }
 
 [build-dependencies]
-flate2 = "1.1.4"
+flate2 = "1.1.5"
 # cc = "1.2.8"
 
 [target.'cfg(windows)'.dependencies]
