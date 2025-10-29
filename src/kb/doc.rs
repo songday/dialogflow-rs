@@ -8,7 +8,6 @@ use std::vec::Vec;
 // use futures_util::StreamExt;
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use windows::Win32::Foundation::E_BLUETOOTH_ATT_INSUFFICIENT_RESOURCES;
 // use sqlx::{Row, Sqlite};
 // use text_splitter::{ChunkConfig, TextSplitter};
 use zip::ZipArchive;
@@ -159,6 +158,7 @@ async fn save_doc_embedding(robot_id: &str, doc_id: i64, doc_content: &str) -> R
                 "CREATE TABLE {robot_id}_vec (
                     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                     doc_id NOT NULL INTEGER,
+                    chunk_text NOT NULL TEXT,
                     doc_vec F32_BLOB({})
                 );",
                 r.0.len()
@@ -211,12 +211,51 @@ pub(super) fn parse_docx(b: Vec<u8>) -> Result<String> {
 
 fn parse_pdf() {}
 
-async fn search_doc(robot_id: &str, query: &str) -> Result<()> {
+async fn search_doc(
+    robot_id: &str,
+    query: &str,
+    connect_timeout: u32,
+    read_timeout: u32,
+) -> Result<Option<String>> {
     let r = embedding::embedding(robot_id, query).await?;
     let sql = format!(
-        "SELECT doc_id, vector_distance_cos(doc_vec, vector32(?1)) AS distance FROM {robot_id}_vec ORDER BY distance ASC LIMIT 1"
+        "SELECT chunk_text, vector_distance_cos(doc_vec, vector32(?1)) AS distance FROM {robot_id}_vec ORDER BY distance ASC LIMIT 1"
     );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
-    let mut results = conn.query(&sql, [embedding::vec_to_db(&r.0)]);
-    Ok(())
+    let mut rows = conn.query(&sql, [embedding::vec_to_db(&r.0)]).await?;
+    if let Some(row) = rows.next().await? {
+        let prompts = vec![
+            crate::ai::completion::Prompt {
+                role: String::from("system"),
+                content: String::from(
+                    "你是一个专业的文档助手。请根据提供的文档内容回答问题。\
+                                如果文档内容中没有相关信息，请明确说明。\
+                                回答要基于文档内容，不要编造信息。",
+                ),
+            },
+            crate::ai::completion::Prompt {
+                role: String::from("user"),
+                content: format!(
+                    "文档内容：\n{}\n\n问题：{}",
+                    row.get_value(0)?.as_text().unwrap(),
+                    query
+                ),
+            },
+        ];
+        let mut s = String::with_capacity(1024);
+        if let Err(e) = crate::ai::chat::chat(
+            robot_id,
+            Some(prompts),
+            Some(connect_timeout),
+            Some(read_timeout),
+            crate::ai::chat::ResultSender::StrBuf(&mut s),
+        )
+        .await
+        {
+            log::error!("LlmChatNode response failed, err: {:?}", &e);
+        } else {
+            return Ok(Some(s));
+        }
+    }
+    Ok(None)
 }

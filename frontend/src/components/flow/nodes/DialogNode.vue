@@ -2,23 +2,28 @@
 // import bootstrap from 'bootstrap/dist/js/bootstrap.js';
 import { defineComponent, inject, watch, nextTick } from "vue";
 // import { ElMessageBox } from 'element-plus'
-import { copyProperties, getDefaultBranch, getRobotType, httpReq } from '../../../assets/tools.js'
-import { useI18n } from 'vue-i18n'
-import EpPlus from '~icons/ep/plus'
-import EpWarning from '~icons/ep/warning'
-import RiBold from '~icons/ri/bold'
-import RiItalic from '~icons/ri/italic'
-import RiStrikethrough from '~icons/ri/strikethrough'
-import RiUnderline from '~icons/ri/underline'
-import RiFontColor from '~icons/ri/font-color'
-import BiHighlighter from '~icons/bi/highlighter'
-import RiHeading from '~icons/ri/heading'
-import RiListUnordered from '~icons/ri/list-unordered'
-import RiListOrdered from '~icons/ri/list-ordered'
-import RiChatQuoteLine from '~icons/ri/chat-quote-line'
-import IcBaselineHorizontalRule from '~icons/ic/baseline-horizontal-rule'
-import IcBaselineUndo from '~icons/ic/baseline-undo'
-import IcBaselineRedo from '~icons/ic/baseline-redo'
+import {
+    copyProperties,
+    getDefaultBranch,
+    getRobotType,
+    httpReq,
+} from "../../../assets/tools.js";
+import { useI18n } from "vue-i18n";
+import EpPlus from "~icons/ep/plus";
+import EpWarning from "~icons/ep/warning";
+import RiBold from "~icons/ri/bold";
+import RiItalic from "~icons/ri/italic";
+import RiStrikethrough from "~icons/ri/strikethrough";
+import RiUnderline from "~icons/ri/underline";
+import RiFontColor from "~icons/ri/font-color";
+import BiHighlighter from "~icons/bi/highlighter";
+import RiHeading from "~icons/ri/heading";
+import RiListUnordered from "~icons/ri/list-unordered";
+import RiListOrdered from "~icons/ri/list-ordered";
+import RiChatQuoteLine from "~icons/ri/chat-quote-line";
+import IcBaselineHorizontalRule from "~icons/ic/baseline-horizontal-rule";
+import IcBaselineUndo from "~icons/ic/baseline-undo";
+import IcBaselineRedo from "~icons/ic/baseline-redo";
 
 // import {
 //     // necessary extensions
@@ -45,18 +50,18 @@ import IcBaselineRedo from '~icons/ic/baseline-redo'
 // } from 'element-tiptap-vue3-fixed';
 // import EleTipTap from './EleTipTap.vue'
 // import Editor from '@tinymce/tinymce-vue'
-import { BubbleMenu, Editor, EditorContent } from '@tiptap/vue-3';
-import StarterKit from '@tiptap/starter-kit'
-import Underline from '@tiptap/extension-underline'
-import { Color } from '@tiptap/extension-color'
-import TextStyle from '@tiptap/extension-text-style'
-import Highlight from '@tiptap/extension-highlight'
-import Blockquote from '@tiptap/extension-blockquote'
-import TextAlign from '@tiptap/extension-text-align'
-import MaterialSymbolsFormatAlignLeft from '~icons/material-symbols/format-align-left'
-import MaterialSymbolsFormatAlignCenter from '~icons/material-symbols/format-align-center'
-import MaterialSymbolsFormatAlignRight from '~icons/material-symbols/format-align-right'
-import PhTrash from '~icons/ph/trash'
+import { BubbleMenu, Editor, EditorContent } from "@tiptap/vue-3";
+import StarterKit from "@tiptap/starter-kit";
+import Underline from "@tiptap/extension-underline";
+import { Color } from "@tiptap/extension-color";
+import TextStyle from "@tiptap/extension-text-style";
+import Highlight from "@tiptap/extension-highlight";
+import Blockquote from "@tiptap/extension-blockquote";
+import TextAlign from "@tiptap/extension-text-align";
+import MaterialSymbolsFormatAlignLeft from "~icons/material-symbols/format-align-left";
+import MaterialSymbolsFormatAlignCenter from "~icons/material-symbols/format-align-center";
+import MaterialSymbolsFormatAlignRight from "~icons/material-symbols/format-align-right";
+import PhTrash from "~icons/ph/trash";
 
 export default defineComponent({
     name: "DialogNode",
@@ -67,22 +72,22 @@ export default defineComponent({
     inject: ["getGraph", "getNode"],
     data() {
         return {
-            preview: '',
+            preview: "",
             nodeSetFormVisible: false,
             varDialogVisible: false,
-            formLabelWidth: '100px',
+            formLabelWidth: "100px",
             vars: [],
-            selectedVar: '',
+            selectedVar: "",
             overrideTimeoutEnabled: false,
             nodeData: {
-                nodeName: this.t('dialogNode.nodeName'),
-                dialogText: '',
-                dialogTextType: '',
-                dialogTextSource: 'FixedText',
-                dialogLlmGenPrompt: '',
-                dialogFallbackText: '',
+                nodeName: this.t("dialogNode.nodeName"),
+                dialogText: "",
+                dialogTextType: "",
+                dialogTextSource: "FixedText",
+                dialogLlmGenPrompt: "",
+                dialogFallbackText: "",
                 branches: [],
-                nextStep: 'WaitUserResponse',
+                nextStep: "WaitUserResponse",
                 responseStreaming: true,
                 connectTimeout: -1,
                 readTimeout: -1,
@@ -92,12 +97,21 @@ export default defineComponent({
                 newNode: true,
             },
             settings: {},
-            nextSteps: [{ label: this.tm('dialogNode.nextSteps')[0], value: 'WaitUserResponse' }, { label: this.tm('dialogNode.nextSteps')[1], value: 'GotoNextNode' }],
+            nextSteps: [
+                {
+                    label: this.tm("dialogNode.nextSteps")[0],
+                    value: "WaitUserResponse",
+                },
+                {
+                    label: this.tm("dialogNode.nextSteps")[1],
+                    value: "GotoNextNode",
+                },
+            ],
             loading: false,
             lastEditRange: null,
             // textEditor: '2',
-            robotId: '',
-            robotType: '',
+            robotId: "",
+            robotType: "",
             // extensions: [
             //     Color,
             //     Doc,
@@ -120,31 +134,31 @@ export default defineComponent({
             //     HorizontalRule,
             // ],
             predefineColors: [
-                '#ff4500',
-                '#ff8c00',
-                '#ffd700',
-                '#90ee90',
-                '#00ced1',
-                '#1e90ff',
-                '#c71585',
+                "#ff4500",
+                "#ff8c00",
+                "#ffd700",
+                "#90ee90",
+                "#00ced1",
+                "#1e90ff",
+                "#c71585",
                 // 'rgba(255, 69, 0, 0.68)',
                 // 'rgb(255, 120, 0)',
                 // 'hsv(51, 100, 98)',
                 // 'hsva(120, 40, 94, 0.5)',
                 // 'hsl(181, 100%, 37%)',
                 // 'hsla(209, 100%, 56%, 0.73)',
-                '#c7158577',
+                "#c7158577",
             ],
             editor: null,
-            activeBtnColor: '#626aef',
+            activeBtnColor: "#626aef",
             genTextVisible: false,
             genTextReq: {
-                system: '',
-                user: '',
+                system: "",
+                user: "",
             },
             textGenerating: false,
-            genTextBtnText: 'Generate text',
-            generatedText: '',
+            genTextBtnText: "Generate text",
+            generatedText: "",
         };
     },
     mounted() {
@@ -168,25 +182,32 @@ export default defineComponent({
         //         this.nodeData.newNode = data.newNode;
         // }
         // console.log(node.getData().dialogText);
-        const allNodeNameSet = inject('allNodeNameSet');
+        const allNodeNameSet = inject("allNodeNameSet");
         if (this.nodeData.newNode) {
             let n = null;
             do {
-                n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
-                this.nodeData.nodeName = this.t('dialogNode.nodeName') + '-' + n;
+                n =
+                    n == null
+                        ? Date.now().toString(16)
+                        : Math.random().toString(16).substring(2);
+                this.nodeData.nodeName =
+                    this.t("dialogNode.nodeName") + "-" + n;
             } while (allNodeNameSet.value.has(this.nodeData.nodeName));
             const b = getDefaultBranch();
-            b.branchType = 'GotoAnotherNode';
+            b.branchType = "GotoAnotherNode";
             // b.conditionGroup[0][0].conditionType = 'UserInput';
             this.nodeData.branches.push(b);
-            const heightOffset = this.$refs.nodeName.offsetHeight + this.$refs.nodeAnswer.offsetHeight + 20;
+            const heightOffset =
+                this.$refs.nodeName.offsetHeight +
+                this.$refs.nodeAnswer.offsetHeight +
+                20;
             const x = this.$refs.nodeName.offsetWidth - 15;
             node.addPort({
-                group: 'absolute',
+                group: "absolute",
                 args: { x: x, y: heightOffset },
                 markup: [
                     { tagName: "circle", selector: "bopdy" },
-                    { tagName: "rect", selector: "bg" }
+                    { tagName: "rect", selector: "bg" },
                 ],
                 attrs: {
                     text: {
@@ -201,8 +222,8 @@ export default defineComponent({
                         refX: "-100%",
                         refX2: -15,
                         refY: -5,
-                        fill: "rgb(235,238,245)"
-                    }
+                        fill: "rgb(235,238,245)",
+                    },
                 },
             });
             this.nodeData.newNode = false;
@@ -219,14 +240,14 @@ export default defineComponent({
         });
         nextTick(() => {
             this.setPortPos();
-        })
+        });
         // this.nodeData.dialogText = '12345';
-        const { robotId } = inject('robotId');
+        const { robotId } = inject("robotId");
         this.robotId = robotId;
         this.robotType = getRobotType(this.robotId);
-        console.log('robotType=' + this.robotType);
+        console.log("robotType=" + this.robotType);
         // console.log(this.nodeData.dialogText)
-        if (this.robotType == 'TextBot') {
+        if (this.robotType == "TextBot") {
             this.editor = new Editor({
                 extensions: [
                     // Blockquote,
@@ -236,7 +257,7 @@ export default defineComponent({
                     Underline,
                     TextStyle,
                     TextAlign.configure({
-                        types: ['heading', 'paragraph'],
+                        types: ["heading", "paragraph"],
                     }),
                 ],
                 // content: '<p>I’m running Tiptap with Vue.js. 🎉</p>',
@@ -244,24 +265,34 @@ export default defineComponent({
                 editorProps: {
                     // https://github.com/ueberdosis/tiptap/issues/943
                     transformPastedText(text) {
-                        return text.replace(/\u200B/g, "").replace(/[\xA0|\u3000]/g, " ");
+                        return text
+                            .replace(/\u200B/g, "")
+                            .replace(/[\xA0|\u3000]/g, " ");
                     },
                     transformPastedHTML(html) {
-                        return html.replace(/\u200B/g, "").replace(/[\xA0|\u3000]/g, " ");
+                        return html
+                            .replace(/\u200B/g, "")
+                            .replace(/[\xA0|\u3000]/g, " ");
                     },
                 },
                 onUpdate: () => {
                     // HTML
-                    this.$emit('update:modelValue', this.editor.getHTML())
-                    this.nodeData.dialogText = this.editor.getHTML()
+                    this.$emit("update:modelValue", this.editor.getHTML());
+                    this.nodeData.dialogText = this.editor.getHTML();
 
                     // JSON
                     // this.$emit('update:modelValue', this.editor.getJSON())
                 },
             });
-            this.$emit('update:modelValue', this.nodeData.dialogText)
+            this.$emit("update:modelValue", this.nodeData.dialogText);
         }
-        httpReq("GET", 'management/settings', { robotId: this.robotId }, null, null).then((res) => {
+        httpReq(
+            "GET",
+            "management/settings",
+            { robotId: this.robotId },
+            null,
+            null,
+        ).then((res) => {
             // const r = res.json();
             if (res.data) {
                 copyProperties(res.data, this.settings);
@@ -269,15 +300,16 @@ export default defineComponent({
                 // if (this.nodeData.connectTimeout > 0 && this.nodeData.readTimeout > 0)
                 //     this.overrideTimeoutEnabled = true;
                 if (this.nodeData.connectTimeout < 100)
-                    this.nodeData.connectTimeout = this.settings.chatProvider.connectTimeoutMillis;
+                    this.nodeData.connectTimeout =
+                        this.settings.chatProvider.connectTimeoutMillis;
                 if (this.nodeData.readTimeout < 200)
-                    this.nodeData.readTimeout = this.settings.chatProvider.readTimeoutMillis;
+                    this.nodeData.readTimeout =
+                        this.settings.chatProvider.readTimeoutMillis;
             }
-        })
+        });
     },
     beforeUnmount() {
-        if (this.editor)
-            this.editor.destroy()
+        if (this.editor) this.editor.destroy();
     },
     methods: {
         hideForm() {
@@ -289,23 +321,25 @@ export default defineComponent({
             const d = this.nodeData;
             const m = d.invalidMessages;
             m.splice(0, m.length);
-            if (!d.nodeName)
-                m.push(this.tm('dialogNode.errors')[0]);
-            if (d.dialogTextSource && d.dialogTextSource === 'FixedText') {
+            if (!d.nodeName) m.push(this.tm("dialogNode.errors")[0]);
+            if (d.dialogTextSource && d.dialogTextSource === "FixedText") {
                 if (!d.dialogText || d.dialogText.length < 1)
-                    m.push(this.tm('dialogNode.errors')[1]);
+                    m.push(this.tm("dialogNode.errors")[1]);
                 else if (d.dialogText.length > 5000)
-                    m.push(this.tm('dialogNode.errors')[2]);
-            } else if (d.dialogTextSource && d.dialogTextSource === 'LlmGenText') {
+                    m.push(this.tm("dialogNode.errors")[2]);
+            } else if (
+                d.dialogTextSource &&
+                d.dialogTextSource === "LlmGenText"
+            ) {
                 if (!d.dialogLlmGenPrompt || d.dialogLlmGenPrompt.length < 1)
-                    m.push('Input prompt');
+                    m.push("Input prompt");
                 else if (d.dialogLlmGenPrompt.length > 5000)
-                    m.push('The prompt is too long.');
+                    m.push("The prompt is too long.");
                 if (!d.dialogFallbackText || d.dialogFallbackText.length < 1)
-                    m.push('Input fallback text');
+                    m.push("Input fallback text");
                 else if (d.dialogFallbackText.length > 500)
-                    m.push('The fallback text is too long');
-            } else m.push('Unknown text source');
+                    m.push("The fallback text is too long");
+            } else m.push("Unknown text source");
             d.valid = m.length == 0;
         },
         getTextWidth() {
@@ -320,41 +354,57 @@ export default defineComponent({
             // twts.innerText = t;
             // return Math.ceil(twts.offsetWidth)
             // console.log(this.$refs.nodeAnswer.scrollWidth)
-            return this.$refs.nodeAnswer.offsetWidth
+            return this.$refs.nodeAnswer.offsetWidth;
         },
         setPreview() {
-            let t = '';
-            if (this.nodeData.dialogTextSource && this.nodeData.dialogTextSource === 'FixedText') {
+            let t = "";
+            if (
+                this.nodeData.dialogTextSource &&
+                this.nodeData.dialogTextSource === "FixedText"
+            ) {
                 t = this.nodeData.dialogText;
-            } else if (this.nodeData.dialogTextSource && this.nodeData.dialogTextSource === 'LlmGenText') {
+            } else if (
+                this.nodeData.dialogTextSource &&
+                this.nodeData.dialogTextSource === "LlmGenText"
+            ) {
                 t = this.nodeData.dialogLlmGenPrompt;
             }
-            let p = t.replace(/<[^>]+>/g, '').replace(/\r/g, '');
+            let p = t.replace(/<[^>]+>/g, "").replace(/\r/g, "");
             if (p) {
-                const array = p.split('\n');
+                const array = p.split("\n");
                 // console.log(array.splice(3, array.length - 3))
                 if (array.length > 3) {
-                    array.splice(3, array.length - 3, '......')
+                    array.splice(3, array.length - 3, "......");
                 }
                 const node = this.getNode();
                 // console.log(node.size().width)
                 // console.log(this.getTextWidth())
                 // console.log(this.$refs.nodeAnswer.getBoundingClientRect())
                 array.forEach(function (item, idx, arr) {
-                    if (this.$refs.nodeAnswer.getBoundingClientRect().width > node.size().width) {
-                        const shortPercent = (this.$refs.nodeAnswer.scrollWidth - node.size().width) / node.size().width;
+                    if (
+                        this.$refs.nodeAnswer.getBoundingClientRect().width >
+                        node.size().width
+                    ) {
+                        const shortPercent =
+                            (this.$refs.nodeAnswer.scrollWidth -
+                                node.size().width) /
+                            node.size().width;
                         // console.log(shortPercent)
                         // console.log(shortPercent * item.length)
-                        console.log(Math.floor(shortPercent * item.length))
-                        arr[idx] = item.substring(0, Math.floor(shortPercent * item.length) - 5) + "...";
+                        console.log(Math.floor(shortPercent * item.length));
+                        arr[idx] =
+                            item.substring(
+                                0,
+                                Math.floor(shortPercent * item.length) - 5,
+                            ) + "...";
                     }
                     // if (item.length > 20)
                     //     arr[idx] = item.substring(0, 20) + "...";
                 }, this);
-                p = array.join('\n');
+                p = array.join("\n");
                 nextTick(() => {
                     this.setPortPos();
-                })
+                });
             }
             this.preview = p;
         },
@@ -362,13 +412,18 @@ export default defineComponent({
             const node = this.getNode();
             const port = node.getPortAt(0);
             // console.log(this.$refs)
-            const heightOffset = this.$refs.nodeName.offsetHeight + this.$refs.nodeAnswer.offsetHeight + 20;
+            const heightOffset =
+                this.$refs.nodeName.offsetHeight +
+                this.$refs.nodeAnswer.offsetHeight +
+                20;
             // console.log(heightOffset);
-            node.setPortProp(port.id, ['args', 'y'], heightOffset);
-            node.resize(node.size().width, 20 + heightOffset, { direction: 'bottom' })
+            node.setPortProp(port.id, ["args", "y"], heightOffset);
+            node.resize(node.size().width, 20 + heightOffset, {
+                direction: "bottom",
+            });
         },
         saveForm() {
-            let text = '';
+            let text = "";
             for (let i = 0; i < this.nextSteps.length; i++) {
                 if (this.nodeData.nextStep == this.nextSteps[i].value) {
                     text = this.nextSteps[i].label;
@@ -378,14 +433,15 @@ export default defineComponent({
             this.setPortPos();
             const node = this.getNode();
             const port = node.getPortAt(0);
-            node.setPortProp(port.id, ['attrs', 'text', 'text'], text);
+            node.setPortProp(port.id, ["attrs", "text", "text"], text);
             // this.nodeData.dialogText = this.$refs.textArea.innerText;
             const branch = this.nodeData.branches[0];
             branch.branchName = text;
             branch.branchId = port.id;
             this.validate();
             this.setPreview();
-            this.nodeData.dialogTextType = this.robotType == 'TextBot' ? 'TextHtml' : 'TextPlain';
+            this.nodeData.dialogTextType =
+                this.robotType == "TextBot" ? "TextHtml" : "TextPlain";
             // console.log('dialogTextType=' + this.nodeData.dialogTextType);
             // console.log(this.preview);
             node.removeData({ silent: true });
@@ -402,7 +458,13 @@ export default defineComponent({
             }
         },
         async showVarsForm() {
-            let t = await httpReq('GET', 'variable', { robotId: this.robotId }, null, null);
+            let t = await httpReq(
+                "GET",
+                "variable",
+                { robotId: this.robotId },
+                null,
+                null,
+            );
             // console.log(t);
             if (t && t.status == 200 && t.data) {
                 this.vars = t.data;
@@ -410,7 +472,7 @@ export default defineComponent({
             this.varDialogVisible = true;
         },
         insertVar() {
-            this.nodeData.dialogText += '`' + this.selectedVar + '`';
+            this.nodeData.dialogText += "`" + this.selectedVar + "`";
             /*
             const t = this.$refs.textArea;
             // console.log(t);
@@ -436,26 +498,31 @@ export default defineComponent({
             // console.log('this.nodeData.dialogText=' + this.nodeData.dialogText)
             // console.log('this.textEditor='+this.textEditor)
             if (this.nodeData.dialogText) {
-                if (this.textEditor == '1') {
+                if (this.textEditor == "1") {
                     ElMessageBox.confirm(
-                        'Switch to plain text and all styles will be lost. Whether to continue?',
-                        'Warning',
+                        "Switch to plain text and all styles will be lost. Whether to continue?",
+                        "Warning",
                         {
-                            confirmButtonText: 'OK',
-                            cancelButtonText: 'Cancel',
-                            type: 'warning',
-                        }
+                            confirmButtonText: "OK",
+                            cancelButtonText: "Cancel",
+                            type: "warning",
+                        },
                     )
                         .then(() => {
-                            const c = this.nodeData.dialogText.replace(/<\/p>/g, '\n').trim();
-                            const regex = /(<([^>]+)>)/ig;
-                            this.nodeData.dialogText = c.replace(regex, '');
+                            const c = this.nodeData.dialogText
+                                .replace(/<\/p>/g, "\n")
+                                .trim();
+                            const regex = /(<([^>]+)>)/gi;
+                            this.nodeData.dialogText = c.replace(regex, "");
                         })
                         .catch(() => {
-                            this.textEditor = '2';
-                        })
+                            this.textEditor = "2";
+                        });
                 } else {
-                    const c = '<p>' + this.nodeData.dialogText.replace(/\n/g, '</p><p>') + '</p>';
+                    const c =
+                        "<p>" +
+                        this.nodeData.dialogText.replace(/\n/g, "</p><p>") +
+                        "</p>";
                     // console.log(c);
                     this.$refs.editor.setContent(c);
                 }
@@ -465,46 +532,55 @@ export default defineComponent({
         //     console.log('callback=' + s);
         // },
         async genText() {
-            const prompt = [{ "role": "user", "content": this.genTextReq.user },];
+            const prompt = [{ role: "user", content: this.genTextReq.user }];
             if (this.genTextReq.system)
-                prompt.push({ "role": "system", "content": this.genTextReq.system, },);
+                prompt.push({
+                    role: "system",
+                    content: this.genTextReq.system,
+                });
             // const prompt = [];
             // if (this.genTextReq.system)
             //     prompt.push("<|system|>", this.genTextReq.system);
             // prompt.push('<|user|>', this.genTextReq.user + '</s>', '<|assistant|>');
             const body = {
                 robot_id: this.robotId,
-                prompt: JSON.stringify(prompt)
+                prompt: JSON.stringify(prompt),
                 // prompt: prompt.join('\n')
             };
             // const endPos = this.editor.state.doc.content.size;
             // this.editor.commands.insertContentAt(endPos, '00000000000000000abc123')
             // console.log(this.nodeData.dialogText)
-            console.log(JSON.stringify(body))
+            // console.log(JSON.stringify(body));
             this.textGenerating = true;
-            this.genTextBtnText = 'Generating';
-            this.generatedText = '';
-            const u = window.location.protocol + '//' + window.location.host + '/ai/text/generation';
+            this.genTextBtnText = "Generating";
+            this.generatedText = "";
+            const u =
+                import.meta.env.VITE_REQ_BACKEND_PREFIX + "ai/text/generation";
             // const u = 'http://localhost:12715/ai/text/generation';
             const response = await fetch(u, {
-                method: 'POST',
+                method: "POST",
                 headers: {
-                    'Content-Type': 'text/event-stream'
+                    "Content-Type": "text/event-stream",
                 },
                 body: JSON.stringify(body),
-            })
-            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+            });
+            const reader = response.body
+                .pipeThrough(new TextDecoderStream())
+                .getReader();
             while (true) {
                 const { value, done } = await reader.read();
-                console.log('Received', value);
-                this.processGenedText(value)
+                console.log("Received", value);
+                this.processGenedText(value);
                 if (done) {
-                    console.log('Connection finished.');
+                    console.log("Connection finished.");
                     this.textGenerating = false;
-                    this.genTextVisible = false
+                    this.genTextVisible = false;
                     if (this.editor) {
                         const endPos = this.editor.state.doc.content.size;
-                        this.editor.commands.insertContentAt(endPos, this.generatedText)
+                        this.editor.commands.insertContentAt(
+                            endPos,
+                            this.generatedText,
+                        );
                     } else {
                         this.nodeData.dialogText += this.generatedText;
                     }
@@ -513,27 +589,24 @@ export default defineComponent({
             }
         },
         processGenedText(t) {
-            if (t == null || t == undefined)
-                return;
-            const chunks = t.split('\n\n');
-            let s = '';
+            if (t == null || t == undefined) return;
+            const chunks = t.split("\n\n");
+            let s = "";
             chunks.forEach((chunk, idx, array) => {
-                let dataList = chunk.split('\n');
+                let dataList = chunk.split("\n");
                 dataList.forEach((data, i, a) => {
-                    if (data.indexOf('data: ') == 0) {
+                    if (data.indexOf("data: ") == 0) {
                         let d = data.substring(6);
-                        if (d.length > 0)
-                            s += d;
+                        if (d.length > 0) s += d;
                     }
-                })
+                });
             });
-            if (s.length > 0)
-                this.generatedText += s;
+            if (s.length > 0) this.generatedText += s;
             // console.log(this.nodeData.dialogText)
         },
         showColorPicker() {
             // this.$refs.colorPicker.show()
-            this.$refs.colorPicker.click()
+            this.$refs.colorPicker.click();
         },
     },
     components: {
@@ -564,24 +637,24 @@ export default defineComponent({
     props: {
         modelValue: {
             type: String,
-            default: '',
+            default: "",
         },
     },
 
-    emits: ['update:modelValue'],
+    emits: ["update:modelValue"],
     watch: {
         modelValue(value) {
             // HTML
-            const isSame = this.editor.getHTML() === value
+            const isSame = this.editor.getHTML() === value;
 
             // JSON
             // const isSame = JSON.stringify(this.editor.getJSON()) === JSON.stringify(value)
 
             if (isSame) {
-                return
+                return;
             }
 
-            this.editor.commands.setContent(value, false)
+            this.editor.commands.setContent(value, false);
         },
     },
 });
@@ -664,7 +737,7 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
     }
 
     mark {
-        background-color: #FAF594;
+        background-color: #faf594;
         border-radius: 0.4rem;
         box-decoration-break: clone;
         padding: 0.1rem 0.3rem;
@@ -676,139 +749,341 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
         <div ref="nodeName" class="nodeTitle">
             {{ nodeData.nodeName }}
             <span v-show="nodeData.invalidMessages.length > 0">
-                <el-tooltip class="box-item" effect="dark" :content="nodeData.invalidMessages.join('<br/>')"
-                    placement="bottom" raw-content>
+                <el-tooltip
+                    class="box-item"
+                    effect="dark"
+                    :content="nodeData.invalidMessages.join('<br/>')"
+                    placement="bottom"
+                    raw-content
+                >
                     <el-icon color="red" size="16">
                         <EpWarning />
                     </el-icon>
                 </el-tooltip>
             </span>
         </div>
-        <div ref="nodeAnswer" style="white-space: pre-wrap;font-size:12px;">{{ preview }}</div>
+        <div ref="nodeAnswer" style="white-space: pre-wrap; font-size: 12px">
+            {{ preview }}
+        </div>
         <!-- <el-text ref="nodeAnswer" line-clamp="2">
             {{ preview }}
         </el-text> -->
         <!-- <el-text truncated ref="nodeAnswer">{{ nodeData.dialogText }}</el-text> -->
         <!-- <teleport to="#modal-container"> -->
         <!-- <teleport to="body"> -->
-        <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="72%"
-            :append-to-body="true" :destroy-on-close="true">
+        <el-drawer
+            v-model="nodeSetFormVisible"
+            :title="nodeData.nodeName"
+            direction="rtl"
+            size="72%"
+            :append-to-body="true"
+            :destroy-on-close="true"
+        >
             <el-form :model="nodeData">
-                <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth" prop="nodeName" :rules="[
-                    { required: true, message: 'nodeName is required' },
-                ]">
+                <el-form-item
+                    :label="t('common.nodeName')"
+                    :label-width="formLabelWidth"
+                    prop="nodeName"
+                    :rules="[
+                        { required: true, message: 'nodeName is required' },
+                    ]"
+                >
                     <el-input v-model="nodeData.nodeName" autocomplete="off" />
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
                     <!-- <el-switch v-model="nodeData.textFromLLM" class="mb-2" active-text="LLM" inactive-text="Fixed text"
                         style="--el-switch-off-color: #13ce66" /> -->
                     <el-radio-group v-model="nodeData.dialogTextSource">
-                        <el-radio value="FixedText">Fixed text</el-radio>
-                        <el-radio value="LlmGenText">Large model generates text</el-radio>
+                        <el-radio value="FixedText">{{
+                            tm("dialogNode.textSource")[0]
+                        }}</el-radio>
+                        <el-radio value="LlmGenText">{{
+                            tm("dialogNode.textSource")[1]
+                        }}</el-radio>
                     </el-radio-group>
                 </el-form-item>
                 <!-- <el-tabs v-model="activeName" class="demo-tabs" @tab-click="handleClick">
                     <el-tab-pane label="Fixed text" name="first">User</el-tab-pane>
                     <el-tab-pane label="Large model generates text" name="second">Config</el-tab-pane>
                 </el-tabs> -->
-                <el-form-item v-show="nodeData.dialogTextSource == 'FixedText'" :label="t('dialogNode.form.label')"
-                    :label-width="formLabelWidth">
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'FixedText'"
+                    :label="t('dialogNode.form.label')"
+                    :label-width="formLabelWidth"
+                >
                     <!-- <el-radio-group v-model="textEditor" class="ml-4" @change="changeEditorNote">
                             <el-radio value="1">Plain text</el-radio>
                             <el-radio value="2">Rich text</el-radio>
                         </el-radio-group> -->
-                    <el-input v-if="editor == null || robotType != 'TextBot'" ref="textArea"
-                        v-model="nodeData.dialogText" type="textarea" @blur="getSel" />
+                    <el-input
+                        v-if="editor == null || robotType != 'TextBot'"
+                        ref="textArea"
+                        v-model="nodeData.dialogText"
+                        type="textarea"
+                        @blur="getSel"
+                    />
                     <!-- <div v-show="textEditor == '1'" ref="textArea" v-text="nodeData.dialogText" class="divInputBox"
                             contenteditable="true" @blur="getSel"></div> -->
                     <!-- <EleTipTap v-show="textEditor == '2'" :editorText="nodeData.dialogText" @updatedEditorText="editorCallback" /> -->
                     <!-- Current using follow one -->
                     <!-- <el-tiptap ref="editor" v-show="textEditor == '2'" v-model:content="nodeData.dialogText"
                             :extensions="extensions" /> -->
-                    <bubble-menu id="bubbleMenu" :editor="editor" :tippy-options="{ duration: 100 }"
-                        v-if="editor && robotType == 'TextBot'">
-                        <button type="button" class='inactive' @click="editor.chain().focus().toggleBold().run()"
-                            :class="{ 'is-active': editor.isActive('bold') }">
+                    <bubble-menu
+                        id="bubbleMenu"
+                        :editor="editor"
+                        :tippy-options="{ duration: 100 }"
+                        v-if="editor && robotType == 'TextBot'"
+                    >
+                        <button
+                            type="button"
+                            class="inactive"
+                            @click="editor.chain().focus().toggleBold().run()"
+                            :class="{ 'is-active': editor.isActive('bold') }"
+                        >
                             bold
                         </button>
-                        <button type="button" class='inactive' @click="editor.chain().focus().toggleItalic().run()"
-                            :class="{ 'is-active': editor.isActive('italic') }">
+                        <button
+                            type="button"
+                            class="inactive"
+                            @click="editor.chain().focus().toggleItalic().run()"
+                            :class="{ 'is-active': editor.isActive('italic') }"
+                        >
                             italic
                         </button>
-                        <button type="button" class='inactive' @click="editor.chain().focus().toggleStrike().run()"
-                            :class="{ 'is-active': editor.isActive('strike') }">
+                        <button
+                            type="button"
+                            class="inactive"
+                            @click="editor.chain().focus().toggleStrike().run()"
+                            :class="{ 'is-active': editor.isActive('strike') }"
+                        >
                             strike
                         </button>
                     </bubble-menu>
-                    <div class="menubar" v-if="editor && robotType == 'TextBot'">
+                    <div
+                        class="menubar"
+                        v-if="editor && robotType == 'TextBot'"
+                    >
                         <el-button-group size="normal">
-                            <el-button :color="editor.isActive('bold') ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleBold().run()"><el-icon>
-                                    <RiBold />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive('italic') ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleItalic().run()"><el-icon>
-                                    <RiItalic />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive('strike') ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleStrike().run()"><el-icon>
-                                    <RiStrikethrough />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive('underline') ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleUnderline().run()"><el-icon>
-                                    <RiUnderline />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive({ textAlign: 'left' }) ? activeBtnColor : ''"
-                                @click="editor.chain().focus().setTextAlign('left').run()"><el-icon>
-                                    <MaterialSymbolsFormatAlignLeft />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive({ textAlign: 'center' }) ? activeBtnColor : ''"
-                                @click="editor.chain().focus().setTextAlign('center').run()"><el-icon>
-                                    <MaterialSymbolsFormatAlignCenter />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive({ textAlign: 'right' }) ? activeBtnColor : ''"
-                                @click="editor.chain().focus().setTextAlign('right').run()"><el-icon>
-                                    <MaterialSymbolsFormatAlignRight />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive('highlight') ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleHighlight().run()"><el-icon>
-                                    <BiHighlighter />
-                                </el-icon></el-button>
-                            <el-button :color="editor.getAttributes('textStyle').color"
-                                @click="showColorPicker"><el-icon>
-                                    <RiFontColor />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive('heading', { level: 1 }) ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleHeading({ level: 1 }).run()"><el-icon>
-                                    <RiHeading />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive('bulletList') ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleBulletList().run()"><el-icon>
-                                    <RiListUnordered />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive('orderedList') ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleOrderedList().run()"><el-icon>
-                                    <RiListOrdered />
-                                </el-icon></el-button>
-                            <el-button :color="editor.isActive('blockquote') ? activeBtnColor : ''"
-                                @click="editor.chain().focus().toggleBlockquote().run()"><el-icon>
-                                    <RiChatQuoteLine />
-                                </el-icon></el-button>
-                            <el-button @click="editor.chain().focus().setHorizontalRule().run()"><el-icon>
-                                    <IcBaselineHorizontalRule />
-                                </el-icon></el-button>
-                            <el-button @click="editor.chain().focus().clearNodes().unsetAllMarks().run()"><el-icon>
-                                    <PhTrash />
-                                </el-icon></el-button>
-                            <el-button @click="editor.chain().focus().undo().run()"><el-icon>
-                                    <IcBaselineUndo />
-                                </el-icon></el-button>
-                            <el-button @click="editor.chain().focus().redo().run()"><el-icon>
-                                    <IcBaselineRedo />
-                                </el-icon></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('bold')
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor.chain().focus().toggleBold().run()
+                                "
+                                ><el-icon> <RiBold /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('italic')
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor.chain().focus().toggleItalic().run()
+                                "
+                                ><el-icon> <RiItalic /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('strike')
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor.chain().focus().toggleStrike().run()
+                                "
+                                ><el-icon> <RiStrikethrough /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('underline')
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .toggleUnderline()
+                                        .run()
+                                "
+                                ><el-icon> <RiUnderline /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive({ textAlign: 'left' })
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .setTextAlign('left')
+                                        .run()
+                                "
+                                ><el-icon>
+                                    <MaterialSymbolsFormatAlignLeft /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive({ textAlign: 'center' })
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .setTextAlign('center')
+                                        .run()
+                                "
+                                ><el-icon>
+                                    <MaterialSymbolsFormatAlignCenter /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive({ textAlign: 'right' })
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .setTextAlign('right')
+                                        .run()
+                                "
+                                ><el-icon>
+                                    <MaterialSymbolsFormatAlignRight /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('highlight')
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .toggleHighlight()
+                                        .run()
+                                "
+                                ><el-icon> <BiHighlighter /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="editor.getAttributes('textStyle').color"
+                                @click="showColorPicker"
+                                ><el-icon> <RiFontColor /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('heading', { level: 1 })
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .toggleHeading({ level: 1 })
+                                        .run()
+                                "
+                                ><el-icon> <RiHeading /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('bulletList')
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .toggleBulletList()
+                                        .run()
+                                "
+                                ><el-icon> <RiListUnordered /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('orderedList')
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .toggleOrderedList()
+                                        .run()
+                                "
+                                ><el-icon> <RiListOrdered /> </el-icon
+                            ></el-button>
+                            <el-button
+                                :color="
+                                    editor.isActive('blockquote')
+                                        ? activeBtnColor
+                                        : ''
+                                "
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .toggleBlockquote()
+                                        .run()
+                                "
+                                ><el-icon> <RiChatQuoteLine /> </el-icon
+                            ></el-button>
+                            <el-button
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .setHorizontalRule()
+                                        .run()
+                                "
+                                ><el-icon>
+                                    <IcBaselineHorizontalRule /> </el-icon
+                            ></el-button>
+                            <el-button
+                                @click="
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .clearNodes()
+                                        .unsetAllMarks()
+                                        .run()
+                                "
+                                ><el-icon> <PhTrash /> </el-icon
+                            ></el-button>
+                            <el-button
+                                @click="editor.chain().focus().undo().run()"
+                                ><el-icon> <IcBaselineUndo /> </el-icon
+                            ></el-button>
+                            <el-button
+                                @click="editor.chain().focus().redo().run()"
+                                ><el-icon> <IcBaselineRedo /> </el-icon
+                            ></el-button>
                         </el-button-group>
-                        <input ref="colorPicker" type="color" style="visibility: hidden;"
-                            @input="(e) => editor.chain().focus().setColor(e.target.value).run()" />
+                        <input
+                            ref="colorPicker"
+                            type="color"
+                            style="visibility: hidden"
+                            @input="
+                                (e) =>
+                                    editor
+                                        .chain()
+                                        .focus()
+                                        .setColor(e.target.value)
+                                        .run()
+                            "
+                        />
                         <!-- <el-color-picker ref="colorPicker" :predefine="predefineColors"
                             v-model="editor.getAttributes('textStyle').color"
                             @change="(v) => editor.chain().focus().setColor(v).run()" style="visibility: hidden;" /> -->
@@ -823,91 +1098,197 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                             CodeBlock
                         </button> -->
                     </div>
-                    <editor-content :editor="editor" style="width:100%; border: #e5e9f2 1px solid;"
-                        v-if="editor && robotType == 'TextBot'" v-model="nodeData.dialogText" />
+                    <editor-content
+                        :editor="editor"
+                        style="width: 100%; border: #e5e9f2 1px solid"
+                        v-if="editor && robotType == 'TextBot'"
+                        v-model="nodeData.dialogText"
+                    />
                 </el-form-item>
-                <el-form-item v-show="nodeData.dialogTextSource == 'FixedText'" label="" :label-width="formLabelWidth">
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'FixedText'"
+                    label=""
+                    :label-width="formLabelWidth"
+                >
                     <el-button @click="showVarsForm">
                         <el-icon>
                             <EpPlus />
                         </el-icon>
-                        {{ t('dialogNode.form.addVar') }}
+                        {{ t("dialogNode.form.addVar") }}
                     </el-button>
                     <el-button @click="genTextVisible = true">
-                        Generate text from LLM
+                        {{ tm("dialogNode.btns")[0] }}
                     </el-button>
                 </el-form-item>
-                <el-form-item v-show="nodeData.dialogTextSource == 'LlmGenText'" label="Prompt"
-                    :label-width="formLabelWidth">
-                    <el-input v-model="nodeData.dialogLlmGenPrompt" :rows="5" type="textarea"
-                        placeholder="Tell the large model how to respond" />
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'LlmGenText'"
+                    label="Prompt"
+                    :label-width="formLabelWidth"
+                >
+                    <el-input
+                        v-model="nodeData.dialogLlmGenPrompt"
+                        :rows="5"
+                        type="textarea"
+                        placeholder="Tell the large model how to respond"
+                    />
                 </el-form-item>
-                <el-form-item v-show="nodeData.dialogTextSource == 'LlmGenText'" label="Fallback text"
-                    :label-width="formLabelWidth">
-                    <el-input v-model="nodeData.dialogFallbackText" :rows="2" type="textarea"
-                        placeholder="What should be replied when the call times out?" />
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'LlmGenText'"
+                    label="Fallback text"
+                    :label-width="formLabelWidth"
+                >
+                    <el-input
+                        v-model="nodeData.dialogFallbackText"
+                        :rows="2"
+                        type="textarea"
+                        placeholder="What should be replied when the call times out?"
+                    />
                 </el-form-item>
-                <el-form-item v-show="nodeData.dialogTextSource == 'LlmGenText'" label="Timeout"
-                    :label-width="formLabelWidth">
-                    <el-checkbox label="Override timeout of settings" v-model="overrideTimeoutEnabled" />
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'LlmGenText'"
+                    label="Timeout"
+                    :label-width="formLabelWidth"
+                >
+                    <el-checkbox
+                        label="Override timeout of settings"
+                        v-model="overrideTimeoutEnabled"
+                    />
                     <el-divider direction="vertical" />
-                    Global settings are: [Connect: {{ settings.chatProvider?.connectTimeoutMillis }} millis, Read: {{
-                        settings.chatProvider?.readTimeoutMillis }} mills]
+                    Global settings are: [Connect:
+                    {{ settings.chatProvider?.connectTimeoutMillis }} millis,
+                    Read: {{ settings.chatProvider?.readTimeoutMillis }} mills]
                 </el-form-item>
-                <el-form-item v-show="nodeData.dialogTextSource == 'LlmGenText'" label="Connection"
-                    :label-width="formLabelWidth">
-                    <el-input-number v-model="nodeData.connectTimeout" :min="100" :max="65500"
-                        :disabled="!overrideTimeoutEnabled" />
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'LlmGenText'"
+                    label="Connection"
+                    :label-width="formLabelWidth"
+                >
+                    <el-input-number
+                        v-model="nodeData.connectTimeout"
+                        :min="100"
+                        :max="65500"
+                        :disabled="!overrideTimeoutEnabled"
+                    />
                 </el-form-item>
-                <el-form-item v-show="nodeData.dialogTextSource == 'LlmGenText'" label="Read"
-                    :label-width="formLabelWidth">
-                    <el-input-number v-model="nodeData.readTimeout" :min="200" :max="65500"
-                        :disabled="!overrideTimeoutEnabled" />
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'LlmGenText'"
+                    label="Read"
+                    :label-width="formLabelWidth"
+                >
+                    <el-input-number
+                        v-model="nodeData.readTimeout"
+                        :min="200"
+                        :max="65500"
+                        :disabled="!overrideTimeoutEnabled"
+                    />
                 </el-form-item>
-                <el-form-item v-show="nodeData.dialogTextSource == 'LlmGenText'" label="History"
-                    :label-width="formLabelWidth">
-                    <el-input-number v-model="nodeData.contextLength" :min="0" :max="50" :step="5" />
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'LlmGenText'"
+                    label="History"
+                    :label-width="formLabelWidth"
+                >
+                    <el-input-number
+                        v-model="nodeData.contextLength"
+                        :min="0"
+                        :max="50"
+                        :step="5"
+                    />
                     How many chat history records will be added.
                 </el-form-item>
-                <el-form-item v-show="nodeData.dialogTextSource == 'LlmGenText'" label="Streaming"
-                    :label-width="formLabelWidth">
-                    <el-checkbox v-model="nodeData.responseStreaming" label="Response streaming" />
+                <el-form-item
+                    v-show="nodeData.dialogTextSource == 'LlmGenText'"
+                    label="Streaming"
+                    :label-width="formLabelWidth"
+                >
+                    <el-checkbox
+                        v-model="nodeData.responseStreaming"
+                        label="Response streaming"
+                    />
                 </el-form-item>
-                <el-form-item :label="t('dialogNode.form.nextStep')" :label-width="formLabelWidth">
-                    <el-select v-model="nodeData.nextStep" :placeholder="t('dialogNode.form.choose')">
-                        <el-option v-for="item in nextSteps" :key="item.label" :label="item.label"
-                            :value="item.value" />
+                <el-form-item
+                    :label="t('dialogNode.form.nextStep')"
+                    :label-width="formLabelWidth"
+                >
+                    <el-select
+                        v-model="nodeData.nextStep"
+                        :placeholder="t('dialogNode.form.choose')"
+                    >
+                        <el-option
+                            v-for="item in nextSteps"
+                            :key="item.label"
+                            :label="item.label"
+                            :value="item.value"
+                        />
                     </el-select>
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
+                <el-button
+                    type="primary"
+                    :loading="loading"
+                    @click="saveForm()"
+                    >{{ t("common.save") }}</el-button
+                >
+                <el-button @click="hideForm()">{{
+                    t("common.cancel")
+                }}</el-button>
             </div>
         </el-drawer>
-        <el-dialog v-model="varDialogVisible" :title="t('dialogNode.var.title')" width="30%" :append-to-body="true"
-            :destroy-on-close="true">
-            <el-select v-model="selectedVar" class="m-2" :placeholder="t('dialogNode.var.choose')" size="large">
-                <el-option v-for="item in vars" :key="item.varName" :label="item.varName" :value="item.varName" />
+        <el-dialog
+            v-model="varDialogVisible"
+            :title="t('dialogNode.var.title')"
+            width="30%"
+            :append-to-body="true"
+            :destroy-on-close="true"
+        >
+            <el-select
+                v-model="selectedVar"
+                class="m-2"
+                :placeholder="t('dialogNode.var.choose')"
+                size="large"
+            >
+                <el-option
+                    v-for="item in vars"
+                    :key="item.varName"
+                    :label="item.varName"
+                    :value="item.varName"
+                />
             </el-select>
             <template #footer>
                 <span class="dialog-footer">
                     <el-button type="primary" @click="insertVar">
-                        {{ t('common.insert') }}
+                        {{ t("common.insert") }}
                     </el-button>
-                    <el-button @click="varDialogVisible = false">{{ t('common.cancel') }}</el-button>
+                    <el-button @click="varDialogVisible = false">{{
+                        t("common.cancel")
+                    }}</el-button>
                 </span>
             </template>
         </el-dialog>
-        <el-dialog v-model="genTextVisible" title="Prompt" width="70%" :append-to-body="true" :destroy-on-close="true">
+        <el-dialog
+            v-model="genTextVisible"
+            title="Prompt"
+            width="70%"
+            :append-to-body="true"
+            :destroy-on-close="true"
+        >
             <el-form :model="genTextReq">
                 <el-form-item label="System" :label-width="formLabelWidth">
                     <el-input v-model="genTextReq.system" autocomplete="on" />
                 </el-form-item>
                 <el-form-item label="User *" :label-width="formLabelWidth">
-                    <el-input v-model="genTextReq.user" autocomplete="on" :row="5" type="textarea" />
+                    <el-input
+                        v-model="genTextReq.user"
+                        autocomplete="on"
+                        :row="5"
+                        type="textarea"
+                    />
                 </el-form-item>
-                <el-form-item v-if="generatedText.length > 0" label="" :label-width="formLabelWidth">
+                <el-form-item
+                    v-if="generatedText.length > 0"
+                    label=""
+                    :label-width="formLabelWidth"
+                >
                     Following generated text will be inserted when finish.
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
@@ -916,10 +1297,16 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
             </el-form>
             <template #footer>
                 <span class="dialog-footer">
-                    <el-button type="primary" @click="genText" :loading="textGenerating">
+                    <el-button
+                        type="primary"
+                        @click="genText"
+                        :loading="textGenerating"
+                    >
                         {{ genTextBtnText }}
                     </el-button>
-                    <el-button @click="genTextVisible = false">{{ t('common.cancel') }}</el-button>
+                    <el-button @click="genTextVisible = false">{{
+                        t("common.cancel")
+                    }}</el-button>
                 </span>
             </template>
         </el-dialog>
