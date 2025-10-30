@@ -166,9 +166,25 @@ export default {
   },
   knowledgeBaseAnswerNode: {
     nodeName: "知识库回答节点",
+    fallbackSteps: ["跳转到下一个节点", "返回兜底答案"],
+    brief:
+      "知识召回阈值: {thresholds}%\n查询来源: {source}\n若召回失败则: {fallbackStep}",
+    formFields: ["知识召回阈值", "查询来源", "若召回失败则", "解析文档模型"],
   },
   llmChatNode: {
     nodeName: "大模型聊天节点",
+    brief:
+      "模型: {model} - {id}\n上下文长度: {contextLength}\n节点退出条件: {nodeExitType}",
+    formFields: [
+      "聊天模型",
+      "上下文长度",
+      "退出条件",
+      "超时",
+      "连接超时",
+      "读取超时",
+      "超时则",
+      "流式",
+    ],
   },
   externalHttpNode: {
     nodeName: "请求外部HTTP节点",
@@ -301,7 +317,7 @@ export default {
     kbDesc: "知识库是一个集中存储和管理知识的综合性数据库",
     qaDesc: "在流程中的问答知识节点中，可以使用知识库中的内容来回答用户问题",
     title1: "创建对话流程",
-    nav1: "开始绘制",
+    nav1: "开始绘制对话流程",
     title2: "我们内置了“肯定”、“否定”意图。若不够，可自行添加",
     nav2: "意图管理",
     desc2: "意图，是指用户说的话，符合某种想法。",

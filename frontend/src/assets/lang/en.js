@@ -176,9 +176,30 @@ export default {
   },
   knowledgeBaseAnswerNode: {
     nodeName: "Knowledge base answer node",
+    fallbackSteps: ["Goto next node", "Return alternate answer instead"],
+    brief:
+      "Knowledge recall thresholds: {thresholds}%\nRetrieve answer from: {source}\nWhen no knowledge is recalled then: {fallbackStep}",
+    formFields: [
+      "Knowledge recall thresholds",
+      "Retrieve answer from",
+      "When no knowledge is recalled",
+      "Doc answer model",
+    ],
   },
   llmChatNode: {
     nodeName: "LLM chat node",
+    brief:
+      "Chat model: {model} of {id}\nHistory context length: {contextLength}\nExit this node by: {nodeExitType}",
+    formFields: [
+      "Chat model",
+      "Context length",
+      "Exit condition",
+      "Timeout",
+      "Connection",
+      "Read",
+      "When timeout then",
+      "Streaming",
+    ],
   },
   externalHttpNode: {
     nodeName: "External HTTP node",
