@@ -1079,8 +1079,22 @@ impl KnowledgeBaseAnswerNode {
             }
         }
     }
-    fn retrieve_doc_answer(&self, _req: &Request) -> Option<String> {
-        None
+    async fn retrieve_doc_answer(&self, req: &Request) -> Option<String> {
+        let r = crate::kb::doc::search_doc(
+            &req.robot_id,
+            &req.user_input,
+            self.recall_distance,
+            1000,
+            5000,
+        )
+        .await;
+        match r {
+            Ok(op) => op,
+            Err(e) => {
+                log::warn!("Retrieve doc failed {:?}", &e);
+                None
+            }
+        }
     }
     fn fallback_answer(&self, ctx: &mut Context, response: &mut ResponseData) -> bool {
         match &self.no_recall_then {
@@ -1114,7 +1128,7 @@ impl RuntimeNode for KnowledgeBaseAnswerNode {
         for answer_source in &self.retrieve_answer_sources {
             let r = match answer_source {
                 KnowledgeBaseAnswerSource::QnA => self.retrieve_qa_answer(req).await,
-                KnowledgeBaseAnswerSource::Doc => self.retrieve_doc_answer(req),
+                KnowledgeBaseAnswerSource::Doc => self.retrieve_doc_answer(req).await,
             };
             if let Some(content) = r
                 && !content.is_empty()

@@ -159,14 +159,16 @@ async fn save_doc_embedding(robot_id: &str, doc_id: i64, doc_content: &str) -> R
                     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                     doc_id NOT NULL INTEGER,
                     chunk_text NOT NULL TEXT,
-                    doc_vec F32_BLOB({})
+                    chunk_vec F32_BLOB({})
                 );",
                 r.0.len()
             );
             conn.execute(&sql, ()).await?;
             created_table = true;
         }
-        let sql = format!("INSERT INTO {robot_id}_vec(doc_id, doc_vec) VALUES(?1, vector32(?2));");
+        let sql = format!(
+            "INSERT INTO {robot_id}_vec(doc_id, chunk_text, chunk_vec) VALUES(?1, vector32(?2));"
+        );
         conn.execute(&sql, (doc_id, embedding::vec_to_db(&r.0)))
             .await?;
     }
@@ -211,18 +213,27 @@ pub(super) fn parse_docx(b: Vec<u8>) -> Result<String> {
 
 fn parse_pdf() {}
 
-async fn search_doc(
+pub(crate) async fn search_doc(
     robot_id: &str,
     query: &str,
+    recall_distance: f64,
     connect_timeout: u32,
     read_timeout: u32,
 ) -> Result<Option<String>> {
     let r = embedding::embedding(robot_id, query).await?;
     let sql = format!(
-        "SELECT chunk_text, vector_distance_cos(doc_vec, vector32(?1)) AS distance FROM {robot_id}_vec ORDER BY distance ASC LIMIT 1"
+        "SELECT chunk_text, vector_distance_cos(chunk_vec, vector32(?1)) AS distance FROM {robot_id}_vec WHERE distance < ?2 ORDER BY distance ASC LIMIT 1"
     );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
-    let mut rows = conn.query(&sql, [embedding::vec_to_db(&r.0)]).await?;
+    let mut rows = conn
+        .query(
+            &sql,
+            [
+                embedding::vec_to_db(&r.0),
+                turso::Value::Real(recall_distance),
+            ],
+        )
+        .await?;
     if let Some(row) = rows.next().await? {
         let prompts = vec![
             crate::ai::completion::Prompt {
