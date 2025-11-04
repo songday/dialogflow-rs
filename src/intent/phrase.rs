@@ -155,7 +155,7 @@ pub(crate) async fn add(
                 intent_id TEXT NOT NULL,
                 intent_name TEXT NOT NULL,
                 phrase TEXT NOT NULL,
-                phrase_vec F32_BLOB({})
+                phrase_vec F32_BLOB({}) NOT NULL
             )",
             vectors.0.len()
         );

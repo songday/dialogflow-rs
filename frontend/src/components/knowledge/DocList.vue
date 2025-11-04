@@ -1,26 +1,30 @@
 <script setup>
-import { reactive, ref, onMounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { httpReq } from '../../assets/tools.js'
-import { UploadFilled } from '@element-plus/icons-vue'
-import { useI18n } from 'vue-i18n'
-const route = useRoute()
+import { reactive, ref, onMounted, nextTick } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { httpReq } from "../../assets/tools.js";
+import { UploadFilled } from "@element-plus/icons-vue";
+import { useI18n } from "vue-i18n";
+const route = useRoute();
 const router = useRouter();
 const { t, tm, rt } = useI18n();
-const robotId = route.params.robotId
-const uploadUrlHost = window.location.href.indexOf('localhost') > -1 ? 'http://localhost:12715' : '';
-const uploadUrl = uploadUrlHost + "/kb/doc/upload?robotId=" + robotId
-const formLabelWidth = '80px'
-const docDetailVisible = ref(false)
-const editFormVisible = ref(false)
-const loading = ref(false)
+const robotId = route.params.robotId;
+// const uploadUrlHost = window.location.href.indexOf('localhost') > -1 ? 'http://localhost:12715' : '';
+const uploadUrl =
+    import.meta.env.VITE_REQ_BACKEND_PREFIX +
+    "kb/doc/upload?robotId=" +
+    robotId;
+const formLabelWidth = "80px";
+const docDetailVisible = ref(false);
+const editFormVisible = ref(false);
+const loading = ref(false);
 const docFile = reactive({
-    docId: '',
-    fileName: '',
-    docContent: '',
+    docId: "",
+    fileName: "",
+    docContent: "",
     fileSizeInBytes: 0,
-})
-const tableData = reactive([])
+});
+const tableData = reactive([]);
+const listColumnNames = tm("kb.doc.listColumnNames");
 /*
 const updateUploadingProgress = (evt, uploadFile, uploadFiles) => {
     // const file = document.getElementById('f').files[0];
@@ -41,61 +45,64 @@ const updateUploadingProgress = (evt, uploadFile, uploadFiles) => {
 }
 */
 const listDocs = async () => {
-    const t = await httpReq('GET', 'kb/doc', { robotId: robotId }, null, null);
+    const t = await httpReq("GET", "kb/doc", { robotId: robotId }, null, null);
     console.log(t);
-    if (t.status == 200)
-        tableData.splice(0, tableData.length, ...t.data);
-}
+    if (t.status == 200) tableData.splice(0, tableData.length, ...t.data);
+};
 onMounted(() => {
     listDocs();
-})
+});
 const uploadSuccessful = (res, uploadFile, uploadFiles) => {
-    console.log(uploadFile)
-    listDocs()
-}
+    console.log(uploadFile);
+    listDocs();
+};
 const uploadFailed = (err, uploadFile, uploadFiles) => {
-    console.log(err)
-}
+    console.log(err);
+};
 const showDocDetail = (idx) => {
-    docFile.fileName = tableData[idx].fileName
-    docFile.docContent = tableData[idx].docContent
-    docDetailVisible.value = true
-}
+    docFile.fileName = tableData[idx].fileName;
+    docFile.docContent = tableData[idx].docContent;
+    docDetailVisible.value = true;
+};
 const editDoc = (idx) => {
-    docFile.fileName = tableData[idx].fileName
-    docFile.docContent = tableData[idx].docContent
-    editFormVisible.value = true
-}
+    docFile.fileName = tableData[idx].fileName;
+    docFile.docContent = tableData[idx].docContent;
+    editFormVisible.value = true;
+};
 const deleteDoc = (idx) => {
-    ElMessageBox.confirm(
-        'Confirm to delete this document?',
-        'Warning',
-        {
-            confirmButtonText: t('common.del'),
-            cancelButtonText: t('common.cancel'),
-            type: 'warning',
-        }
-    ).then(async () => {
-        const d = tableData[idx];
-        if (d) {
-            qaData.id = d.id;
-            const t = await httpReq('DELETE', 'kb/doc', { robotId: robotId }, null, qaData);
-            console.log(t);
-            nextTick(() => {
-                listDocs()
-            })
-        }
-    }).catch(() => {
-        // ElMessage({
-        //     type: 'info',
-        //     message: 'Delete canceled',
-        // })
+    ElMessageBox.confirm("Confirm to delete this document?", "Warning", {
+        confirmButtonText: t("common.del"),
+        cancelButtonText: t("common.cancel"),
+        type: "warning",
     })
-}
+        .then(async () => {
+            const d = tableData[idx];
+            console.log(idx, d, d.id);
+            if (d) {
+                const t = await httpReq(
+                    "DELETE",
+                    "kb/doc",
+                    { robotId: robotId },
+                    null,
+                    { id: d.id, fileName: "", fileSize: 0, docContent: "" },
+                );
+                console.log(t);
+                nextTick(() => {
+                    listDocs();
+                });
+            }
+        })
+        .catch((e) => {
+            console.log(e);
+            ElMessage({
+                type: "info",
+                message: "Delete canceled",
+            });
+        });
+};
 const goBack = () => {
-    router.push({ name: 'robotDetail', params: { robotId: robotId } });
-}
-
+    router.push({ name: "robotDetail", params: { robotId: robotId } });
+};
 </script>
 <template>
     <!-- <el-page-header :title="$t('common.back')" @back="goBack">
@@ -103,28 +110,57 @@ const goBack = () => {
             <span class="text-large font-600 mr-3">Documents management</span>
         </template>
 </el-page-header> -->
-    <h1>Documents</h1>
-    <el-upload drag :action="uploadUrl" :on-success="uploadSuccessful" :on-error="uploadFailed">
+    <h1>{{ t("kb.doc.title") }}</h1>
+    <el-upload
+        drag
+        :action="uploadUrl"
+        :on-success="uploadSuccessful"
+        :on-error="uploadFailed"
+    >
         <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-        <div>
-            Drop file here or <em>click to upload</em>
-        </div>
+        <div v-html="t('kb.doc.uploadBoxTip')"></div>
         <template #tip>
             <div class="el-upload__tip">
-                docx files with a size less than 20MB
+                {{ t("kb.doc.uploadFileSizeLimitTip") }}
             </div>
         </template>
     </el-upload>
-    <el-button type="primary" @click="dryRunFormVisible = true">Test docs</el-button>
+    <el-button type="primary" @click="dryRunFormVisible = true"
+        >Test docs</el-button
+    >
     <el-table :data="tableData" style="width: 100%">
-        <el-table-column prop="fileName" label="File name" width="270" />
-        <el-table-column prop="fileSize" label="File size" width="150" />
-        <el-table-column prop="docContent" label="File content" />
-        <el-table-column fixed="right" label="Operations" width="200">
+        <el-table-column
+            prop="fileName"
+            :label="listColumnNames[0]"
+            width="180"
+        />
+        <el-table-column
+            prop="fileSize"
+            :label="listColumnNames[1]"
+            width="150"
+        />
+        <el-table-column prop="docContent" :label="listColumnNames[2]">
             <template #default="scope">
-                <el-button link type="primary" @click="showDocDetail(scope.$index)">Detail</el-button>
-                <el-button link type="primary" @click="editDoc(scope.$index)">Edit</el-button>
-                <el-button link type="danger" @click="deleteDoc(scope.$index)">Delete</el-button>
+                <el-text truncated>{{ scope.row.docContent }}</el-text>
+            </template>
+        </el-table-column>
+        <el-table-column fixed="right" :label="listColumnNames[3]" width="200">
+            <template #default="scope">
+                <el-button
+                    link
+                    type="primary"
+                    @click="showDocDetail(scope.$index)"
+                    >{{ t("common.toDetail") }}</el-button
+                >
+                <el-button link type="primary" @click="editDoc(scope.$index)">{{
+                    t("common.edit")
+                }}</el-button>
+                <el-button
+                    link
+                    type="danger"
+                    @click="deleteDoc(scope.$index)"
+                    >{{ t("common.del") }}</el-button
+                >
             </template>
         </el-table-column>
     </el-table>
@@ -136,16 +172,31 @@ const goBack = () => {
             </div>
         </template>
     </el-dialog>
-    <el-drawer v-model="editFormVisible" :title="docFile.fileName" direction="rtl" size="70%" :append-to-body="true"
-        :destroy-on-close="true">
+    <el-drawer
+        v-model="editFormVisible"
+        :title="docFile.fileName"
+        direction="rtl"
+        size="70%"
+        :append-to-body="true"
+        :destroy-on-close="true"
+    >
         <el-form :model="docFile">
             <el-form-item label="Content" :label-width="formLabelWidth">
-                <el-input v-model="docFile.docContent" placeholder="" type="textarea" :rows="30" />
+                <el-input
+                    v-model="docFile.docContent"
+                    placeholder=""
+                    type="textarea"
+                    :rows="30"
+                />
             </el-form-item>
         </el-form>
         <div class="demo-drawer__footer">
-            <el-button type="primary" :loading="loading" @click="saveDoc()">{{ t('common.save') }}</el-button>
-            <el-button @click="editFormVisible = false">{{ t('common.cancel') }}</el-button>
+            <el-button type="primary" :loading="loading" @click="saveDoc()">{{
+                t("common.save")
+            }}</el-button>
+            <el-button @click="editFormVisible = false">{{
+                t("common.cancel")
+            }}</el-button>
         </div>
     </el-drawer>
 </template>

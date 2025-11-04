@@ -90,16 +90,18 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
 // }
 
 pub(super) async fn list(robot_id: &str) -> Result<Vec<DocData>> {
-    let sql = format!("SELECT * FROM {robot_id} ORDER BY created_at DESC");
+    let sql = format!(
+        "SELECT id, file_name, file_size, doc_content FROM {robot_id} ORDER BY created_at DESC"
+    );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
     let mut rows = conn.query(&sql, ()).await?;
     let mut results = Vec::with_capacity(10);
     while let Some(row) = rows.next().await? {
         results.push(DocData {
             id: row.get_value(0)?.as_integer().unwrap().clone(),
-            file_name: String::from(row.get_value(0)?.as_text().unwrap()),
-            file_size: row.get_value(0)?.as_integer().unwrap().clone(),
-            doc_content: String::from(row.get_value(0)?.as_text().unwrap()),
+            file_name: String::from(row.get_value(1)?.as_text().unwrap()),
+            file_size: row.get_value(2)?.as_integer().unwrap().clone(),
+            doc_content: String::from(row.get_value(3)?.as_text().unwrap()),
         });
     }
     Ok(results)
@@ -112,7 +114,7 @@ pub(super) async fn save(
     doc_content: &str,
 ) -> Result<()> {
     let sql = format!(
-        "INSERT INTO {robot_id}(file_name, file_size, doc_content, created_at)(?1, ?2, ?3, unixepoch())"
+        "INSERT INTO {robot_id}(file_name, file_size, doc_content, created_at)VALUES(?1, ?2, ?3, unixepoch())"
     );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
     conn.execute(
@@ -125,7 +127,18 @@ pub(super) async fn save(
     )
     .await?;
     let doc_id = conn.last_insert_rowid();
+    // log::info!("doc_id={}", doc_id);
     save_doc_embedding(robot_id, doc_id, doc_content).await?;
+    Ok(())
+}
+
+pub(crate) async fn delete(robot_id: &str, doc_id: i64) -> Result<()> {
+    let mut conn = DATA_SOURCE.get().unwrap().connect()?;
+    let tx = conn.transaction().await?;
+    let sql = format!("DELETE FROM {robot_id}_vec WHERE doc_id = ?1");
+    let _r = tx.execute(&sql, [doc_id]).await?;
+    let sql = format!("DELETE FROM {robot_id} WHERE id = ?1");
+    let _r = tx.execute(&sql, [doc_id]).await?;
     Ok(())
 }
 
@@ -155,11 +168,11 @@ async fn save_doc_embedding(robot_id: &str, doc_id: i64, doc_content: &str) -> R
         let r = embedding::embedding(robot_id, chunk).await?;
         if !created_table {
             let sql = format!(
-                "CREATE TABLE {robot_id}_vec (
+                "CREATE TABLE IF NOT EXISTS {robot_id}_vec (
                     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                    doc_id NOT NULL INTEGER,
-                    chunk_text NOT NULL TEXT,
-                    chunk_vec F32_BLOB({})
+                    doc_id INTEGER NOT NULL,
+                    chunk_text TEXT NOT NULL,
+                    chunk_vec F32_BLOB({}) NOT NULL
                 );",
                 r.0.len()
             );
@@ -167,10 +180,18 @@ async fn save_doc_embedding(robot_id: &str, doc_id: i64, doc_content: &str) -> R
             created_table = true;
         }
         let sql = format!(
-            "INSERT INTO {robot_id}_vec(doc_id, chunk_text, chunk_vec) VALUES(?1, vector32(?2));"
+            "INSERT INTO {robot_id}_vec(doc_id, chunk_text, chunk_vec) VALUES(?1, ?2, vector32(?3));"
         );
-        conn.execute(&sql, (doc_id, embedding::vec_to_db(&r.0)))
-            .await?;
+        conn.execute(
+            &sql,
+            (
+                doc_id,
+                turso::Value::Text(String::from(chunk)),
+                embedding::vec_to_db(&r.0),
+            ),
+        )
+        .await?;
+        log::info!("Embedding id={}", conn.last_insert_rowid());
     }
     Ok(())
 }
