@@ -18,8 +18,9 @@ const docDetailVisible = ref(false);
 const editFormVisible = ref(false);
 const loading = ref(false);
 const docFile = reactive({
-    docId: "",
+    id: 0,
     fileName: "",
+    fileSize: 0,
     docContent: "",
     fileSizeInBytes: 0,
 });
@@ -65,9 +66,18 @@ const showDocDetail = (idx) => {
     docDetailVisible.value = true;
 };
 const editDoc = (idx) => {
+    docFile.id = tableData[idx].id;
     docFile.fileName = tableData[idx].fileName;
     docFile.docContent = tableData[idx].docContent;
     editFormVisible.value = true;
+};
+const updateDocContent = () => {
+    const t = httpReq("POST", "kb/doc", { robotId: robotId }, null, docFile)
+        .then((res) => console.log(res))
+        .then(() => {
+            editFormVisible = false;
+            listDocs();
+        });
 };
 const deleteDoc = (idx) => {
     ElMessageBox.confirm("Confirm to delete this document?", "Warning", {
@@ -191,9 +201,12 @@ const goBack = () => {
             </el-form-item>
         </el-form>
         <div class="demo-drawer__footer">
-            <el-button type="primary" :loading="loading" @click="saveDoc()">{{
-                t("common.save")
-            }}</el-button>
+            <el-button
+                type="primary"
+                :loading="loading"
+                @click="updateDocContent()"
+                >{{ t("common.save") }}</el-button
+            >
             <el-button @click="editFormVisible = false">{{
                 t("common.cancel")
             }}</el-button>
