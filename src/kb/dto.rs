@@ -24,7 +24,7 @@ pub(crate) struct QuestionData {
     pub(super) vec_row_id: Option<u64>,
 }
 
-#[derive(Serialize)] // , sqlx::FromRow
+#[derive(Deserialize, Serialize)] // , sqlx::FromRow
 pub(crate) struct DocData {
     pub(crate) id: i64,
     #[serde(rename = "fileName")]

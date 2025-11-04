@@ -127,7 +127,7 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
                     "CREATE TABLE IF NOT EXISTS {robot_id}_vec (
                         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                         qa_id INTEGER NOT NULL,
-                        qa_vec F32_BLOB({})
+                        qa_vec F32_BLOB({}) NOT NULL
                     );
                     ",
                     vectors.0.len(),

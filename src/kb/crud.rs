@@ -8,7 +8,7 @@ use axum::{
 };
 
 use super::doc;
-use super::dto::QuestionAnswerPair;
+use super::dto::{DocData, QuestionAnswerPair};
 use crate::result::{Error, Result};
 use crate::robot::dto::RobotQuery;
 use crate::web::server::to_res;
@@ -22,11 +22,14 @@ pub(crate) async fn upload_doc(
     Query(q): Query<RobotQuery>,
     multipart: Multipart,
 ) -> impl IntoResponse {
-    let r = upload_doc_inner(&q.robot_id, multipart).await;
+    let r = save_doc(&q.robot_id, multipart).await;
+    // if r.is_err() {
+    //     return to_res(r);
+    // }
     to_res(r)
 }
 
-async fn upload_doc_inner(robot_id: &str, mut multipart: Multipart) -> Result<String> {
+async fn save_doc(robot_id: &str, mut multipart: Multipart) -> Result<String> {
     let p = Path::new(".")
         .join("data")
         .join(robot_id)
@@ -67,6 +70,15 @@ async fn upload_doc_inner(robot_id: &str, mut multipart: Multipart) -> Result<St
         super::doc::save(robot_id, &file_name, data.len(), &text).await?;
         return Ok(text);
     }
+}
+
+#[axum::debug_handler]
+pub(crate) async fn delete_doc(
+    Query(q): Query<RobotQuery>,
+    Json(doc): Json<DocData>,
+) -> impl IntoResponse {
+    let r = super::doc::delete(&q.robot_id, doc.id).await;
+    to_res(r)
 }
 
 pub(crate) async fn list_qa(Query(q): Query<RobotQuery>) -> impl IntoResponse {

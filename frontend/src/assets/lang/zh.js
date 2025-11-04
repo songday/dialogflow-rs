@@ -31,7 +31,7 @@ export default {
     dialogFlows: "对话流程",
     kb: "知识库",
     qa: "问答知识",
-    doc: "文档 (暂不可用)",
+    doc: "文档",
     vars: "变量",
     intents: "意图",
     eApi: "外部 HTTP 接口",
@@ -213,6 +213,14 @@ export default {
       addRe: "新增正则",
       sp: "相似表达句子",
       addSp: "新增相似问",
+    },
+  },
+  kb: {
+    doc: {
+      title: "Documents",
+      uploadBoxTip: "将文件拖拽到这里 或着 <em>点击上传</em>",
+      uploadFileSizeLimitTip: "docx 文件最大不超过 20MB",
+      listColumnNames: ["文件名", "文件大小", "内容预览", "操作"],
     },
   },
   settings: {

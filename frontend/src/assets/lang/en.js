@@ -30,7 +30,7 @@ export default {
     dialogFlows: "Dialog flows",
     kb: "Knowledge base",
     qa: "Questions and answer",
-    doc: "Documents (WIP)",
+    doc: "Documents",
     vars: "Variables",
     intents: "Intents",
     eApi: "External HTTP APIs",
@@ -234,6 +234,19 @@ export default {
       addRe: "Add regex",
       sp: "Similar sentences",
       addSp: "Add sentence",
+    },
+  },
+  kb: {
+    doc: {
+      title: "Documents",
+      uploadBoxTip: "Drop file here or <em>click to upload</em>",
+      uploadFileSizeLimitTip: "docx files with a size less than 20MB",
+      listColumnNames: [
+        "File name",
+        "File size",
+        "Content preview",
+        "Operations",
+      ],
     },
   },
   settings: {
