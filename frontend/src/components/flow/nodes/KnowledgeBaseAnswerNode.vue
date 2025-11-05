@@ -245,7 +245,7 @@ const nodeSetFormVisible = ref(false);
                         style="width: 240px"
                     >
                         <el-option
-                            v-for="item in ['QnA', 'Document']"
+                            v-for="item in ['QnA', 'Doc']"
                             :key="item"
                             :label="item"
                             :value="item"

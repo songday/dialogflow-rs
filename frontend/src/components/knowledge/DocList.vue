@@ -75,7 +75,7 @@ const updateDocContent = () => {
     const t = httpReq("POST", "kb/doc", { robotId: robotId }, null, docFile)
         .then((res) => console.log(res))
         .then(() => {
-            editFormVisible = false;
+            editFormVisible.value = false;
             listDocs();
         });
 };
@@ -175,7 +175,7 @@ const goBack = () => {
         </el-table-column>
     </el-table>
     <el-dialog v-model="docDetailVisible" :title="docFile.fileName" width="800">
-        <div>{{ docFile.docContent }}</div>
+        <div style="white-space: pre-wrap">{{ docFile.docContent }}</div>
         <template #footer>
             <div class="dialog-footer">
                 <el-button @click="docDetailVisible = false">Close</el-button>
