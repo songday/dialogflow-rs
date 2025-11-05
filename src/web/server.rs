@@ -287,9 +287,14 @@ fn gen_router() -> Router {
             "/kb/qa",
             get(kb::list_qa).post(kb::save_qa).delete(kb::delete_qa),
         )
-        .route("/kb/doc", get(kb::list_doc))
-        .route("/kb/qa/dryrun", get(kb::qa_dryrun))
+        .route(
+            "/kb/doc",
+            get(kb::list_doc)
+                .post(kb::update_doc)
+                .delete(kb::delete_doc),
+        )
         .route("/kb/doc/upload", post(kb::upload_doc))
+        .route("/kb/qa/dryrun", get(kb::qa_dryrun))
         .route("/management/settings/smtp/test", post(settings::smtp_test))
         .route("/flow/answer", post(rt::answer))
         .route("/flow/answer/sse", post(rt::answer_sse))

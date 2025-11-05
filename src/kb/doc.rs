@@ -116,7 +116,7 @@ pub(super) async fn save(
     let sql = format!(
         "INSERT INTO {robot_id}(file_name, file_size, doc_content, created_at)VALUES(?1, ?2, ?3, unixepoch())"
     );
-    let conn = DATA_SOURCE.get().unwrap().connect()?;
+    let mut conn = DATA_SOURCE.get().unwrap().connect()?;
     conn.execute(
         &sql,
         (
@@ -128,7 +128,25 @@ pub(super) async fn save(
     .await?;
     let doc_id = conn.last_insert_rowid();
     // log::info!("doc_id={}", doc_id);
-    save_doc_embedding(robot_id, doc_id, doc_content).await?;
+    let tx = conn.transaction().await?;
+    save_doc_embedding(&tx, robot_id, doc_id, doc_content).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub(super) async fn update(robot_id: &str, doc_id: i64, doc_content: &str) -> Result<()> {
+    let mut conn = DATA_SOURCE.get().unwrap().connect()?;
+    let tx = conn.transaction().await?;
+    let sql = format!("UPDATE {robot_id} SET doc_content = ?1 WHERE id = ?2");
+    let r = tx.execute(&sql, (doc_content, doc_id)).await?;
+    if r > 0 {
+        let sql = format!("DELETE FROM {robot_id}_vec WHERE doc_id = ?1");
+        tx.execute(&sql, [doc_id]).await?;
+        save_doc_embedding(&tx, robot_id, doc_id, doc_content).await?;
+        tx.commit().await?;
+    } else {
+        tx.rollback().await?;
+    }
     Ok(())
 }
 
@@ -139,6 +157,7 @@ pub(crate) async fn delete(robot_id: &str, doc_id: i64) -> Result<()> {
     let _r = tx.execute(&sql, [doc_id]).await?;
     let sql = format!("DELETE FROM {robot_id} WHERE id = ?1");
     let _r = tx.execute(&sql, [doc_id]).await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -160,10 +179,14 @@ fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
     chunks
 }
 
-async fn save_doc_embedding(robot_id: &str, doc_id: i64, doc_content: &str) -> Result<()> {
+async fn save_doc_embedding(
+    tx: &turso::transaction::Transaction<'_>,
+    robot_id: &str,
+    doc_id: i64,
+    doc_content: &str,
+) -> Result<()> {
     let chunks = chunk_text(doc_content, 500, 70);
     let mut created_table = false;
-    let conn = DATA_SOURCE.get().unwrap().connect()?;
     for chunk in chunks.iter() {
         let r = embedding::embedding(robot_id, chunk).await?;
         if !created_table {
@@ -176,13 +199,13 @@ async fn save_doc_embedding(robot_id: &str, doc_id: i64, doc_content: &str) -> R
                 );",
                 r.0.len()
             );
-            conn.execute(&sql, ()).await?;
+            tx.execute(&sql, ()).await?;
             created_table = true;
         }
         let sql = format!(
             "INSERT INTO {robot_id}_vec(doc_id, chunk_text, chunk_vec) VALUES(?1, ?2, vector32(?3));"
         );
-        conn.execute(
+        tx.execute(
             &sql,
             (
                 doc_id,
@@ -191,7 +214,7 @@ async fn save_doc_embedding(robot_id: &str, doc_id: i64, doc_content: &str) -> R
             ),
         )
         .await?;
-        log::info!("Embedding id={}", conn.last_insert_rowid());
+        // log::info!("Embedding id={}", conn.last_insert_rowid());
     }
     Ok(())
 }

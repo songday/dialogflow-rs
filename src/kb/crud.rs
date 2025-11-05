@@ -72,6 +72,14 @@ async fn save_doc(robot_id: &str, mut multipart: Multipart) -> Result<String> {
     }
 }
 
+pub(crate) async fn update_doc(
+    Query(q): Query<RobotQuery>,
+    Json(doc): Json<DocData>,
+) -> impl IntoResponse {
+    let r = super::doc::update(&q.robot_id, doc.id, &doc.doc_content).await;
+    to_res(r)
+}
+
 #[axum::debug_handler]
 pub(crate) async fn delete_doc(
     Query(q): Query<RobotQuery>,
