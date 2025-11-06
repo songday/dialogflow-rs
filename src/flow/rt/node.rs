@@ -1040,7 +1040,7 @@ pub(crate) enum KnowledgeBaseAnswerNoRecallThen {
     ReturnAlternateAnswerInstead(String),
 }
 
-#[derive(Archive, Clone, Deserialize, Serialize, serde::Deserialize)]
+#[derive(Archive, Clone, Debug, Deserialize, Serialize, serde::Deserialize)]
 #[rkyv(compare(PartialEq))]
 pub(crate) enum KnowledgeBaseAnswerSource {
     QnA,
@@ -1074,7 +1074,7 @@ impl KnowledgeBaseAnswerNode {
                 }
             }
             Err(e) => {
-                log::error!("KnowledgeBaseAnswerNode retrieve answer failed: {:?}", &e);
+                log::error!("KnowledgeBaseAnswerNode retrieve QnA failed: {:?}", &e);
                 None
             }
         }
@@ -1091,7 +1091,7 @@ impl KnowledgeBaseAnswerNode {
         match r {
             Ok(op) => op,
             Err(e) => {
-                log::warn!("Retrieve doc failed {:?}", &e);
+                log::warn!("KnowledgeBaseAnswerNode retrieve doc failed {:?}", &e);
                 None
             }
         }
@@ -1126,6 +1126,7 @@ impl RuntimeNode for KnowledgeBaseAnswerNode {
     ) -> bool {
         // log::info!("Into LlmChaKnowledgeBaseAnswerNodetNode");
         for answer_source in &self.retrieve_answer_sources {
+            log::info!("answer_source={:?}", &answer_source);
             let r = match answer_source {
                 KnowledgeBaseAnswerSource::QnA => self.retrieve_qa_answer(req).await,
                 KnowledgeBaseAnswerSource::Doc => self.retrieve_doc_answer(req).await,

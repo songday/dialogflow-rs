@@ -265,6 +265,7 @@ pub(crate) async fn search_doc(
     read_timeout: u32,
 ) -> Result<Option<String>> {
     let r = embedding::embedding(robot_id, query).await?;
+    // log::info!("{:?}", &r.0);
     let sql = format!(
         "SELECT chunk_text, vector_distance_cos(chunk_vec, vector32(?1)) AS distance FROM {robot_id}_vec WHERE distance < ?2 ORDER BY distance ASC LIMIT 1"
     );
@@ -279,6 +280,11 @@ pub(crate) async fn search_doc(
         )
         .await?;
     if let Some(row) = rows.next().await? {
+        log::info!(
+            "{} {}",
+            recall_distance,
+            row.get_value(1)?.as_real().unwrap(),
+        );
         let prompts = vec![
             crate::ai::completion::Prompt {
                 role: String::from("system"),
