@@ -284,6 +284,10 @@ fn gen_router() -> Router {
             get(settings::check_embedding_model),
         )
         .route(
+            "/management/settings/model/ollama/list",
+            get(settings::list_ollama_models),
+        )
+        .route(
             "/kb/qa",
             get(kb::list_qa).post(kb::save_qa).delete(kb::delete_qa),
         )
