@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::default::Default;
 use std::net::SocketAddr;
 use std::sync::{LazyLock, Mutex};
+use std::vec::Vec;
 
 use axum::Json;
 use axum::body::Bytes;
@@ -508,4 +509,43 @@ pub(crate) async fn check_embedding_model(Query(q): Query<RobotQuery>) -> impl I
         )))
     };
     to_res(r)
+}
+
+pub(crate) async fn list_ollama_models(
+    Query(q): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    if !q.contains_key("url") {
+        return to_res(Err(Error::WithMessage(String::from(
+            "Ollama URL parameter not found",
+        ))));
+    }
+    let url = q.get("url").unwrap();
+    let end_pos = url.rfind('/');
+    if end_pos.is_none() {
+        return to_res(Err(Error::WithMessage(String::from(
+            "Invalid Ollama URL parameter",
+        ))));
+    }
+    let new_url = format!("{}/tags", &url[0..end_pos.unwrap()]);
+    to_res(retrieve_ollama_models(dbg!(&new_url)).await)
+}
+
+async fn retrieve_ollama_models(url: &str) -> Result<Vec<String>> {
+    let mut result: Vec<String> = Vec::with_capacity(10);
+    let bytes = reqwest::get(url).await?.bytes().await?;
+    let json: serde_json::Value = serde_json::from_slice(bytes.as_ref())?;
+    if let Some(models) = json.get("models")
+        && models.is_array()
+    {
+        if let Some(arr) = models.as_array() {
+            for item in arr {
+                if let Some(model) = item.get("model")
+                    && model.is_string()
+                {
+                    result.push(String::from(model.as_str().unwrap()));
+                }
+            }
+        }
+    }
+    Ok(result)
 }
