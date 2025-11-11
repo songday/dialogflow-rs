@@ -6,8 +6,9 @@ on:
   # pull_request:
   #   branches: [main]
   #   paths-ignore: ["samples/**", "**.md"]
-  release:
-    types: [published]
+  workflow_dispatch
+  # release:
+  #   types: [published]
 env:
   CRATE_NAME: dialogflowai
   GITHUB_TOKEN: ${{ github.token }}
@@ -178,15 +179,15 @@ jobs:
         #   # args: "--locked --release"
         #   args: "--release"
         #   strip: false
-#      - name: Run tests
-#        uses: houseabsolute/actions-rust-cross@v0
-#        with:
-#          command: "test"
-#          target: ${{ matrix.platform.target }}
-#          toolchain: ${{ matrix.toolchain }}
-#          # args: "--locked --release"
-#          args: "--release"
-#        if: ${{ !matrix.platform.skip_tests }}
+      #      - name: Run tests
+      #        uses: houseabsolute/actions-rust-cross@v0
+      #        with:
+      #          command: "test"
+      #          target: ${{ matrix.platform.target }}
+      #          toolchain: ${{ matrix.toolchain }}
+      #          # args: "--locked --release"
+      #          args: "--release"
+      #        if: ${{ !matrix.platform.skip_tests }}
       - name: Package as archive
         shell: bash
         run: |
