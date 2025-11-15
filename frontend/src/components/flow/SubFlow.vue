@@ -1,28 +1,36 @@
 <script setup>
-import { h, ref, onMounted, onUnmounted, nextTick, provide, readonly } from "vue";
-import { useRoute, useRouter } from 'vue-router';
-import CollectNode from './nodes/CollectNode.vue';
-import ConditionNode from './nodes/ConditionNode.vue';
-import DialogNode from './nodes/DialogNode.vue';
-import KnowledgeBaseAnswerNode from './nodes/KnowledgeBaseAnswerNode.vue';
-import EndNode from './nodes/EndNode.vue';
-import GotoNode from './nodes/GotoNode.vue';
-import ExternalHttpNode from './nodes/ExternalHttpNode.vue';
-import SendEmailNode from './nodes/SendEmailNode.vue';
-import LlmChatNode from './nodes/LlmChatNode.vue';
-import { Graph } from '@antv/x6';
+import {
+    h,
+    ref,
+    onMounted,
+    onUnmounted,
+    nextTick,
+    provide,
+    readonly,
+} from "vue";
+import { useRoute, useRouter } from "vue-router";
+import CollectNode from "./nodes/CollectNode.vue";
+import ConditionNode from "./nodes/ConditionNode.vue";
+import DialogNode from "./nodes/DialogNode.vue";
+import KnowledgeBaseAnswerNode from "./nodes/KnowledgeBaseAnswerNode.vue";
+import EndNode from "./nodes/EndNode.vue";
+import GotoNode from "./nodes/GotoNode.vue";
+import ExternalHttpNode from "./nodes/ExternalHttpNode.vue";
+import SendEmailNode from "./nodes/SendEmailNode.vue";
+import LlmChatNode from "./nodes/LlmChatNode.vue";
+import { Graph } from "@antv/x6";
 // https://x6.antv.vision/zh/docs/tutorial/advanced/react#%E6%B8%B2%E6%9F%93-vue-%E8%8A%82%E7%82%B9
 import { register, getTeleport } from "@antv/x6-vue-shape";
-import { atob, httpReq } from '../../assets/tools.js'
-import { DialogFlowAiSDK } from '../../assets/DialogFlowAiSDK.js'
+import { atob, httpReq } from "../../assets/tools.js";
+import { DialogFlowAiSDK } from "../../assets/DialogFlowAiSDK.js";
 // import { ElNotification, ElMessage, ElMessageBox } from 'element-plus';
-import { useI18n } from 'vue-i18n'
-import EpDelete from '~icons/ep/delete'
-import EpEdit from '~icons/ep/edit'
-import EpFinished from '~icons/ep/finished'
-import EpPlus from '~icons/ep/plus'
-import EpPromotion from '~icons/ep/promotion'
-import EpDArrowRight from '~icons/ep/d-arrow-right'
+import { useI18n } from "vue-i18n";
+import EpDelete from "~icons/ep/delete";
+import EpEdit from "~icons/ep/edit";
+import EpFinished from "~icons/ep/finished";
+import EpPlus from "~icons/ep/plus";
+import EpPromotion from "~icons/ep/promotion";
+import EpDArrowRight from "~icons/ep/d-arrow-right";
 const { t, tm, rt } = useI18n();
 
 const route = useRoute();
@@ -32,7 +40,7 @@ const robotId = route.params.robotId;
 const TeleportContainer = getTeleport();
 
 const subFlows = ref([]);
-const subflowNames = ref([])
+const subflowNames = ref([]);
 const allNodeNameSet = ref(new Set());
 
 function updateSubFlowNames() {
@@ -47,9 +55,9 @@ function updateSubFlowNames() {
 }
 
 // provide('getSubFlowNames', {readonly(subflowNames), updateSubFlowNames})
-provide('subFlowNamesFn', { subflowNames, updateSubFlowNames })
-provide('robotId', { robotId })
-provide('allNodeNameSet', allNodeNameSet)
+provide("subFlowNamesFn", { subflowNames, updateSubFlowNames });
+provide("robotId", { robotId });
+provide("allNodeNameSet", allNodeNameSet);
 
 register({
     shape: "CollectNode",
@@ -60,26 +68,26 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 register({
@@ -91,26 +99,26 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 register({
@@ -122,26 +130,26 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 register({
@@ -153,26 +161,26 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 register({
@@ -184,26 +192,26 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 register({
@@ -215,26 +223,26 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 register({
@@ -246,26 +254,26 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 register({
@@ -277,26 +285,26 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 register({
@@ -308,39 +316,67 @@ register({
         groups: {
             absolute: {
                 position: {
-                    name: 'absolute',
+                    name: "absolute",
                 },
                 attrs: {
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: 'black',
+                        stroke: "black",
                         strokeWidth: 1,
-                        fill: '#fff',
+                        fill: "#fff",
                         style: {
-                            visibility: 'show',
+                            visibility: "show",
                         },
                     },
                 },
                 label: {
-                    position: 'left',
-                }
+                    position: "left",
+                },
             },
         },
-    }
+    },
 });
 
 const nodes = [
-    { name: tm('flow.nodes')[0], type: 'DialogNode', desc: tm('flow.nodesDesc')[0], cnt: 1 },
-    { name: tm('flow.nodes')[4], type: 'KnowledgeBaseAnswerNode', desc: 'Knowledge base answer node', cnt: 1 },
-    { name: tm('flow.nodes')[5], type: 'LlmChatNode', desc: 'Llm chat node', cnt: 1 },
-    { name: tm('flow.nodes')[1], type: 'ConditionNode', desc: tm('flow.nodesDesc')[1], cnt: 1 },
-    { name: tm('flow.nodes')[2], type: 'CollectNode', desc: tm('flow.nodesDesc')[2], cnt: 1 },
-    { name: tm('flow.nodes')[6], type: 'ExternalHttpNode', desc: 'Request and send data to external HTTP API with variables', cnt: 1 },
-    { name: tm('flow.nodes')[7], type: 'SendEmailNode', desc: 'Sending an email an many recipients', cnt: 1 },
-    { name: tm('flow.nodes')[3], type: 'GotoNode', desc: tm('flow.nodesDesc')[3], cnt: 1 },
-    { name: tm('flow.nodes')[8], type: 'EndNode', desc: 'Ending node', cnt: 1 },
-]
+    {
+        name: tm("flow.nodes")[0],
+        type: "DialogNode",
+        desc: tm("flow.nodesDesc")[0],
+    },
+    {
+        name: tm("flow.nodes")[4],
+        type: "KnowledgeBaseAnswerNode",
+        desc: "Knowledge base answer node",
+    },
+    { name: tm("flow.nodes")[5], type: "LlmChatNode", desc: "Llm chat node" },
+    {
+        name: tm("flow.nodes")[1],
+        type: "ConditionNode",
+        desc: tm("flow.nodesDesc")[1],
+    },
+    {
+        name: tm("flow.nodes")[2],
+        type: "CollectNode",
+        desc: tm("flow.nodesDesc")[2],
+    },
+    {
+        name: tm("flow.nodes")[6],
+        type: "ExternalHttpNode",
+        desc: "Request and send data to external HTTP API with variables",
+    },
+    {
+        name: tm("flow.nodes")[7],
+        type: "SendEmailNode",
+        desc: "Sending an email an many recipients",
+    },
+    {
+        name: tm("flow.nodes")[3],
+        type: "GotoNode",
+        desc: tm("flow.nodesDesc")[3],
+    },
+    { name: tm("flow.nodes")[8], type: "EndNode", desc: "Ending node" },
+];
 let selectedSubFlowIdx = -1;
 // let offsetLeft = 0;
 // let offsetTop = 0;
@@ -348,11 +384,11 @@ let graph = null;
 let editedSubFlow = false;
 const mainFlowId = route.params.id;
 const mainFlowName = atob(route.params.name);
-const isDemo = mainFlowId.indexOf('demo') > -1;
+const isDemo = mainFlowId.indexOf("demo") > -1;
 
 onMounted(async () => {
     // console.log("subflow onMounted");
-    const canvas = document.getElementById('canvas');
+    const canvas = document.getElementById("canvas");
     // offsetLeft = canvas.offsetLeft;
     // console.log('offsetLeft=' + offsetLeft);
     // offsetTop = canvas.offsetTop;
@@ -360,9 +396,9 @@ onMounted(async () => {
     // console.log('offsetHeight=' + canvas.offsetHeight);
     graph = new Graph({
         container: canvas,
-        width: '100%',
+        width: "100%",
         // width: canvas.offsetWidth - 10,
-        height: '100%',
+        height: "100%",
         // height: canvas.offsetHeight,
         // height: 500,
         background: {
@@ -377,19 +413,19 @@ onMounted(async () => {
             // http://x6.antv.antgroup.com/tutorial/basic/interacting#createedge
             createEdge() {
                 return this.createEdge({
-                    shape: 'edge',
+                    shape: "edge",
                     attrs: {
                         line: {
-                            stroke: '#8f8f8f',
+                            stroke: "#8f8f8f",
                             strokeWidth: 1,
                             targetMarker: {
-                                name: 'block',
+                                name: "block",
                                 width: 12,
                                 height: 8,
                             },
                         },
                     },
-                })
+                });
             },
         },
         // https://x6.antv.vision/zh/docs/api/graph/interaction#highlighting
@@ -397,56 +433,59 @@ onMounted(async () => {
         highlighting: {
             // 当链接桩可以被链接时，在链接桩外围渲染一个 2px 宽的红色矩形框
             magnetAvailable: {
-                name: 'stroke',
+                name: "stroke",
                 args: {
                     padding: 4,
                     attrs: {
-                        'stroke-width': 2,
-                        stroke: 'black',
-                    }
+                        "stroke-width": 2,
+                        stroke: "black",
+                    },
                 },
             },
         },
         panning: true,
     });
-    graph.on('node:click', ({ e, x, y, node, view }) => {
-        node.setTools([{
-            name: 'button-remove',
-            args: { x: 0, y: 0 },
-        },]);
+    graph.on("node:click", ({ e, x, y, node, view }) => {
+        node.setTools([
+            {
+                name: "button-remove",
+                args: { x: 0, y: 0 },
+            },
+        ]);
     });
-    graph.on('node:mouseleave', ({ e, x, y, node, view }) => {
+    graph.on("node:mouseleave", ({ e, x, y, node, view }) => {
         if (node.hasTool("button-remove")) {
             node.removeTool("button-remove");
         }
     });
-    graph.on('node:dblclick', ({ e, x, y, node, view }) => {
+    graph.on("node:dblclick", ({ e, x, y, node, view }) => {
         node.setData({ currentTime: Date.now() });
         editedSubFlow = true;
     });
     graph.on("edge:click", ({ e, x, y, edge, view }) => {
-        edge.setTools(['button-remove']);
+        edge.setTools(["button-remove"]);
     });
 
-    const t = await httpReq('GET', 'subflow', { robotId: robotId, mainFlowId: mainFlowId, data: '' }, null, null);
+    const t = await httpReq(
+        "GET",
+        "subflow",
+        { robotId: robotId, mainFlowId: mainFlowId, data: "" },
+        null,
+        null,
+    );
     if (isDemo) {
         const d = { status: 200, data: t };
         cacheSubFlows(d);
-    } else
-        cacheSubFlows(t);
+    } else cacheSubFlows(t);
     nextTick(() => {
         showSubFlow(0);
-    })
+    });
     // console.log("onMounted2");
-
 });
 
-onUnmounted(
-    () => {
-        if (graph != null)
-            graph.dispose()
-    }
-);
+onUnmounted(() => {
+    if (graph != null) graph.dispose();
+});
 
 function addHandleNode(x, y, item) {
     // console.log('addHandleNode' + x);
@@ -456,8 +495,7 @@ function addHandleNode(x, y, item) {
         y: y,
         // tools: ["button-remove"],
     });
-    item.cnt++;
-    node.setData({ nodeType: item.type, nodeCnt: item.cnt });
+    node.setData({ nodeType: item.type });
     editedSubFlow = true;
 }
 
@@ -479,89 +517,99 @@ function cacheSubFlows(t) {
 }
 
 const dialogFormVisible = ref(false);
-const flowName = ref('');
+const flowName = ref("");
 async function newSubFlow() {
     await saveSubFlow();
-    const t = await httpReq('POST', 'subflow/new', { robotId: robotId, mainFlowId: mainFlowId, data: flowName.value }, null, null);
+    const t = await httpReq(
+        "POST",
+        "subflow/new",
+        { robotId: robotId, mainFlowId: mainFlowId, data: flowName.value },
+        null,
+        null,
+    );
     if (t.status == 200) {
         const idx = subFlows.value.length;
         cacheSubFlows(t);
         nextTick(() => {
             showSubFlow(idx);
-            flowName.value = '';
-        })
+            flowName.value = "";
+        });
     }
 }
 
 function removeSubFlow(index) {
     if (subFlows.value.length < 2) {
-        ElMessage.error(t('flow.needOne'));
+        ElMessage.error(t("flow.needOne"));
     } else {
-        ElMessageBox.confirm(
-            t('flow.delConfirm'),
-            'Warning',
-            {
-                confirmButtonText: t('common.del'),
-                cancelButtonText: t('common.cancel'),
-                type: 'warning',
-            }
-        ).then(async () => {
-            const r = await httpReq('DELETE', 'subflow', { robotId: robotId, mainFlowId: mainFlowId, data: selectedSubFlowIdx }, null, null);
-            if (r.status == 200) {
-                selectedSubFlowIdx = -1;
-                subFlows.value.splice(index, 1);
-                showSubFlow(0);
-            }
-            ElMessage({
-                type: 'success',
-                message: t('common.deleted'),
-            })
-        }).catch(() => {
-            // ElMessage({
-            //     type: 'info',
-            //     message: 'Delete canceled',
-            // })
+        ElMessageBox.confirm(t("flow.delConfirm"), "Warning", {
+            confirmButtonText: t("common.del"),
+            cancelButtonText: t("common.cancel"),
+            type: "warning",
         })
+            .then(async () => {
+                const r = await httpReq(
+                    "DELETE",
+                    "subflow",
+                    {
+                        robotId: robotId,
+                        mainFlowId: mainFlowId,
+                        data: selectedSubFlowIdx,
+                    },
+                    null,
+                    null,
+                );
+                if (r.status == 200) {
+                    selectedSubFlowIdx = -1;
+                    subFlows.value.splice(index, 1);
+                    showSubFlow(0);
+                }
+                ElMessage({
+                    type: "success",
+                    message: t("common.deleted"),
+                });
+            })
+            .catch(() => {
+                // ElMessage({
+                //     type: 'info',
+                //     message: 'Delete canceled',
+                // })
+            });
     }
 }
 
 async function showSubFlow(idx) {
-    if (idx == selectedSubFlowIdx)
-        return;
+    if (idx == selectedSubFlowIdx) return;
     if (editedSubFlow) {
         // console.log('editedSubFlow')
-        ElMessageBox.confirm(
-            t('flow.changeSaveTip'),
-            'Warning',
-            {
-                confirmButtonText: t('common.save'),
-                cancelButtonText: t('common.cancel'),
-                type: 'warning',
-            }
-        ).then(async () => {
-            await saveSubFlow();
-            switchSubFlow(idx);
-            editedSubFlow = false;
-        }).catch(() => {
-            switchSubFlow(idx);
-            editedSubFlow = false;
+        ElMessageBox.confirm(t("flow.changeSaveTip"), "Warning", {
+            confirmButtonText: t("common.save"),
+            cancelButtonText: t("common.cancel"),
+            type: "warning",
         })
-    } else
-        switchSubFlow(idx)
+            .then(async () => {
+                await saveSubFlow();
+                switchSubFlow(idx);
+                editedSubFlow = false;
+            })
+            .catch(() => {
+                switchSubFlow(idx);
+                editedSubFlow = false;
+            });
+    } else switchSubFlow(idx);
 }
 
 function switchSubFlow(idx) {
     const o = document.getElementById(subFlowId(selectedSubFlowIdx));
     if (o) {
-        o.style.backgroundColor = 'white';
-        o.style.color = 'black';
+        o.style.backgroundColor = "white";
+        o.style.color = "black";
     }
     // console.log(idx);
     selectedSubFlowIdx = idx;
     // console.log(subFlowId(selectedSubFlowIdx));
     const n = document.getElementById(subFlowId(selectedSubFlowIdx));
-    n.style.backgroundColor = 'rgb(245,246,249)';
-    n.style.color = 'rgb(131,88,179)';
+    n.style.backgroundColor = "rgb(245,246,249)";
+    n.style.color = "rgb(131,88,179)";
     // console.log(subFlows.value[selectedSubFlowIdx].canvas);
     // console.log(selectedSubFlowIdx);
     if (subFlows.value[selectedSubFlowIdx].canvas) {
@@ -582,29 +630,31 @@ async function saveSubFlow() {
     // console.log(canvas);
     const cells = canvas.cells;
     cells.forEach(function (item, index, arr) {
-        if (item.shape != 'edge') {
+        if (item.shape != "edge") {
             item.data.nodeId = item.id;
         }
     }, nodes);
     const source = subFlows.value[selectedSubFlowIdx];
-    const cnts = [];
-    for (let i = 0; i < nodes.length; i++)
-        cnts.push(nodes[i].cnt);
     const data = {
         valid: false,
         id: source.id,
         name: source.name,
         canvas: JSON.stringify(canvas),
         // nodes: JSON.stringify(nodes),
-        nodesStat: cnts,
     };
-    const r = await httpReq('POST', 'subflow', { robotId: robotId, mainFlowId: mainFlowId, data: selectedSubFlowIdx }, null, data);
+    const r = await httpReq(
+        "POST",
+        "subflow",
+        { robotId: robotId, mainFlowId: mainFlowId, data: selectedSubFlowIdx },
+        null,
+        data,
+    );
     // console.log(r);
     cacheSubFlows(r);
     ElNotification({
-        title: t('common.successTip'),
-        message: h('b', { style: 'color: teal' }, t('common.saved')),
-        type: 'success',
+        title: t("common.successTip"),
+        message: h("b", { style: "color: teal" }, t("common.saved")),
+        type: "success",
     });
     saveLoading.value = false;
     loading.value = false;
@@ -612,14 +662,12 @@ async function saveSubFlow() {
 }
 
 function subFlowId(idx) {
-    return 'subFlow' + idx.toString();
+    return "subFlow" + idx.toString();
 }
 
 function goBack() {
-    if (isDemo)
-        router.go(-1);
-    else
-        router.push({ name: 'mainflows', params: { robotId: robotId } });
+    if (isDemo) router.go(-1);
+    else router.push({ name: "mainflows", params: { robotId: robotId } });
 }
 
 async function release() {
@@ -628,19 +676,29 @@ async function release() {
     if (!isDemo) {
         await saveSubFlow();
     }
-    const r = await httpReq('GET', 'mainflow/release', { robotId: robotId, mainFlowId: mainFlowId, data: '' }, null, null);
+    const r = await httpReq(
+        "GET",
+        "mainflow/release",
+        { robotId: robotId, mainFlowId: mainFlowId, data: "" },
+        null,
+        null,
+    );
     // console.log(r);
     if (r.status == 200) {
         ElNotification({
-            title: t('common.successTip'),
-            message: h('b', { style: 'color: teal' }, t('flow.subFlowReleased')),
-            type: 'success',
+            title: t("common.successTip"),
+            message: h(
+                "b",
+                { style: "color: teal" },
+                t("flow.subFlowReleased"),
+            ),
+            type: "success",
         });
     } else {
         ElNotification({
-            title: t('common.errTip'),
-            message: h('b', { style: 'color: teal' }, r.err.message),
-            type: 'error',
+            title: t("common.errTip"),
+            message: h("b", { style: "color: teal" }, r.err.message),
+            type: "error",
         });
     }
     releaseLoading.value = false;
@@ -648,27 +706,25 @@ async function release() {
 }
 
 // const formLabelWidth = '90px'
-const loading = ref(false)
+const loading = ref(false);
 const saveLoading = ref(false);
 const releaseLoading = ref(false);
-const waitingResponse = ref(false)
+const waitingResponse = ref(false);
 
 const dryrunDisabled = ref(false);
-const chatScrollbarRef = ref()
+const chatScrollbarRef = ref();
 const dryrunChatRecords = ref();
-const testingFormVisible = ref(false)
-const userAsk = ref('')
-const chatRecords = ref([])
+const testingFormVisible = ref(false);
+const userAsk = ref("");
+const chatRecords = ref([]);
 let dialogFlowAiSDK = null;
 async function dryrun() {
-    if (chatRecords.value.length > 0 && !userAsk.value)
-        return;
-    if (waitingResponse.value)
-        return;
+    if (chatRecords.value.length > 0 && !userAsk.value) return;
+    if (waitingResponse.value) return;
     waitingResponse.value = true;
     if (dialogFlowAiSDK == null) {
         dialogFlowAiSDK = new DialogFlowAiSDK({
-            url: import.meta.env.VITE_REQ_BACKEND_PREFIX + 'flow/answer',
+            url: import.meta.env.VITE_REQ_BACKEND_PREFIX + "flow/answer",
             robotId: robotId,
             mainFlowId: mainFlowId,
             chatHistory: chatRecords.value,
@@ -679,16 +735,23 @@ async function dryrun() {
         content: userAsk.value,
     });
     if (dialogFlowAiSDK.chatHasEnded) {
-        dialogFlowAiSDK.addChat(t('flow.guideReset'), 'terminateText', dialogFlowAiSDK.MessageKind.PLAIN_TEXT, -1);
+        dialogFlowAiSDK.addChat(
+            t("flow.guideReset"),
+            "terminateText",
+            dialogFlowAiSDK.MessageKind.PLAIN_TEXT,
+            -1,
+        );
         dryrunDisabled.value = true;
     }
-    userAsk.value = '';
+    userAsk.value = "";
     waitingResponse.value = false;
     dryrunInput.value.focus();
     nextTick(() => {
         // console.log(dryrunChatRecords.value.clientHeight);
-        chatScrollbarRef.value.setScrollTop(dryrunChatRecords.value.clientHeight);
-    })
+        chatScrollbarRef.value.setScrollTop(
+            dryrunChatRecords.value.clientHeight,
+        );
+    });
 }
 /*
 let sessionId = '';
@@ -825,7 +888,7 @@ function showAnswers(r, idx) {
 async function dryrunClear() {
     dialogFlowAiSDK = null;
     chatRecords.value.splice(0, chatRecords.value.length);
-    userAsk.value = '';
+    userAsk.value = "";
     // sessionId = '';
     dryrunDisabled.value = false;
     await dryrun();
@@ -834,11 +897,11 @@ async function dryrunClear() {
 // const isEnLanguage = navigator.language ? navigator.language.split('-')[0] == 'en' : false
 // const nodesBtnWidth = isEnLanguage ? ref('100px') : ref('50px')
 
-const dryrunInput = ref()
+const dryrunInput = ref();
 const popupRundryWindow = async () => {
     testingFormVisible.value = true;
     await dryrun();
-}
+};
 </script>
 <style scoped>
 .el-container,
@@ -872,7 +935,7 @@ const popupRundryWindow = async () => {
 }
 
 .KnowledgeBaseAnswerNode {
-    border-left: 5px solid #EFB7BA;
+    border-left: 5px solid #efb7ba;
 }
 
 .ConditionNode {
@@ -973,30 +1036,43 @@ const popupRundryWindow = async () => {
 <template>
     <div>
         <!-- <div id="modal-container"></div> -->
-        <el-container style="min-height: 100vh;max-height: 100vh;">
+        <el-container style="min-height: 100vh; max-height: 100vh">
             <el-header height="40px">
                 <el-page-header :title="t('common.back')" @back="goBack">
                     <template #content>
-                        <span class="text-large font-600 mr-3">{{ mainFlowName }}</span>
+                        <span class="text-large font-600 mr-3">{{
+                            mainFlowName
+                        }}</span>
                     </template>
                     <template #extra>
                         <div class="flex items-center">
                             <el-text v-show="isDemo">
-                                {{ $tm('flow.steps')[0] }}
+                                {{ $tm("flow.steps")[0] }}
                                 <el-icon :size="20">
                                     <EpDArrowRight />
                                 </el-icon>
                             </el-text>
-                            <el-button type="primary" class="ml-2" @click="saveSubFlow" :loading="saveLoading"
-                                size="large" v-show="!isDemo">
+                            <el-button
+                                type="primary"
+                                class="ml-2"
+                                @click="saveSubFlow"
+                                :loading="saveLoading"
+                                size="large"
+                                v-show="!isDemo"
+                            >
                                 <el-icon :size="20">
-                                    <EpEdit />
-                                </el-icon>{{ $t('flow.save') }}
+                                    <EpEdit /> </el-icon
+                                >{{ $t("flow.save") }}
                             </el-button>
-                            <el-button type="success" @click="release" :loading="releaseLoading" size="large">
+                            <el-button
+                                type="success"
+                                @click="release"
+                                :loading="releaseLoading"
+                                size="large"
+                            >
                                 <el-icon :size="20">
-                                    <EpFinished />
-                                </el-icon>{{ $t('flow.pub') }}
+                                    <EpFinished /> </el-icon
+                                >{{ $t("flow.pub") }}
                             </el-button>
                             <!-- <div class="testBtn" @click="dryrun(); testingFormVisible = true">
                                 <el-icon>
@@ -1005,16 +1081,21 @@ const popupRundryWindow = async () => {
                                 测试流程
                             </div> -->
                             <el-text v-show="isDemo">
-                                {{ $tm('flow.steps')[1] }}
+                                {{ $tm("flow.steps")[1] }}
                                 <el-icon>
                                     <EpDArrowRight />
                                 </el-icon>
                             </el-text>
-                            <el-button color="#626aef" class="ml-2" @click="popupRundryWindow" size="large">
+                            <el-button
+                                color="#626aef"
+                                class="ml-2"
+                                @click="popupRundryWindow"
+                                size="large"
+                            >
                                 <el-icon :size="20">
                                     <EpPromotion />
                                 </el-icon>
-                                {{ $t('flow.test') }}
+                                {{ $t("flow.test") }}
                             </el-button>
                         </div>
                     </template>
@@ -1022,14 +1103,22 @@ const popupRundryWindow = async () => {
             </el-header>
             <el-container>
                 <el-aside width="150px">
-                    <div class="newSubFlowBtn" @click="dialogFormVisible = true">
+                    <div
+                        class="newSubFlowBtn"
+                        @click="dialogFormVisible = true"
+                    >
                         <el-icon size="16px">
                             <EpPlus />
                         </el-icon>
-                        {{ $t('flow.addSubFlow') }}
+                        {{ $t("flow.addSubFlow") }}
                     </div>
-                    <div v-for="(item, index) in subFlows" :id="subFlowId(index)" :key="item.label"
-                        @click="showSubFlow(index)" class="subFlowBtn">
+                    <div
+                        v-for="(item, index) in subFlows"
+                        :id="subFlowId(index)"
+                        :key="item.label"
+                        @click="showSubFlow(index)"
+                        class="subFlowBtn"
+                    >
                         {{ item.name }}
                         <span @click="removeSubFlow(index)">
                             <el-icon>
@@ -1041,14 +1130,29 @@ const popupRundryWindow = async () => {
                 <el-main v-loading="loading">
                     <div class="nodesBox">
                         <!-- <div style="font-size: 9pt;">拖动下方节点</div> -->
-                        <div v-for="item in nodes" :key="item.type" class="node-btn" :class="item.type" draggable="true"
-                            @dragend="handleDragEnd($event, item)">
-                            <el-tooltip class="box-item" effect="dark" :content="item.desc" placement="right-start">
+                        <div
+                            v-for="item in nodes"
+                            :key="item.type"
+                            class="node-btn"
+                            :class="item.type"
+                            draggable="true"
+                            @dragend="handleDragEnd($event, item)"
+                        >
+                            <el-tooltip
+                                class="box-item"
+                                effect="dark"
+                                :content="item.desc"
+                                placement="right-start"
+                            >
                                 <span> {{ item.name }}</span>
                             </el-tooltip>
                         </div>
                     </div>
-                    <div id="canvas" @dragover="dragoverDiv" style="border: 1px #000 solid;"></div>
+                    <div
+                        id="canvas"
+                        @dragover="dragoverDiv"
+                        style="border: 1px #000 solid"
+                    ></div>
                     <TeleportContainer />
                 </el-main>
             </el-container>
@@ -1061,23 +1165,37 @@ const popupRundryWindow = async () => {
             </el-form>
             <template #footer>
                 <span class="dialog-footer">
-                    <el-button type="primary" @click="dialogFormVisible = false; newSubFlow();">
-                        {{ $t('common.add') }}
+                    <el-button
+                        type="primary"
+                        @click="
+                            dialogFormVisible = false;
+                            newSubFlow();
+                        "
+                    >
+                        {{ $t("common.add") }}
                     </el-button>
-                    <el-button @click="dialogFormVisible = false">{{ $t('common.cancel') }}</el-button>
+                    <el-button @click="dialogFormVisible = false">{{
+                        $t("common.cancel")
+                    }}</el-button>
                 </span>
             </template>
         </el-dialog>
         <el-drawer v-model="testingFormVisible" direction="rtl">
             <template #header>
-                <b>{{ $t('flow.test') }}</b>
+                <b>{{ $t("flow.test") }}</b>
             </template>
             <template #default>
                 <el-scrollbar ref="chatScrollbarRef" height="100%" always>
                     <div ref="dryrunChatRecords">
-                        <div v-for="item in chatRecords" :key="item.id" :class="item.textSource">
+                        <div
+                            v-for="item in chatRecords"
+                            :key="item.id"
+                            :class="item.textSource"
+                        >
                             <!-- <span v-html="item.text"></span> -->
-                            <el-text v-if="item.answerType == 'TextPlain'">{{ item.text }}</el-text>
+                            <el-text v-if="item.answerType == 'TextPlain'">{{
+                                item.text
+                            }}</el-text>
                             <el-text v-else v-html="item.text"></el-text>
                         </div>
                     </div>
@@ -1085,13 +1203,31 @@ const popupRundryWindow = async () => {
             </template>
             <template #footer>
                 <div style="flex: auto">
-                    <el-input ref="dryrunInput" :disabled="dryrunDisabled" v-model="userAsk" placeholder=""
-                        style="width: 200px" @keypress="(e) => { if (e.keyCode == 13) dryrun(); }" />
+                    <el-input
+                        ref="dryrunInput"
+                        :disabled="dryrunDisabled"
+                        v-model="userAsk"
+                        placeholder=""
+                        style="width: 200px"
+                        @keypress="
+                            (e) => {
+                                if (e.keyCode == 13) dryrun();
+                            }
+                        "
+                    />
                     <el-button-group>
-                        <el-button type="primary" :disabled="dryrunDisabled" @click="dryrun"
-                            :loading="waitingResponse">{{ waitingResponse ? 'Sending' : $t('flow.send')
-                            }}</el-button>
-                        <el-button @click="dryrunClear">{{ $t('flow.reset') }}</el-button>
+                        <el-button
+                            type="primary"
+                            :disabled="dryrunDisabled"
+                            @click="dryrun"
+                            :loading="waitingResponse"
+                            >{{
+                                waitingResponse ? "Sending" : $t("flow.send")
+                            }}</el-button
+                        >
+                        <el-button @click="dryrunClear">{{
+                            $t("flow.reset")
+                        }}</el-button>
                     </el-button-group>
                 </div>
             </template>
