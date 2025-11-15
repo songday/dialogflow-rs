@@ -4,40 +4,40 @@ export default {
 };
 </script> -->
 <script setup>
-import { inject, reactive, ref, onMounted, nextTick } from 'vue';
-import { copyProperties, httpReq } from '../../../assets/tools.js'
-import { useI18n } from 'vue-i18n'
-import EpWarning from '~icons/ep/warning'
+import { inject, reactive, ref, onMounted, nextTick } from "vue";
+import { copyProperties, httpReq } from "../../../assets/tools.js";
+import { useI18n } from "vue-i18n";
+import EpWarning from "~icons/ep/warning";
 const { t, tm, rt } = useI18n();
-const { robotId } = inject('robotId');
+const { robotId } = inject("robotId");
 // const getGraph = inject('getGraph');
-const getNode = inject('getNode');
-const { subflowNames, updateSubFlowNames } = inject('subFlowNamesFn');
-const allNodeNameSet = inject('allNodeNameSet');
+const getNode = inject("getNode");
+const { subflowNames, updateSubFlowNames } = inject("subFlowNamesFn");
+const allNodeNameSet = inject("allNodeNameSet");
 const nodeSetFormVisible = ref(false);
-const mainFlows = ref([])
-const subFlowNames = ref([])
+const mainFlows = ref([]);
+const subFlowNames = ref([]);
 
-const types18 = tm('gotoNode.types');
+const types18 = tm("gotoNode.types");
 const gotoTypes = [
     // { label: types18[0], value: 'Terminate', disabled: false },
-    { label: types18[1], value: 'GotoMainFlow', disabled: false },
-    { label: types18[2], value: 'GotoSubFlow', disabled: false },
-    { label: types18[3], value: 'GotoExternalLink', disabled: false }
+    { label: types18[1], value: "GotoMainFlow", disabled: false },
+    { label: types18[2], value: "GotoSubFlow", disabled: false },
+    { label: types18[3], value: "GotoExternalLink", disabled: false },
 ];
 const nodeData = reactive({
-    nodeName: t('gotoNode.nodeName'),
-    brief: '',
-    gotoType: '',
-    gotoMainFlowId: '',
-    gotoSubFlowName: '',
-    gotoSubFlowId: '',
-    externalLink: '',
+    nodeName: t("gotoNode.nodeName"),
+    brief: "",
+    gotoType: "",
+    gotoMainFlowId: "",
+    gotoSubFlowName: "",
+    gotoSubFlowId: "",
+    externalLink: "",
     valid: false,
     invalidMessages: [],
     newNode: true,
 });
-const showSubFlowOptions = ref(false)
+const showSubFlowOptions = ref(false);
 
 getNode().on("change:data", ({ current }) => {
     // console.log('toggled');
@@ -63,31 +63,38 @@ onMounted(async () => {
     //     if (data.newNode)
     //         nodeData.newNode = data.newNode;
     // }
-    if (nodeData.newNode)
-        nodeData.nodeName += data.nodeCnt.toString(); {
+    if (nodeData.newNode) {
         let n = null;
         do {
-            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
-            nodeData.nodeName = t('gotoNode.nodeName') + '-' + n;
+            n =
+                n == null
+                    ? Date.now().toString(16)
+                    : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t("gotoNode.nodeName") + "-" + n;
         } while (allNodeNameSet.value.has(nodeData.nodeName));
     }
     allNodeNameSet.value.add(nodeData.nodeName);
     nodeData.newNode = false;
     validate();
 
-    const r = await httpReq('GET', 'mainflow', { robotId: robotId, }, null, null);
+    const r = await httpReq(
+        "GET",
+        "mainflow",
+        { robotId: robotId },
+        null,
+        null,
+    );
     // console.log(r);
-    if (r.status == 200)
-        mainFlows.value = r.data;
+    if (r.status == 200) mainFlows.value = r.data;
     if (data.gotoSubFlowId) {
         await selectedMainFlow(data.gotoMainFlowId);
     }
-})
+});
 
 async function selectGotoType(t) {
     // console.log(updateSubFlowNames());
-    if ('GotoMainFlow' == t) {
-    } else if ('GotoSubFlow' == t) {
+    if ("GotoMainFlow" == t) {
+    } else if ("GotoSubFlow" == t) {
         subFlowNames.value = updateSubFlowNames();
         showSubFlowOptions.value = true;
     } else {
@@ -98,42 +105,43 @@ async function selectGotoType(t) {
 async function selectedMainFlow(id) {
     // console.log(id);
     if (id) {
-        const r = await httpReq('GET', 'subflow/simple', { robotId: robotId, mainFlowId: id, data: '' }, null, null);
+        const r = await httpReq(
+            "GET",
+            "subflow/simple",
+            { robotId: robotId, mainFlowId: id, data: "" },
+            null,
+            null,
+        );
         // console.log(r);
-        if (r.status == 200)
-            subFlowNames.value = r.data;
+        if (r.status == 200) subFlowNames.value = r.data;
     } else {
         subFlowNames.value = updateSubFlowNames();
     }
     showSubFlowOptions.value = true;
 }
 
-const errors18 = tm('gotoNode.errors')
+const errors18 = tm("gotoNode.errors");
 function validate() {
     const d = nodeData;
     const m = d.invalidMessages;
     m.splice(0, m.length);
-    if (!d.nodeName)
-        m.push(errors18[0]);
-    if (!d.gotoType)
-        m.push(errors18[1]);
-    if (d.gotoType == 'GotoSubFlow' && !d.gotoSubFlowId)
-        m.push(errors18[2]);
-    if (d.gotoType == 'GotoExternalLink' && !d.externalLink)
+    if (!d.nodeName) m.push(errors18[0]);
+    if (!d.gotoType) m.push(errors18[1]);
+    if (d.gotoType == "GotoSubFlow" && !d.gotoSubFlowId) m.push(errors18[2]);
+    if (d.gotoType == "GotoExternalLink" && !d.externalLink)
         m.push(errors18[3]);
     d.valid = m.length == 0;
 }
 function hideForm() {
     nodeSetFormVisible.value = false;
 }
-const briefs18 = tm('gotoNode.briefs')
+const briefs18 = tm("gotoNode.briefs");
 function saveForm() {
     // console.log(nodeData.gotoType);
-    nodeData.brief = briefs18[0] + ': ';
-    if (nodeData.gotoType == 'Terminate')
-        nodeData.brief += briefs18[1];
-    else if (nodeData.gotoType == 'GotoMainFlow') {
-        nodeData.brief += briefs18[4] + '\n';
+    nodeData.brief = briefs18[0] + ": ";
+    if (nodeData.gotoType == "Terminate") nodeData.brief += briefs18[1];
+    else if (nodeData.gotoType == "GotoMainFlow") {
+        nodeData.brief += briefs18[4] + "\n";
         for (let i = 0; i < mainFlows.value.length; i++) {
             if (nodeData.gotoMainFlowId == mainFlows.value[i].id) {
                 nodeData.brief += mainFlows.value[i].name;
@@ -143,20 +151,20 @@ function saveForm() {
         for (let i = 0; i < subFlowNames.value.length; i++) {
             if (nodeData.gotoSubFlowId == subFlowNames.value[i].id) {
                 nodeData.gotoSubFlowName = subFlowNames.value[i].name;
-                nodeData.brief += ' - ' + nodeData.gotoSubFlowName;
+                nodeData.brief += " - " + nodeData.gotoSubFlowName;
                 break;
             }
         }
-    } else if (nodeData.gotoType == 'GotoSubFlow') {
+    } else if (nodeData.gotoType == "GotoSubFlow") {
         for (let i = 0; i < subFlowNames.value.length; i++) {
             if (nodeData.gotoSubFlowId == subFlowNames.value[i].id) {
                 nodeData.gotoSubFlowName = subFlowNames.value[i].name;
                 break;
             }
         }
-        nodeData.brief += briefs18[2] + ': ' + nodeData.gotoSubFlowName;
-    } else if (nodeData.gotoType == 'GotoExternalLink')
-        nodeData.brief += briefs18[3] + ': ' + nodeData.externalLink;
+        nodeData.brief += briefs18[2] + ": " + nodeData.gotoSubFlowName;
+    } else if (nodeData.gotoType == "GotoExternalLink")
+        nodeData.brief += briefs18[3] + ": " + nodeData.externalLink;
     const node = getNode();
     validate();
     console.log(nodeData);
@@ -165,7 +173,7 @@ function saveForm() {
     hideForm();
 }
 
-const formLabelWidth = '130px'
+const formLabelWidth = "130px";
 </script>
 <style scoped>
 .nodeBox {
@@ -193,8 +201,13 @@ const formLabelWidth = '130px'
         <div class="nodeTitle">
             {{ nodeData.nodeName }}
             <span v-show="nodeData.invalidMessages.length > 0">
-                <el-tooltip class="box-item" effect="dark" :content="nodeData.invalidMessages.join('<br/>')"
-                    placement="bottom" raw-content>
+                <el-tooltip
+                    class="box-item"
+                    effect="dark"
+                    :content="nodeData.invalidMessages.join('<br/>')"
+                    placement="bottom"
+                    raw-content
+                >
                     <el-icon color="red" size="16">
                         <EpWarning />
                     </el-icon>
@@ -203,44 +216,101 @@ const formLabelWidth = '130px'
         </div>
         <div>{{ nodeData.brief }}</div>
         <!-- <teleport to="body"> -->
-        <el-drawer v-if="nodeSetFormVisible" v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl"
-            size="70%" :append-to-body="true" :destroy-on-close="true">
-            <el-form :label-position="labelPosition" label-width="70px" :model="nodeData" style="max-width: 700px">
-                <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth">
+        <el-drawer
+            v-if="nodeSetFormVisible"
+            v-model="nodeSetFormVisible"
+            :title="nodeData.nodeName"
+            direction="rtl"
+            size="70%"
+            :append-to-body="true"
+            :destroy-on-close="true"
+        >
+            <el-form
+                :label-position="labelPosition"
+                label-width="70px"
+                :model="nodeData"
+                style="max-width: 700px"
+            >
+                <el-form-item
+                    :label="t('common.nodeName')"
+                    :label-width="formLabelWidth"
+                >
                     <el-input v-model="nodeData.nodeName" />
                 </el-form-item>
-                <el-form-item :label="t('gotoNode.gotoType')" :label-width="formLabelWidth">
-                    <el-select v-model="nodeData.gotoType" :placeholder="t('gotoNode.gotoTypePH')"
-                        @change="selectGotoType">
-                        <el-option v-for="item in gotoTypes" :key="item.label" :label="item.label" :value="item.value"
-                            :disabled="item.disabled" />
+                <el-form-item
+                    :label="t('gotoNode.gotoType')"
+                    :label-width="formLabelWidth"
+                >
+                    <el-select
+                        v-model="nodeData.gotoType"
+                        :placeholder="t('gotoNode.gotoTypePH')"
+                        @change="selectGotoType"
+                    >
+                        <el-option
+                            v-for="item in gotoTypes"
+                            :key="item.label"
+                            :label="item.label"
+                            :value="item.value"
+                            :disabled="item.disabled"
+                        />
                     </el-select>
                 </el-form-item>
                 <div v-show="nodeData.gotoType === 'GotoMainFlow'">
-                    <el-form-item :label="t('gotoNode.gotoMainFlow')" :label-width="formLabelWidth">
-                        <el-select v-model="nodeData.gotoMainFlowId" :placeholder="t('gotoNode.gotoMainFlowPH')"
-                            @change="selectedMainFlow">
-                            <el-option v-for="item in mainFlows" :key="item.id" :label="item.name" :value="item.id" />
+                    <el-form-item
+                        :label="t('gotoNode.gotoMainFlow')"
+                        :label-width="formLabelWidth"
+                    >
+                        <el-select
+                            v-model="nodeData.gotoMainFlowId"
+                            :placeholder="t('gotoNode.gotoMainFlowPH')"
+                            @change="selectedMainFlow"
+                        >
+                            <el-option
+                                v-for="item in mainFlows"
+                                :key="item.id"
+                                :label="item.name"
+                                :value="item.id"
+                            />
                         </el-select>
                     </el-form-item>
                 </div>
                 <div v-show="showSubFlowOptions">
-                    <el-form-item :label="t('gotoNode.gotoSubFlow')" :label-width="formLabelWidth">
-                        <el-select v-model="nodeData.gotoSubFlowId" :placeholder="t('gotoNode.gotoSubFlowPH')">
-                            <el-option v-for="item in subFlowNames" :key="item.id" :label="item.name"
-                                :value="item.id" />
+                    <el-form-item
+                        :label="t('gotoNode.gotoSubFlow')"
+                        :label-width="formLabelWidth"
+                    >
+                        <el-select
+                            v-model="nodeData.gotoSubFlowId"
+                            :placeholder="t('gotoNode.gotoSubFlowPH')"
+                        >
+                            <el-option
+                                v-for="item in subFlowNames"
+                                :key="item.id"
+                                :label="item.name"
+                                :value="item.id"
+                            />
                         </el-select>
                     </el-form-item>
                 </div>
                 <div v-show="nodeData.gotoType === 'GotoExternalLink'">
-                    <el-form-item :label="t('gotoNode.externalLink')" :label-width="formLabelWidth">
+                    <el-form-item
+                        :label="t('gotoNode.externalLink')"
+                        :label-width="formLabelWidth"
+                    >
                         <el-input v-model="nodeData.externalLink" />
                     </el-form-item>
                 </div>
             </el-form>
             <div>
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
+                <el-button
+                    type="primary"
+                    :loading="loading"
+                    @click="saveForm()"
+                    >{{ t("common.save") }}</el-button
+                >
+                <el-button @click="hideForm()">{{
+                    t("common.cancel")
+                }}</el-button>
             </div>
         </el-drawer>
         <!-- </teleport> -->
