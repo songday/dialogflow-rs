@@ -20,7 +20,7 @@ name = "dialogflowai"
 # End
 # artful = "0.1.1"
 anyhow = "1.0.100"
-axum = {version = "0.8.6", features = ["query", "tokio", "macros", "multipart"]}
+axum = {version = "0.8.7", features = ["query", "tokio", "macros", "multipart"]}
 bigdecimal = "0.4.9"
 # bytes = "1.9"
 # candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.5.1" }
@@ -80,7 +80,7 @@ lopdf = "0.38.0"
 # libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 validator = "0.20"
 zip = "6.0.0"
-quick-xml = "0.38.3"
+quick-xml = "0.38.4"
 # usearch = "2.17"
 # cxx = "1.0"
 # triple_accel = "0.4.0"
