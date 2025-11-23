@@ -1,20 +1,20 @@
 <script setup>
-import { inject, reactive, ref, onMounted } from 'vue';
-import { copyProperties } from '../../../assets/tools.js'
-import { useI18n } from 'vue-i18n'
-import EpWarning from '~icons/ep/warning'
+import { inject, reactive, ref, onMounted } from "vue";
+import { copyProperties } from "../../../assets/tools.js";
+import { useI18n } from "vue-i18n";
+import EpWarning from "~icons/ep/warning";
 const { t, tm, rt } = useI18n();
 const nodeSetFormVisible = ref(false);
 const nodeData = reactive({
-    nodeName: 'The end',
-    endingText: '',
+    nodeName: "The end",
+    endingText: "",
     valid: true,
     invalidMessages: [],
     newNode: true,
 });
 const nodeName = ref();
-const getNode = inject('getNode');
-const allNodeNameSet = inject('allNodeNameSet');
+const getNode = inject("getNode");
+const allNodeNameSet = inject("allNodeNameSet");
 const node = getNode();
 // node.setData(nodeData, { silent: false });
 node.on("change:data", ({ current }) => {
@@ -28,8 +28,11 @@ onMounted(async () => {
     if (nodeData.newNode) {
         let n = null;
         do {
-            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
-            nodeData.nodeName = t('theEndNode.nodeName') + '-' + n;
+            n =
+                n == null
+                    ? Date.now().toString(16)
+                    : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t("theEndNode.nodeName") + "-" + n;
         } while (allNodeNameSet.value.has(nodeData.nodeName));
         nodeData.newNode = false;
         node.setData(nodeData, { silent: true });
@@ -43,25 +46,26 @@ function validate() {
     const m = d.invalidMessages;
     m.splice(0, m.length);
     if (d.endingText && d.endingText.length > 10000)
-        m.push('The text entered cannot exceed 10,000 characters');
+        m.push("The text entered cannot exceed 10,000 characters");
     d.valid = m.length == 0;
 }
 function hideForm() {
     nodeSetFormVisible.value = false;
 }
-const nodeAnswer = ref()
+const nodeAnswer = ref();
 function saveForm() {
     // const node = getNode();
     validate();
     node.removeData({ silent: true });
     node.setData(nodeData, { silent: false });
     hideForm();
-    const heightOffset = nodeName.value.offsetHeight + nodeAnswer.value.offsetHeight;
-    console.log(heightOffset)
-    node.resize(node.size().width, 20 + heightOffset, { direction: 'bottom' })
+    const heightOffset =
+        nodeName.value.offsetHeight + nodeAnswer.value.offsetHeight;
+    console.log(heightOffset);
+    node.resize(node.size().width, 20 + heightOffset, { direction: "bottom" });
 }
 
-const formLabelWidth = '90px'
+const formLabelWidth = "90px";
 </script>
 <style scoped>
 .nodeBox {
@@ -85,20 +89,36 @@ const formLabelWidth = '90px'
         <div ref="nodeName" class="nodeTitle">
             {{ nodeData.nodeName }}
             <span v-show="nodeData.invalidMessages.length > 0">
-                <el-tooltip class="box-item" effect="dark" :content="nodeData.invalidMessages.join('<br/>')"
-                    placement="bottom" raw-content>
+                <el-tooltip
+                    class="box-item"
+                    effect="dark"
+                    :content="nodeData.invalidMessages.join('<br/>')"
+                    placement="bottom"
+                    raw-content
+                >
                     <el-icon color="red" size="16">
                         <EpWarning />
                     </el-icon>
                 </el-tooltip>
             </span>
         </div>
-        <div ref="nodeAnswer" style="white-space: pre-wrap;font-size:12px;">{{ nodeData.endingText }}</div>
+        <div ref="nodeAnswer" style="white-space: pre-wrap; font-size: 12px">
+            {{ nodeData.endingText }}
+        </div>
         <!-- <teleport to="body"> -->
-        <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="50%"
-            :append-to-body="true" :destroy-on-close="true">
-            <el-form :label-position="labelPosition" :label-width="formLabelWidth" :model="nodeData">
-                <el-form-item :label="t('common.nodeName')" :label-width="formLabelWidth">
+        <el-drawer
+            v-model="nodeSetFormVisible"
+            :title="nodeData.nodeName"
+            direction="rtl"
+            size="50%"
+            :append-to-body="true"
+            :destroy-on-close="true"
+        >
+            <el-form :label-width="formLabelWidth" :model="nodeData">
+                <el-form-item
+                    :label="t('common.nodeName')"
+                    :label-width="formLabelWidth"
+                >
                     <el-input v-model="nodeData.nodeName" />
                 </el-form-item>
                 <el-form-item label="Ending text" :label-width="formLabelWidth">
@@ -106,8 +126,12 @@ const formLabelWidth = '90px'
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" @click="saveForm()">{{ t('common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
+                <el-button type="primary" @click="saveForm()">{{
+                    t("common.save")
+                }}</el-button>
+                <el-button @click="hideForm()">{{
+                    t("common.cancel")
+                }}</el-button>
             </div>
         </el-drawer>
         <!-- </teleport> -->

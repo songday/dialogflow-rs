@@ -1,38 +1,42 @@
 <script setup>
-import { inject, onMounted, reactive, ref } from 'vue'
-import { copyProperties, getDefaultBranch, httpReq } from '../../../assets/tools.js'
-import EpWarning from '~icons/ep/warning'
-import { useI18n } from 'vue-i18n'
+import { inject, onMounted, reactive, ref } from "vue";
+import {
+    copyProperties,
+    getDefaultBranch,
+    httpReq,
+} from "../../../assets/tools.js";
+import EpWarning from "~icons/ep/warning";
+import { useI18n } from "vue-i18n";
 const { t, tm } = useI18n();
 
 const nodeData = reactive({
-    nodeName: 'Send email node',
-    from: '',
-    to: '',
+    nodeName: "Send email node",
+    from: "",
+    to: "",
     toRecipients: [],
-    cc: '',
+    cc: "",
     ccRecipients: [],
-    bcc: '',
+    bcc: "",
     bccRecipients: [],
-    subject: '',
-    content: '',
-    contentType: 'TextHtml',
+    subject: "",
+    content: "",
+    contentType: "TextHtml",
     asyncSend: true,
     valid: false,
     invalidMessages: [],
     branches: [],
     newNode: true,
-})
+});
 let lastTimeAsyncSendChoice = true;
 const nodeName = ref();
-const smtpHost = ref('')
-const emailVerificationRegex = ref('')
-const nodeSetFormVisible = ref(false)
-const getNode = inject('getNode');
-const { robotId } = inject('robotId');
-const allNodeNameSet = inject('allNodeNameSet');
+const smtpHost = ref("");
+const emailVerificationRegex = ref("");
+const nodeSetFormVisible = ref(false);
+const getNode = inject("getNode");
+const { robotId } = inject("robotId");
+const allNodeNameSet = inject("allNodeNameSet");
 const node = getNode();
-const variables = []
+const variables = [];
 node.on("change:data", ({ current }) => {
     nodeSetFormVisible.value = true;
 });
@@ -53,17 +57,20 @@ onMounted(async () => {
     if (nodeData.newNode) {
         let n = null;
         do {
-            n = n == null ? Date.now().toString(16) : Math.random().toString(16).substring(2);
-            nodeData.nodeName = t('sendEmailNode.nodeName') + '-' + n;
+            n =
+                n == null
+                    ? Date.now().toString(16)
+                    : Math.random().toString(16).substring(2);
+            nodeData.nodeName = t("sendEmailNode.nodeName") + "-" + n;
         } while (allNodeNameSet.value.has(nodeData.nodeName));
-        resetPorts()
+        resetPorts();
         nodeData.newNode = false;
         // console.log(nodeData);
     } else {
-        lastTimeAsyncSendChoice = nodeData.asyncSend
+        lastTimeAsyncSendChoice = nodeData.asyncSend;
     }
     allNodeNameSet.value.add(nodeData.nodeName);
-    let r = await httpReq('GET', 'variable', null, null, null);
+    let r = await httpReq("GET", "variable", null, null, null);
     // console.log(t);
     if (r && r.status == 200 && r.data) {
         variables.splice(0, variables.length);
@@ -71,12 +78,18 @@ onMounted(async () => {
             this.push({ label: item.varName, value: item.varName });
         }, variables);
     }
-    r = await httpReq('GET', 'management/settings', { robotId: robotId }, null, null);
+    r = await httpReq(
+        "GET",
+        "management/settings",
+        { robotId: robotId },
+        null,
+        null,
+    );
     // console.log(t);
     if (r && r.status == 200 && r.data) {
-        smtpHost.value = r.data.smtpHost
+        smtpHost.value = r.data.smtpHost;
         // console.log(t.data.emailVerificationRegex)
-        emailVerificationRegex.value = r.data.emailVerificationRegex
+        emailVerificationRegex.value = r.data.emailVerificationRegex;
     }
     validate();
 });
@@ -86,78 +99,75 @@ const resetPorts = () => {
     const x = nodeName.value.offsetWidth - 15;
     if (nodeData.asyncSend) {
         node.addPort({
-            group: 'absolute',
+            group: "absolute",
             args: { x: x, y: heightOffset },
             attrs: {
                 text: {
-                    text: tm('dialogNode.nextSteps')[1],
+                    text: tm("dialogNode.nextSteps")[1],
                     fontSize: 12,
                 },
             },
         });
     } else {
         node.addPort({
-            group: 'absolute',
+            group: "absolute",
             args: { x: x, y: heightOffset },
             attrs: {
                 text: {
-                    text: tm('collectNode.branches')[0],
+                    text: tm("collectNode.branches")[0],
                     fontSize: 12,
                 },
             },
         });
         node.addPort({
-            group: 'absolute',
+            group: "absolute",
             args: { x: x, y: heightOffset + 20 },
             attrs: {
                 text: {
-                    text: tm('collectNode.branches')[1],
+                    text: tm("collectNode.branches")[1],
                     fontSize: 12,
                 },
             },
         });
-        node.resize(node.size().width, 40 + heightOffset, { direction: 'bottom' })
+        node.resize(node.size().width, 40 + heightOffset, {
+            direction: "bottom",
+        });
     }
-}
+};
 const validate = () => {
     const d = nodeData;
     const m = d.invalidMessages;
     m.splice(0, m.length);
-    if (!smtpHost.value)
-        m.push('SMTP host is not configured');
-    if (!d.nodeName)
-        m.push('Need to fill in the node name');
+    if (!smtpHost.value) m.push("SMTP host is not configured");
+    if (!d.nodeName) m.push("Need to fill in the node name");
     // console.log(emailVerificationRegex)
     const re = new RegExp(emailVerificationRegex.value);
-    if (!d.to)
-        m.push('Need to fill in the email recipient');
+    if (!d.to) m.push("Need to fill in the email recipient");
     else {
-        d.to.split(';').forEach(function (item) {
+        d.to.split(";").forEach(function (item) {
             if (!item.match(re)) {
-                m.push(item + ' is not a valid email format');
-            } else d.toRecipients.push(item)
-        })
+                m.push(item + " is not a valid email format");
+            } else d.toRecipients.push(item);
+        });
     }
     if (d.cc) {
-        d.cc.split(';').forEach(function (item) {
+        d.cc.split(";").forEach(function (item) {
             if (!item.match(re)) {
-                m.push(item + ' is not a valid email format');
-            } else d.ccRecipients.push(item)
-        })
+                m.push(item + " is not a valid email format");
+            } else d.ccRecipients.push(item);
+        });
     }
     if (d.bcc) {
-        d.bcc.split(';').forEach(function (item) {
+        d.bcc.split(";").forEach(function (item) {
             if (!item.match(re)) {
-                m.push(item + ' is not a valid email format');
-            } else d.bccRecipients.push(item)
-        })
+                m.push(item + " is not a valid email format");
+            } else d.bccRecipients.push(item);
+        });
     }
-    if (!d.subject)
-        m.push('Need to fill in the email subject');
-    if (!d.content)
-        m.push('Need to fill in the email content');
+    if (!d.subject) m.push("Need to fill in the email subject");
+    if (!d.content) m.push("Need to fill in the email content");
     if (d.branches == null || d.branches.length == 0)
-        m.push('Wrong node branch information');
+        m.push("Wrong node branch information");
     // else {
     //     d.branches.forEach(function (item) {
     //         if (!item.target_node_id)
@@ -165,12 +175,12 @@ const validate = () => {
     //     })
     // }
     d.valid = m.length == 0;
-}
+};
 const saveForm = () => {
-    console.log(lastTimeAsyncSendChoice + "|" + nodeData.asyncSend)
+    console.log(lastTimeAsyncSendChoice + "|" + nodeData.asyncSend);
     if (lastTimeAsyncSendChoice != nodeData.asyncSend) {
-        lastTimeAsyncSendChoice = nodeData.asyncSend
-        resetPorts()
+        lastTimeAsyncSendChoice = nodeData.asyncSend;
+        resetPorts();
     }
     const node = getNode();
     const ports = node.getPorts();
@@ -179,17 +189,21 @@ const saveForm = () => {
         const branch = getDefaultBranch();
         branch.branchName = ports[i].attrs.text.text;
         branch.branchId = ports[i].id;
-        branch.branchType = i == 0 && ports.length > 1 ? 'EmailSentSuccessfully' : 'GotoAnotherNode';
+        branch.branchType =
+            i == 0 && ports.length > 1
+                ? "EmailSentSuccessfully"
+                : "GotoAnotherNode";
         nodeData.branches.push(branch);
     }
-    validate()
+    validate();
     node.removeData({ silent: true });
     node.setData(nodeData, { silent: false });
     hideForm();
-}
+};
 const hideForm = () => {
     nodeSetFormVisible.value = false;
-}
+};
+const formLabelWidth = "100px";
 </script>
 <style scoped>
 .nodeBox {
@@ -213,8 +227,13 @@ const hideForm = () => {
         <div ref="nodeName" class="nodeTitle">
             {{ nodeData.nodeName }}
             <span v-show="nodeData.invalidMessages.length > 0">
-                <el-tooltip class="box-item" effect="dark" :content="nodeData.invalidMessages.join('<br/>')"
-                    placement="bottom" raw-content>
+                <el-tooltip
+                    class="box-item"
+                    effect="dark"
+                    :content="nodeData.invalidMessages.join('<br/>')"
+                    placement="bottom"
+                    raw-content
+                >
                     <el-icon color="yellow" size="16">
                         <EpWarning />
                     </el-icon>
@@ -224,38 +243,57 @@ const hideForm = () => {
         <div>To: {{ nodeData.to }}</div>
         <div>Subject: {{ nodeData.subject }}</div>
         <!-- <teleport to="body"> -->
-        <el-drawer v-model="nodeSetFormVisible" :title="nodeData.nodeName" direction="rtl" size="70%"
-            :append-to-body="true" :destroy-on-close="true">
-            <el-form :label-position="labelPosition" label-width="100px" :model="nodeData" style="max-width: 500px">
+        <el-drawer
+            v-model="nodeSetFormVisible"
+            :title="nodeData.nodeName"
+            direction="rtl"
+            size="70%"
+            :append-to-body="true"
+            :destroy-on-close="true"
+        >
+            <el-form
+                label-width="100px"
+                :model="nodeData"
+                style="max-width: 500px"
+            >
                 <el-form-item :label="t('common.nodeName')">
                     <el-input v-model="nodeData.nodeName" />
                 </el-form-item>
-                <el-form-item label="From" :label-width="formLabelWidth" prop="from" :rules="[
-                    {
-                        required: true,
-                        message: 'Please input email address',
-                        trigger: 'blur',
-                    },
-                    {
-                        type: 'email',
-                        message: 'Please input correct email address',
-                        trigger: ['blur', 'change'],
-                    },
-                ]">
+                <el-form-item
+                    label="From"
+                    :label-width="formLabelWidth"
+                    prop="from"
+                    :rules="[
+                        {
+                            required: true,
+                            message: 'Please input email address',
+                            trigger: 'blur',
+                        },
+                        {
+                            type: 'email',
+                            message: 'Please input correct email address',
+                            trigger: ['blur', 'change'],
+                        },
+                    ]"
+                >
                     <el-input v-model="nodeData.from" placeholder="" />
                 </el-form-item>
-                <el-form-item label="To" prop="to" :rules="[
-                    {
-                        required: true,
-                        message: 'Please input email address',
-                        trigger: 'blur',
-                    },
-                    {
-                        type: 'email',
-                        message: 'Please input correct email address',
-                        trigger: ['blur', 'change'],
-                    },
-                ]">
+                <el-form-item
+                    label="To"
+                    prop="to"
+                    :rules="[
+                        {
+                            required: true,
+                            message: 'Please input email address',
+                            trigger: 'blur',
+                        },
+                        {
+                            type: 'email',
+                            message: 'Please input correct email address',
+                            trigger: ['blur', 'change'],
+                        },
+                    ]"
+                >
                     <el-input v-model="nodeData.to" placeholder="" />
                 </el-form-item>
                 <el-form-item label="">
@@ -267,30 +305,55 @@ const hideForm = () => {
                 <el-form-item label="Bcc">
                     <el-input v-model="nodeData.bcc" placeholder="" />
                 </el-form-item>
-                <el-form-item label="Subject" prop="subject" :rules="[
-                    { required: true, message: 'Subject is required' },
-                ]">
+                <el-form-item
+                    label="Subject"
+                    prop="subject"
+                    :rules="[
+                        { required: true, message: 'Subject is required' },
+                    ]"
+                >
                     <el-input v-model="nodeData.subject" placeholder="" />
                 </el-form-item>
-                <el-form-item label="Content" prop="content" :rules="[
-                    { required: true, message: 'Content is required' },
-                ]">
-                    <el-input v-model="nodeData.content" :rows="2" type="textarea" placeholder="Please input" />
+                <el-form-item
+                    label="Content"
+                    prop="content"
+                    :rules="[
+                        { required: true, message: 'Content is required' },
+                    ]"
+                >
+                    <el-input
+                        v-model="nodeData.content"
+                        :rows="2"
+                        type="textarea"
+                        placeholder="Please input"
+                    />
                 </el-form-item>
                 <el-form-item label="Content type">
                     <el-radio-group v-model="nodeData.contentType" class="ml-4">
-                        <el-radio value="TextHtml" size="large">text/html</el-radio>
-                        <el-radio value="TextPlain" size="large">text/plain</el-radio>
+                        <el-radio value="TextHtml" size="large"
+                            >text/html</el-radio
+                        >
+                        <el-radio value="TextPlain" size="large"
+                            >text/plain</el-radio
+                        >
                     </el-radio-group>
                 </el-form-item>
                 <el-form-item label="">
-                    <input type="checkbox" id="_asyncSend_" v-model="nodeData.asyncSend"
-                        :checked="nodeData.asyncSend" /><label for="_asyncSend_">Send asynchronously</label>
+                    <input
+                        type="checkbox"
+                        id="_asyncSend_"
+                        v-model="nodeData.asyncSend"
+                        :checked="nodeData.asyncSend"
+                    /><label for="_asyncSend_">Send asynchronously</label>
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
-                <el-button type="primary" :loading="loading" @click="saveForm()">{{ t('common.save') }}</el-button>
-                <el-button @click="hideForm()">{{ t('common.cancel') }}</el-button>
+                <el-button type="primary" @click="saveForm()">{{
+                    t("common.save")
+                }}</el-button>
+                <el-button @click="hideForm()">{{
+                    t("common.cancel")
+                }}</el-button>
             </div>
         </el-drawer>
         <!-- </teleport> -->

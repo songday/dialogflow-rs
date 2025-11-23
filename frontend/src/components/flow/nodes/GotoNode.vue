@@ -226,7 +226,6 @@ const formLabelWidth = "130px";
             :destroy-on-close="true"
         >
             <el-form
-                :label-position="labelPosition"
                 label-width="70px"
                 :model="nodeData"
                 style="max-width: 700px"
@@ -302,12 +301,9 @@ const formLabelWidth = "130px";
                 </div>
             </el-form>
             <div>
-                <el-button
-                    type="primary"
-                    :loading="loading"
-                    @click="saveForm()"
-                    >{{ t("common.save") }}</el-button
-                >
+                <el-button type="primary" @click="saveForm()">{{
+                    t("common.save")
+                }}</el-button>
                 <el-button @click="hideForm()">{{
                     t("common.cancel")
                 }}</el-button>
