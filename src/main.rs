@@ -16,7 +16,7 @@ use dialogflowai::web::server::start_app;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn main() {
+fn main() -> Result<(), std::io::Error> {
     // dialogflow::web::t1();
     unsafe {
         env::set_var("RUST_LOG", "INFO");
@@ -30,7 +30,7 @@ fn main() {
     builder.init();
 
     let runtime = Builder::new_multi_thread()
-        .worker_threads(num_cpus::get() + 5)
+        .worker_threads(std::thread::available_parallelism()?.get() + 5usize)
         .thread_name("dialogflowai")
         .thread_stack_size(3 * 1024 * 1024)
         .enable_io()
@@ -41,4 +41,6 @@ fn main() {
     // let (sender, recv) = tokio::sync::oneshot::channel::<()>();
     // runtime.spawn(dialogflow::web::clean_expired_session(recv));
     runtime.block_on(start_app());
+
+    Ok(())
 }
