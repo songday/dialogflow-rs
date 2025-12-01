@@ -50,11 +50,12 @@ import IcBaselineRedo from "~icons/ic/baseline-redo";
 // } from 'element-tiptap-vue3-fixed';
 // import EleTipTap from './EleTipTap.vue'
 // import Editor from '@tinymce/tinymce-vue'
-import { BubbleMenu, Editor, EditorContent } from "@tiptap/vue-3";
+import { Editor, EditorContent } from "@tiptap/vue-3";
+import { BubbleMenu } from "@tiptap/vue-3/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import { Color } from "@tiptap/extension-color";
-import TextStyle from "@tiptap/extension-text-style";
+import { FontFamily, TextStyle } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import Blockquote from "@tiptap/extension-blockquote";
 import TextAlign from "@tiptap/extension-text-align";
@@ -863,7 +864,7 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                         class="menubar"
                         v-if="editor && robotType == 'TextBot'"
                     >
-                        <el-button-group size="normal">
+                        <el-button-group size="default">
                             <el-button
                                 :color="
                                     editor.isActive('bold')
