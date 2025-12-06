@@ -34,7 +34,7 @@ candle-transformers = { version = "0.9.1" }
 # candle-transformers = { version = "0.9.1", features = ["flash-attn"] }
 # crossbeam-channel = "0.5"
 frand = "0.10.1"
-tokenizers = "0.22.1"
+tokenizers = "0.22.2"
 # candle_embed = "0.1"
 colored = "3.0.0"
 # dashmap = "5.5.1"
@@ -92,7 +92,7 @@ turso = "0.3.2"
 # sqlite-vec = { path = "/mnt/d/work/sqlite-vec/bindings/rust/" }
 
 [build-dependencies]
-flate2 = "1.1.5"
+flate2 = "1.1.7"
 # cc = "1.2.8"
 
 [target.'cfg(windows)'.dependencies]
