@@ -92,7 +92,7 @@ turso = "0.4.2"
 # sqlite-vec = { path = "/mnt/d/work/sqlite-vec/bindings/rust/" }
 
 [build-dependencies]
-flate2 = "1.1.7"
+flate2 = "1.1.5"
 # cc = "1.2.8"
 
 [target.'cfg(windows)'.dependencies]
