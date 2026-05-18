@@ -818,13 +818,13 @@ fn set_special_tokens_map(mirror: &str, tokenizer: &mut Tokenizer) -> Result<()>
     {
         for (_, value) in root_object.iter() {
             if value.is_string() {
-                tokenizer.add_special_tokens(&[AddedToken {
+                tokenizer.add_special_tokens([AddedToken {
                     content: value.as_str().unwrap().into(),
                     special: true,
                     ..Default::default()
                 }]);
             } else if value.is_object() {
-                tokenizer.add_special_tokens(&[AddedToken {
+                tokenizer.add_special_tokens([AddedToken {
                     content: value["content"].as_str().unwrap().into(),
                     special: true,
                     single_word: value["single_word"].as_bool().unwrap(),
