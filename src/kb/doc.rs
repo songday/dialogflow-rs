@@ -238,14 +238,14 @@ pub(super) fn parse_docx(b: Vec<u8>) -> Result<String> {
     // 读取 XML 内容
     loop {
         match reader.read_event() {
-            Ok(Event::Start(ref e)) if e.name().as_ref() == b"w:p" => in_paragraph = true,
-            Ok(Event::End(ref e)) if e.name().as_ref() == b"w:p" => {
+            Ok(Event::Start(ref e)) if e.name().0.eq("w:p") => in_paragraph = true,
+            Ok(Event::End(ref e)) if e.name().0.eq("w:p") => {
                 doc_text.push('\n');
                 in_paragraph = false;
             }
-            Ok(Event::Empty(ref e)) if e.name().as_ref() == b"w:p" => doc_text.push('\n'),
+            Ok(Event::Empty(ref e)) if e.name().0.eq("w:p") => doc_text.push('\n'),
             Ok(Event::Text(e)) if in_paragraph => {
-                doc_text.push_str(&e.decode()?);
+                doc_text.push_str(&e.as_ref());
             }
             Ok(Event::Eof) => break,
             Err(e) => panic!("Error at position {}: {:?}", reader.error_position(), e),

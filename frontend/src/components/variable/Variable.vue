@@ -5,6 +5,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { copyProperties, httpReq } from '../../assets/tools.js'
 import { useI18n } from 'vue-i18n'
 const { t, tm, rt } = useI18n();
+import SolarDownloadOutline from '~icons/solar/download-outline';
+import EpPlus from '~icons/ep/plus';
 const route = useRoute();
 const router = useRouter();
 const robotId = route.params.robotId;
@@ -152,48 +154,75 @@ async function saveForm() {
     hideForm();
 }
 </script>
-<style scoped></style>
+<style scoped>
+.type-tag {
+    display: inline-block;
+    padding: 2px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.type-tag.num {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.type-tag.str {
+    background: #eef2ff;
+    color: #6366f1;
+}
+</style>
 <template>
-    <!-- <el-page-header :title="t('common.back')" @back="goBack">
-        <template #content>
-            <span class="text-large font-600 mr-3"> {{ $t('var.title') }} </span>
-        </template>
-<template #extra>
-            <div class="flex items-center">
-                <el-button type="primary" class="ml-2" @click="newVar()">{{ $t('var.add') }}</el-button>
-            </div>
-        </template>
-</el-page-header> -->
-    <h1>{{ $t('var.title') }}</h1>
-    <el-button type="primary" class="ml-2" @click="newVar()">{{ $t('var.add') }}</el-button>
-    <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="varName" :label="tm('var.table')[0]" width="300" />
-        <el-table-column prop="varTypeT" :label="tm('var.table')[1]" width="180" />
-        <el-table-column prop="varValueSourceT" :label="tm('var.table')[2]" width="200" />
-        <el-table-column fixed="right" :label="tm('var.table')[3]" min-width="40">
-            <template #default="scope">
-                <el-button link type="primary" @click="editVar(scope.$index, scope.row)">
-                    {{ $t('common.edit') }}
-                </el-button>
-                <el-button link type="danger" @click="deleteVar(scope.$index, scope.row)">
-                    {{ $t('common.del') }}
-                </el-button>
-            </template>
-        </el-table-column>
-    </el-table>
-    <el-drawer v-model="varSetFormVisible" :title="$t('var.form.title')" direction="rtl" size="50%">
-        <el-form :model="nodeData">
+    <div class="page-header">
+        <h1 class="page-title">
+            <span class="page-title-icon"><SolarDownloadOutline /></span>
+            {{ $t('var.title') }}
+        </h1>
+        <div class="page-actions">
+            <el-button type="primary" @click="newVar()">
+                <el-icon style="margin-right: 6px"><EpPlus /></el-icon>
+                {{ $t('var.add') }}
+            </el-button>
+        </div>
+    </div>
+    <div class="page-card">
+        <el-table :data="tableData" stripe style="width: 100%">
+            <el-table-column prop="varName" :label="tm('var.table')[0]" min-width="220" />
+            <el-table-column prop="varTypeT" :label="tm('var.table')[1]" width="140" align="center">
+                <template #default="scope">
+                    <span class="type-tag" :class="scope.row.varType == 'Num' ? 'num' : 'str'">
+                        {{ scope.row.varTypeT }}
+                    </span>
+                </template>
+            </el-table-column>
+            <el-table-column prop="varValueSourceT" :label="tm('var.table')[2]" width="180" />
+            <el-table-column fixed="right" :label="tm('var.table')[3]" width="150" align="center">
+                <template #default="scope">
+                    <el-button link type="primary" @click="editVar(scope.$index, scope.row)">
+                        {{ $t('common.edit') }}
+                    </el-button>
+                    <el-button link type="danger" @click="deleteVar(scope.$index, scope.row)">
+                        {{ $t('common.del') }}
+                    </el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+    </div>
+    <el-drawer v-model="varSetFormVisible" :title="$t('var.form.title')" direction="rtl" size="520px"
+        :destroy-on-close="true">
+        <el-form :model="varData">
             <el-form-item :label="$t('var.form.name')" :label-width="formLabelWidth">
-                <el-input v-model="varData.varName" autocomplete="off" />
+                <el-input v-model="varData.varName" autocomplete="off" :placeholder="$t('var.form.name')" />
             </el-form-item>
             <el-form-item :label="$t('var.form.type')" :label-width="formLabelWidth">
-                <el-select v-model="varData.varType" :placeholder="$t('var.form.choose1')">
+                <el-select v-model="varData.varType" :placeholder="$t('var.form.choose1')" style="width: 100%">
                     <el-option v-for="item in varTypes" :key="item.label" :label="item.label" :value="item.value"
                         :disabled="item.disabled" />
                 </el-select>
             </el-form-item>
             <el-form-item :label="$t('var.form.source')" :label-width="formLabelWidth">
-                <el-select v-model="varData.varValueSource" :placeholder="$t('var.form.choose2')">
+                <el-select v-model="varData.varValueSource" :placeholder="$t('var.form.choose2')" style="width: 100%">
                     <el-option v-for="item in varValueSources" :key="item.label" :label="item.label"
                         :value="item.value" />
                 </el-select>
@@ -204,17 +233,20 @@ async function saveForm() {
             </el-form-item>
             <el-form-item v-if="varData.varValueSource == 'ExternalHttp'" label="HTTP API"
                 :label-width="formLabelWidth">
-                <el-select v-model="varData.varAssociateData" placeholder="Choose a HTTP API">
+                <el-select v-model="varData.varAssociateData" placeholder="Choose a HTTP API" style="width: 100%">
                     <el-option v-for="item in httpApiList" :key="item.id" :label="item.name" :value="item.id" />
                 </el-select>
-                <br />
-                <router-link :to="{ name: 'externalHttpApiDetail', params: { robotId: robotId, id: 'new' } }">Add new
-                    HTTP
-                    API</router-link>
+                <div style="margin-top: 4px;">
+                    <router-link :to="{ name: 'externalHttpApiDetail', params: { robotId: robotId, id: 'new' } }">Add
+                        new
+                        HTTP
+                        API</router-link>
+                </div>
             </el-form-item>
             <el-form-item v-if="varData.varValueSource == 'ExternalHttp'" label="Value expression type"
                 :label-width="formLabelWidth">
-                <el-select v-model="varData.obtainValueExpressionType" placeholder="Value expression type">
+                <el-select v-model="varData.obtainValueExpressionType" placeholder="Value expression type"
+                    style="width: 100%">
                     <el-option v-for="item in obtainValueExpressionTypes" :key="item.label" :label="item.label"
                         :value="item.value" />
                 </el-select>
@@ -229,19 +261,20 @@ async function saveForm() {
             </el-form-item>
             <el-form-item v-if="varData.varValueSource == 'ExternalHttp'" label="Cache value"
                 :label-width="formLabelWidth">
-                <input type="checkbox" id="_cacheEnabled_" v-model="varData.cacheEnabled"
-                    :checked="varData.cacheEnabled" /><label for="_cacheEnabled_">Enable</label>
+                <el-switch v-model="varData.cacheEnabled" active-text="Enable" />
             </el-form-item>
             <el-form-item v-if="varData.varValueSource == 'ExternalHttp'" label="" :label-width="formLabelWidth">
-                <span v-if="varData.cacheEnabled">After requesting once, the variable value will be stored in the cache
+                <span v-if="varData.cacheEnabled" style="color: #86909c; font-size: 13px;">After requesting once, the
+                    variable value will be stored in the cache
                     and
                     subsequently read from the cache.</span>
-                <span v-if="!varData.cacheEnabled">HTTP API will be requested every time</span>
+                <span v-if="!varData.cacheEnabled" style="color: #86909c; font-size: 13px;">HTTP API will be requested
+                    every time</span>
             </el-form-item>
         </el-form>
         <div class="demo-drawer__footer">
-            <el-button type="primary" :loading="loading" @click="saveForm()">{{ $t('common.save') }}</el-button>
             <el-button @click="hideForm()">{{ $t('common.cancel') }}</el-button>
+            <el-button type="primary" :loading="loading" @click="saveForm()">{{ $t('common.save') }}</el-button>
         </div>
     </el-drawer>
 </template>

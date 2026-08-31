@@ -71,6 +71,8 @@ export default {
     pub: "发布所有流程",
     test: "测试流程",
     addSubFlow: "新增子流程",
+    subFlowList: "子流程",
+    nodePalette: "节点",
     form: {
       name: "子流程名",
     },

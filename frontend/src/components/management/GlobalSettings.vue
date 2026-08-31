@@ -12,7 +12,7 @@ const goBack = () => {
 }
 
 const settings = reactive({
-    ip: '127.0.0.1',
+    ip: '10.244.8.18',
     port: '12715',
     selectRandomPortWhenConflict: false,
     hfModelDownload: {
@@ -52,7 +52,7 @@ async function save() {
             <span class="text-large font-600 mr-3">{{ $t('settings.title') }}</span>
         </template>
     </el-page-header>
-    <h3>{{ t('settings.commonSettings') }}</h3>
+    <div class="section-title">{{ t('settings.commonSettings') }}</div>
     <el-row>
         <el-col :span="12" :offset="1">
             <el-form :model="settings">
@@ -69,9 +69,8 @@ async function save() {
                     <el-input-number v-model="settings.port" :min="1024" :max="65530" @change="handleChange" />
                 </el-form-item>
                 <el-form-item label="" :label-width="formLabelWidth">
-                    <input type="checkbox" id="_randomPortWhenConflict_" v-model="settings.selectRandomPortWhenConflict"
-                        :checked="settings.selectRandomPortWhenConflict" />
-                    <label for="_randomPortWhenConflict_">{{ $t('settings.prompt2_2') }}</label>
+                    <el-switch v-model="settings.selectRandomPortWhenConflict" />
+                    <span style="margin-left: 10px;">{{ $t('settings.prompt2_2') }}</span>
                 </el-form-item>
                 <el-form-item :label-width="formLabelWidth">
                     {{ $t('settings.note') }}
@@ -85,7 +84,7 @@ async function save() {
             </el-form>
         </el-col>
     </el-row>
-    <h3>HuggingFace model downloading settings</h3>
+    <div class="section-title">HuggingFace model downloading settings</div>
     <el-row>
         <el-col :span="11" :offset="1">
             <el-form :model="settings.modelDownload" :label-width="formLabelWidth" style="max-width: 600px">

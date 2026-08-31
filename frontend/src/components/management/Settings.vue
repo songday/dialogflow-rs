@@ -1058,13 +1058,10 @@ const usedByTextGenerationBig = [textGenerationPic];
 const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
 </script>
 <template>
-    <!-- <el-page-header :title="$t('common.back')" @back="goBack">
-        <template #content>
-            <span class="text-large font-600 mr-3">{{ $t('settings.title') }}</span>
-        </template>
-</el-page-header> -->
-    <h1>{{ $t("settings.title") }}</h1>
-    <h3>{{ t("settings.commonSettings") }}</h3>
+    <div class="page-header">
+        <h1 class="page-title">{{ $t("settings.title") }}</h1>
+    </div>
+    <div class="section-title">{{ t("settings.commonSettings") }}</div>
     <el-row>
         <el-col :span="12" :offset="1">
             <el-form :model="settings">
@@ -1090,7 +1087,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             </el-form>
         </el-col>
     </el-row>
-    <h3>
+    <div class="section-title">
         {{ t("botSettings.chatModel") }}
         <el-tooltip effect="light" placement="right">
             <template #content>
@@ -1102,7 +1099,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             </template>
             <el-button circle>?</el-button>
         </el-tooltip>
-    </h3>
+    </div>
     <el-row>
         <el-col :span="11" :offset="1">
             <el-form
@@ -1279,7 +1276,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             />
         </el-col>
     </el-row>
-    <h3>
+    <div class="section-title">
         {{ t("botSettings.txtGen") }}
         <el-tooltip effect="light" placement="right">
             <template #content>
@@ -1291,7 +1288,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             </template>
             <el-button circle>?</el-button>
         </el-tooltip>
-    </h3>
+    </div>
     <el-row>
         <el-col :span="11" :offset="1">
             <el-form
@@ -1495,7 +1492,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             />
         </el-col>
     </el-row>
-    <h3>
+    <div class="section-title">
         {{ t("botSettings.sentenceEmbedding") }}
         <el-tooltip effect="light" placement="right">
             <template #content>
@@ -1508,7 +1505,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             </template>
             <el-button circle>?</el-button>
         </el-tooltip>
-    </h3>
+    </div>
     <el-row>
         <el-col :span="11" :offset="1">
             <el-form
@@ -1841,7 +1838,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             </el-form>
         </el-col>
     </el-row> -->
-    <h3>Email settings</h3>
+    <div class="section-title">Email settings</div>
     <el-row>
         <el-col :span="11" :offset="1">
             <el-form :model="settings">

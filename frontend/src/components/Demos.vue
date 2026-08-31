@@ -41,7 +41,7 @@ function gotoDemo(id, name) {
 // console.log("parentPage=" + props.parentPage);
 </script>
 <template>
-    <div>
+    <div class="demo-links">
         <strong>{{ $t("home.demo") }}</strong
         >:
         <template v-if="props.parentPage == 'home'">
@@ -80,13 +80,11 @@ function gotoDemo(id, name) {
             </ol>
         </template>
         <template v-else>
-            &gt; 1.
             <el-link
                 type="success"
                 @click="gotoDemo('demo-repay', 'UmVwYXkgRGVtbw==')"
                 >{{ $t("home.demo1") }}</el-link
             >
-            &gt; 2.
             <el-link
                 type="success"
                 @click="
@@ -97,7 +95,6 @@ function gotoDemo(id, name) {
                 "
                 >{{ $t("home.demo2") }}</el-link
             >
-            &gt; 3.
             <el-link
                 type="success"
                 @click="
@@ -111,3 +108,8 @@ function gotoDemo(id, name) {
         </template>
     </div>
 </template>
+<style scoped>
+.demo-links .el-link {
+    margin-right: 12px;
+}
+</style>

@@ -150,8 +150,23 @@ const changeTab = (v) => {
 </script>
 <style scoped>
 .mainBody {
-  margin-left: 20px;
-  margin-right: 20px;
+  max-width: 980px;
+}
+
+.api-card {
+  background: #fff;
+  border: 1px solid #eef1f6;
+  border-radius: 14px;
+  padding: 24px;
+  margin-top: 18px;
+}
+
+.method-select {
+  width: 130px;
+}
+
+.param-table {
+  margin-bottom: 14px;
 }
 
 .my-header {
@@ -167,153 +182,158 @@ const changeTab = (v) => {
         <span class="text-large font-600 mr-3"> External HTTP API </span>
       </template>
     </el-page-header>
-    <p></p>
-    <el-form :model="httpApiData" label-width="90px">
-      <el-form-item label="Api name">
-        <el-input v-model="httpApiData.name" />
-      </el-form-item>
-      <el-form-item label="Description">
-        <el-input v-model="httpApiData.description" maxlength="256" placeholder="Some descriptions of this API"
-          show-word-limit type="textarea" />
-      </el-form-item>
-      <el-form-item label="Method">
-        <el-select v-model="httpApiData.method" placeholder="" @change="changeTab">
-          <el-option label="GET" value="GET" />
-          <el-option label="POST" value="POST" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="Protocol">
-        <el-select v-model="httpApiData.protocol" placeholder="">
-          <el-option label="HTTP" value="http://" />
-          <el-option label="HTTPS" value="https://" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="Address">
-        <el-input v-model="httpApiData.address">
-          <!-- <template #prepend>POST Http://</template> -->
-          <template #prepend>{{ httpApiData.method }} {{ httpApiData.protocol }}</template>
-        </el-input>
-      </el-form-item>
-    </el-form>
-    <el-text tag="b" size="large">Advanced</el-text>
-    <el-form :model="httpApiData" label-width="90px">
-      <el-form-item label="Parameters">
-        <el-tabs v-model="activeName" class="demo-tabs" @tab-click="handleClick">
-          <el-tab-pane label="Header" name="h">
-            <el-table :data="httpApiData.headers" stripe style="width: 100%">
-              <el-table-column prop="name" label="Parameter name" width="300" />
-              <el-table-column prop="value" label="Parameter value" width="200" />
-              <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="270">
-                <template #default="scope">
-                  <el-button link type="primary" size="small" @click="editParam(scope.$index)">
-                    Edit
-                  </el-button> |
-                  <el-button link type="primary" size="small" @click="delApi(scope.$index, scope.row)">
-                    Delete
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-button type="warning" @click="newParam">+Add header</el-button>
-          </el-tab-pane>
-          <el-tab-pane label="Query parameters" name="q">
-            <el-table :data="httpApiData.queryParams" stripe style="width: 100%">
-              <el-table-column prop="name" label="Parameter name" width="300" />
-              <el-table-column prop="value" label="Parameter value" width="200" />
-              <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="270">
-                <template #default="scope">
-                  <el-button link type="primary" size="small" @click="editParam(scope.$index)">
-                    Edit
-                  </el-button> |
-                  <el-button link type="primary" size="small" @click="delApi(scope.$index, scope.row)">
-                    Delete
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-button type="warning" @click="newParam">+Add query parameter</el-button>
-          </el-tab-pane>
-          <el-tab-pane label="Request body" name="f" v-if="httpApiData.method == 'POST'">
-            Request body type:
-            <el-radio-group v-model="httpApiData.postContentType" class="ml-4">
-              <el-radio value="UrlEncoded" size="large">application/x-www-form-urlencoded</el-radio>
-              <el-radio value="JSON" size="large">JSON</el-radio>
-              <!-- <el-radio value="1" size="large">multipart/form-data</el-radio> -->
-            </el-radio-group>
-            <el-table v-if="httpApiData.postContentType == 'UrlEncoded'" :data="httpApiData.formData" stripe
-              style="width: 100%">
-              <el-table-column prop="name" label="Parameter name" width="300" />
-              <el-table-column prop="value" label="Parameter value" width="200" />
-              <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="270">
-                <template #default="scope">
-                  <el-button link type="primary" size="small" @click="editParam(scope.$index)">
-                    Edit
-                  </el-button> |
-                  <el-button link type="primary" size="small" @click="delApi(scope.$index, scope.row)">
-                    Delete
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-button type="warning" v-if="httpApiData.postContentType == 'UrlEncoded'" @click="newParam">+Add form
-              data</el-button>
-            <!-- <div style="margin: 20px 0" /> -->
-            <el-input ref="requestBodyRef" v-if="httpApiData.postContentType == 'JSON'"
-              v-model="httpApiData.requestBody" maxlength="10240" placeholder="JSON" show-word-limit type="textarea" />
-            <el-button type="warning" v-if="httpApiData.postContentType == 'JSON'"
-              @click="varDialogVisible = true">+Insert
-              a
-              variable</el-button>
-          </el-tab-pane>
-        </el-tabs>
-      </el-form-item>
-      <el-form-item label="User agent">
-        <el-input v-model="httpApiData.userAgent" />
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" @click="save">Save</el-button>
-        <el-button type="info" disabled>Test (WIP)</el-button>
-        <el-button @click="goBack">Cancel</el-button>
-      </el-form-item>
-    </el-form>
-    <el-dialog v-model="setFormVisible" width="60%">
+
+    <div class="api-card">
+      <el-form :model="httpApiData" label-width="90px">
+        <el-form-item label="Api name">
+          <el-input v-model="httpApiData.name" />
+        </el-form-item>
+        <el-form-item label="Description">
+          <el-input v-model="httpApiData.description" maxlength="256" placeholder="Some descriptions of this API"
+            show-word-limit type="textarea" />
+        </el-form-item>
+        <el-form-item label="Method">
+          <el-select v-model="httpApiData.method" placeholder="" class="method-select" @change="changeTab">
+            <el-option label="GET" value="GET" />
+            <el-option label="POST" value="POST" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Protocol">
+          <el-select v-model="httpApiData.protocol" placeholder="" class="method-select">
+            <el-option label="HTTP" value="http://" />
+            <el-option label="HTTPS" value="https://" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Address">
+          <el-input v-model="httpApiData.address">
+            <template #prepend>{{ httpApiData.method }} {{ httpApiData.protocol }}</template>
+          </el-input>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <div class="section-title">Advanced</div>
+    <div class="api-card">
+      <el-form :model="httpApiData" label-width="90px">
+        <el-form-item label="Parameters">
+          <el-tabs v-model="activeName" class="demo-tabs" @tab-click="handleClick" style="width: 100%;">
+            <el-tab-pane label="Header" name="h">
+              <el-table :data="httpApiData.headers" stripe class="param-table" style="width: 100%">
+                <el-table-column prop="name" label="Parameter name" min-width="240" />
+                <el-table-column prop="value" label="Parameter value" min-width="200" />
+                <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="180" align="center">
+                  <template #default="scope">
+                    <el-button link type="primary" size="small" @click="editParam(scope.$index)">
+                      Edit
+                    </el-button>
+                    <el-button link type="primary" size="small" @click="delApi(scope.$index, scope.row)">
+                      Delete
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-button type="primary" plain @click="newParam">+Add header</el-button>
+            </el-tab-pane>
+            <el-tab-pane label="Query parameters" name="q">
+              <el-table :data="httpApiData.queryParams" stripe class="param-table" style="width: 100%">
+                <el-table-column prop="name" label="Parameter name" min-width="240" />
+                <el-table-column prop="value" label="Parameter value" min-width="200" />
+                <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="180" align="center">
+                  <template #default="scope">
+                    <el-button link type="primary" size="small" @click="editParam(scope.$index)">
+                      Edit
+                    </el-button>
+                    <el-button link type="primary" size="small" @click="delApi(scope.$index, scope.row)">
+                      Delete
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-button type="primary" plain @click="newParam">+Add query parameter</el-button>
+            </el-tab-pane>
+            <el-tab-pane label="Request body" name="f" v-if="httpApiData.method == 'POST'">
+              <div style="margin-bottom: 12px;">
+                Request body type:
+                <el-radio-group v-model="httpApiData.postContentType" class="ml-4">
+                  <el-radio value="UrlEncoded" size="large">application/x-www-form-urlencoded</el-radio>
+                  <el-radio value="JSON" size="large">JSON</el-radio>
+                </el-radio-group>
+              </div>
+              <el-table v-if="httpApiData.postContentType == 'UrlEncoded'" :data="httpApiData.formData" stripe
+                class="param-table" style="width: 100%">
+                <el-table-column prop="name" label="Parameter name" min-width="240" />
+                <el-table-column prop="value" label="Parameter value" min-width="200" />
+                <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="180" align="center">
+                  <template #default="scope">
+                    <el-button link type="primary" size="small" @click="editParam(scope.$index)">
+                      Edit
+                    </el-button>
+                    <el-button link type="primary" size="small" @click="delApi(scope.$index, scope.row)">
+                      Delete
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-button type="primary" plain v-if="httpApiData.postContentType == 'UrlEncoded'" @click="newParam">+Add
+                form
+                data</el-button>
+              <el-input ref="requestBodyRef" v-if="httpApiData.postContentType == 'JSON'"
+                v-model="httpApiData.requestBody" maxlength="10240" placeholder="JSON" show-word-limit type="textarea" />
+              <el-button type="primary" plain v-if="httpApiData.postContentType == 'JSON'"
+                @click="varDialogVisible = true">+Insert a variable</el-button>
+            </el-tab-pane>
+          </el-tabs>
+        </el-form-item>
+        <el-form-item label="User agent">
+          <el-input v-model="httpApiData.userAgent" />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="save">Save</el-button>
+          <el-button type="info" disabled>Test (WIP)</el-button>
+          <el-button @click="goBack">Cancel</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+    <el-dialog v-model="setFormVisible" width="560px" destroy-on-close>
       <template #header="{ close, titleId, titleClass }">
         <div class="my-header">
           <h4 :id="titleId" :class="titleClass">{{ dynamicTitle }}</h4>
         </div>
       </template>
-      <el-form :model="param">
-        <el-form-item label="Name" :label-width="formLabelWidth">
-          <el-input v-model="param.name" autocomplete="off" />
+      <el-form :model="param" :label-width="formLabelWidth">
+        <el-form-item label="Name">
+          <el-input v-model="param.name" autocomplete="off" placeholder="Parameter name" />
         </el-form-item>
-        <el-form-item label="Value" :label-width="formLabelWidth">
+        <el-form-item label="Value">
           <el-space size="10" spacer="-">
             <el-select v-model="param.valueSource" placeholder="" style="width:150px">
               <el-option label="Const value" value="Val" />
               <el-option label="From a variable" value="Var" />
             </el-select>
-            <el-input v-if="param.valueSource == 'Val'" v-model="param.value" autocomplete="off" style="width:400px" />
-            <el-select v-if="param.valueSource == 'Var'" v-model="selectedVar" placeholder="Select a varaible" style="width:400px">
+            <el-input v-if="param.valueSource == 'Val'" v-model="param.value" autocomplete="off" style="width:320px" />
+            <el-select v-if="param.valueSource == 'Var'" v-model="selectedVar" placeholder="Select a varaible"
+              style="width:320px">
               <el-option v-for="item in vars" :key="item.varName" :label="item.varName" :value="item.varName" />
             </el-select>
           </el-space>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button type="primary" :loading="loading" @click="addParam">{{ $t('common.save') }}</el-button>
         <el-button @click="setFormVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="addParam">{{ $t('common.save') }}</el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="varDialogVisible" title="Insert a variable" width="30%" :append-to-body="true" :destroy-on-close="true">
-      <el-select v-model="selectedVar" class="m-2" placeholder="Choose a variable" size="large">
+    <el-dialog v-model="varDialogVisible" title="Insert a variable" width="420px" :append-to-body="true"
+      :destroy-on-close="true">
+      <el-select v-model="selectedVar" placeholder="Choose a variable" size="large" style="width: 100%;">
         <el-option v-for="item in vars" :key="item.varName" :label="item.varName" :value="item.varName" />
       </el-select>
       <template #footer>
         <span class="dialog-footer">
+          <el-button @click="varDialogVisible = false">{{ t('common.cancel') }}</el-button>
           <el-button type="primary" @click="insertVar">
             {{ t('common.insert') }}
           </el-button>
-          <el-button @click="varDialogVisible = false">{{ t('common.cancel') }}</el-button>
         </span>
       </template>
     </el-dialog>
