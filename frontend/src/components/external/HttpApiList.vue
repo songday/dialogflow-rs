@@ -5,6 +5,8 @@ import { useI18n } from 'vue-i18n'
 // import { ElMessage, ElMessageBox } from 'element-plus'
 const { t, tm, rt } = useI18n();
 import { btoa, httpReq } from '../../assets/tools.js'
+import SolarRouting2Linear from '~icons/solar/routing-2-linear'
+import EpPlus from '~icons/ep/plus'
 const route=useRoute();
 const router = useRouter();
 const robotId=route.params.robotId
@@ -60,35 +62,39 @@ const delApi = (idx, row) => {
 }
 </script>
 <template>
-    <!-- <el-page-header :title="t('common.back')" @back="goBack">
-        <template #content>
-            <span class="text-large font-600 mr-3"> External HTTP API list </span>
-        </template>
-        <template #extra>
-            <div class="flex items-center">
-                <el-button type="primary" class="ml-2" @click="newApi()">Add new external HTTP API</el-button>
-            </div>
-        </template>
-    </el-page-header> -->
-    <h1>{{ t('eApi.title') }}</h1>
-    <el-button type="primary" class="ml-2" @click="newApi()">{{ t('eApi.add') }}</el-button>
-    <div style="padding:10px;border: 1px solid #E6A23C; background-color: #fdf6ec;margin:10px">
-        Now you can not only send data to the outside, but also get data from the outside and save it in variables
-        by setting value source to a HTTP API.
-        <router-link :to="{ name: 'variables', params: { robotId: robotId } }">{{ t('var.add') }}</router-link>
+    <div class="page-header">
+        <h1 class="page-title">
+            <span class="page-title-icon"><SolarRouting2Linear /></span>
+            {{ t('eApi.title') }}
+        </h1>
+        <div class="page-actions">
+            <el-button type="primary" @click="newApi()">
+                <el-icon style="margin-right: 6px"><EpPlus /></el-icon>
+                {{ t('eApi.add') }}
+            </el-button>
+        </div>
     </div>
-    <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="name" :label="t('common.name')" width="450" />
-        <el-table-column prop="description" :label="t('common.desc')" width="500" />
-        <el-table-column fixed="right" :label="tm('mainflow.table')[2]" min-width="40">
-            <template #default="scope">
-                <el-button link type="primary" @click="editApi(scope.$index, scope.row)">
-                    Edit
-                </el-button> |
-                <el-button link type="danger" @click="delApi(scope.$index, scope.row)">
-                    Delete
-                </el-button>
-            </template>
-        </el-table-column>
-    </el-table>
+    <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 16px;">
+        <template #title>
+            Now you can not only send data to the outside, but also get data from the outside and save it in variables
+            by setting value source to a HTTP API.
+            <router-link :to="{ name: 'variables', params: { robotId: robotId } }">{{ t('var.add') }}</router-link>
+        </template>
+    </el-alert>
+    <div class="page-card">
+        <el-table :data="tableData" stripe style="width: 100%">
+            <el-table-column prop="name" :label="t('common.name')" min-width="240" />
+            <el-table-column prop="description" :label="t('common.desc')" min-width="300" />
+            <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="160" align="center">
+                <template #default="scope">
+                    <el-button link type="primary" @click="editApi(scope.$index, scope.row)">
+                        Edit
+                    </el-button>
+                    <el-button link type="danger" @click="delApi(scope.$index, scope.row)">
+                        Delete
+                    </el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+    </div>
 </template>

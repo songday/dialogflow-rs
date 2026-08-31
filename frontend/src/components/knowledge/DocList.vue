@@ -7,6 +7,8 @@ import { useI18n } from "vue-i18n";
 const route = useRoute();
 const router = useRouter();
 const { t, tm, rt } = useI18n();
+import MaterialSymbolsBook5Outline from "~icons/material-symbols/book-5-outline";
+import EpPlus from "~icons/ep/plus";
 const robotId = route.params.robotId;
 // const uploadUrlHost = window.location.href.indexOf('localhost') > -1 ? 'http://localhost:12715' : '';
 const uploadUrl =
@@ -115,67 +117,86 @@ const goBack = () => {
 };
 </script>
 <template>
-    <!-- <el-page-header :title="$t('common.back')" @back="goBack">
-        <template #content>
-            <span class="text-large font-600 mr-3">Documents management</span>
-        </template>
-</el-page-header> -->
-    <h1>{{ t("kb.doc.title") }}</h1>
-    <el-upload
-        drag
-        :action="uploadUrl"
-        :on-success="uploadSuccessful"
-        :on-error="uploadFailed"
-    >
-        <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-        <div v-html="t('kb.doc.uploadBoxTip')"></div>
-        <template #tip>
-            <div class="el-upload__tip">
-                {{ t("kb.doc.uploadFileSizeLimitTip") }}
-            </div>
-        </template>
-    </el-upload>
-    <el-button type="primary" @click="dryRunFormVisible = true"
-        >Test docs</el-button
-    >
-    <el-table :data="tableData" style="width: 100%">
-        <el-table-column
-            prop="fileName"
-            :label="listColumnNames[0]"
-            width="180"
-        />
-        <el-table-column
-            prop="fileSize"
-            :label="listColumnNames[1]"
-            width="150"
-        />
-        <el-table-column prop="docContent" :label="listColumnNames[2]">
-            <template #default="scope">
-                <el-text truncated>{{ scope.row.docContent }}</el-text>
+    <div class="page-header">
+        <h1 class="page-title">
+            <span class="page-title-icon"><MaterialSymbolsBook5Outline /></span>
+            {{ t("kb.doc.title") }}
+        </h1>
+        <div class="page-actions">
+            <el-button type="primary" @click="dryRunFormVisible = true"
+                >Test docs</el-button
+            >
+        </div>
+    </div>
+    <div class="page-card">
+        <el-upload
+            drag
+            class="doc-upload"
+            :action="uploadUrl"
+            :on-success="uploadSuccessful"
+            :on-error="uploadFailed"
+        >
+            <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+            <div class="el-upload__text" v-html="t('kb.doc.uploadBoxTip')"></div>
+            <template #tip>
+                <div class="el-upload__tip">
+                    {{ t("kb.doc.uploadFileSizeLimitTip") }}
+                </div>
             </template>
-        </el-table-column>
-        <el-table-column fixed="right" :label="listColumnNames[3]" width="200">
-            <template #default="scope">
-                <el-button
-                    link
-                    type="primary"
-                    @click="showDocDetail(scope.$index)"
-                    >{{ t("common.toDetail") }}</el-button
-                >
-                <el-button link type="primary" @click="editDoc(scope.$index)">{{
-                    t("common.edit")
-                }}</el-button>
-                <el-button
-                    link
-                    type="danger"
-                    @click="deleteDoc(scope.$index)"
-                    >{{ t("common.del") }}</el-button
-                >
-            </template>
-        </el-table-column>
-    </el-table>
-    <el-dialog v-model="docDetailVisible" :title="docFile.fileName" width="800">
-        <div style="white-space: pre-wrap">{{ docFile.docContent }}</div>
+        </el-upload>
+        <el-table :data="tableData" stripe style="width: 100%">
+            <el-table-column
+                prop="fileName"
+                :label="listColumnNames[0]"
+                width="200"
+            />
+            <el-table-column
+                prop="fileSize"
+                :label="listColumnNames[1]"
+                width="150"
+            />
+            <el-table-column prop="docContent" :label="listColumnNames[2]">
+                <template #default="scope">
+                    <el-text truncated>{{ scope.row.docContent }}</el-text>
+                </template>
+            </el-table-column>
+            <el-table-column
+                fixed="right"
+                :label="listColumnNames[3]"
+                width="220"
+                align="center"
+            >
+                <template #default="scope">
+                    <el-button
+                        link
+                        type="primary"
+                        @click="showDocDetail(scope.$index)"
+                        >{{ t("common.toDetail") }}</el-button
+                    >
+                    <el-button
+                        link
+                        type="primary"
+                        @click="editDoc(scope.$index)"
+                        >{{ t("common.edit") }}</el-button
+                    >
+                    <el-button
+                        link
+                        type="danger"
+                        @click="deleteDoc(scope.$index)"
+                        >{{ t("common.del") }}</el-button
+                    >
+                </template>
+            </el-table-column>
+        </el-table>
+    </div>
+    <el-dialog
+        v-model="docDetailVisible"
+        :title="docFile.fileName"
+        width="800"
+    >
+        <div style="white-space: pre-wrap; line-height: 1.8">
+            {{ docFile.docContent }}
+        </div>
         <template #footer>
             <div class="dialog-footer">
                 <el-button @click="docDetailVisible = false">Close</el-button>
@@ -213,3 +234,15 @@ const goBack = () => {
         </div>
     </el-drawer>
 </template>
+<style scoped>
+.doc-upload :deep(.el-upload-dragger) {
+    border-radius: 12px;
+    border-color: #d3dce6;
+    transition: border-color 0.2s ease;
+}
+
+.doc-upload :deep(.el-upload-dragger:hover) {
+    border-color: #6366f1;
+    background: #f7f7ff;
+}
+</style>

@@ -5,6 +5,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { httpReq } from '../../assets/tools.js'
 import { useI18n } from 'vue-i18n'
 const { t, tm, rt } = useI18n();
+import RiBardLine from '~icons/ri/bard-line';
+import EpPlus from '~icons/ep/plus';
 const route = useRoute();
 const router = useRouter();
 const robotId = route.params.robotId;
@@ -250,7 +252,83 @@ const goBack = () => {
     router.push({ name: 'intents', params: { robotId: robotId } })
 }
 </script>
-<style scoped></style>
+<style scoped>
+.tag-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.tag-group {
+    background: #fff;
+    border: 1px solid #eef1f6;
+    border-radius: 14px;
+    padding: 20px;
+}
+
+.tag-group-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2d3d;
+}
+
+.tag-group-head .tag-group-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    font-size: 17px;
+}
+
+.tag-group-icon.indigo {
+    color: #6366f1;
+    background: #eef2ff;
+}
+
+.tag-group-icon.amber {
+    color: #d97706;
+    background: #fef3c7;
+}
+
+.tag-group-icon.emerald {
+    color: #059669;
+    background: #d1fae5;
+}
+
+.tag-group-hint {
+    font-size: 12px;
+    font-weight: 400;
+    color: #a0a6b1;
+}
+
+.tag-group-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.tag-group-body .el-tag {
+    max-width: 100%;
+}
+
+.tag-group-body .el-input {
+    width: 140px;
+}
+
+.disabled-tip {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #86909c;
+    line-height: 1.8;
+}
+</style>
 <template>
     <el-page-header :title="t('common.back')" @back="goBack">
         <template #content>
@@ -258,51 +336,82 @@ const goBack = () => {
         </template>
     </el-page-header>
 
-    <h3>{{ $t('intent.detail.kw') }}</h3>
-    <div style="color: gray;">Case insensitive</div>
-    <el-tag v-for="tag in intentData.keywords" type="info" :key="tag" class="mx-1" closable :disable-transitions="false"
-        @close="removeKeyword(tag)">
-        {{ tag }}
-    </el-tag>
-    <el-input v-if="keywordInputVisible" ref="keywordInputRef" v-model="keywordValue" class="ml-1 w-20" size="small"
-        @keyup.enter="newKeyword" @blur="newKeyword" />
-    <el-button v-else class="button-new-tag ml-1" size="small" @click="showKeyWordInput">
-        + {{ $t('intent.detail.addKw') }}
-    </el-button>
+    <div class="tag-groups" style="margin-top: 20px;">
+        <!-- Keywords -->
+        <div class="tag-group">
+            <div class="tag-group-head">
+                <span class="tag-group-icon indigo"><RiBardLine /></span>
+                {{ $t('intent.detail.kw') }}
+                <span class="tag-group-hint">Case insensitive</span>
+            </div>
+            <div class="tag-group-body">
+                <el-tag v-for="tag in intentData.keywords" type="info" :key="tag" closable
+                    :disable-transitions="false" @close="removeKeyword(tag)">
+                    {{ tag }}
+                </el-tag>
+                <el-input v-if="keywordInputVisible" ref="keywordInputRef" v-model="keywordValue" size="small"
+                    @keyup.enter="newKeyword" @blur="newKeyword" />
+                <el-button v-else size="small" @click="showKeyWordInput">
+                    <el-icon style="margin-right: 4px"><EpPlus /></el-icon>
+                    {{ $t('intent.detail.addKw') }}
+                </el-button>
+            </div>
+        </div>
 
-    <h3>{{ $t('intent.detail.re') }}</h3>
-    <el-tag v-for="tag in intentData.regexes" type="info" :key="tag" class="mx-1" closable :disable-transitions="false"
-        @close="removeRegex(tag)">
-        {{ tag }}
-    </el-tag>
-    <el-input v-if="regexInputVisible" ref="regexInputRef" v-model="regexValue" class="ml-1 w-20" size="small"
-        @keyup.enter="newRegex" @blur="newRegex" />
-    <el-button v-else class="button-new-tag ml-1" size="small" @click="showRegexInput">
-        + {{ $t('intent.detail.addRe') }}
-    </el-button>
+        <!-- Regexes -->
+        <div class="tag-group">
+            <div class="tag-group-head">
+                <span class="tag-group-icon amber"><RiBardLine /></span>
+                {{ $t('intent.detail.re') }}
+            </div>
+            <div class="tag-group-body">
+                <el-tag v-for="tag in intentData.regexes" type="info" :key="tag" closable
+                    :disable-transitions="false" @close="removeRegex(tag)">
+                    {{ tag }}
+                </el-tag>
+                <el-input v-if="regexInputVisible" ref="regexInputRef" v-model="regexValue" size="small"
+                    @keyup.enter="newRegex" @blur="newRegex" />
+                <el-button v-else size="small" @click="showRegexInput">
+                    <el-icon style="margin-right: 4px"><EpPlus /></el-icon>
+                    {{ $t('intent.detail.addRe') }}
+                </el-button>
+            </div>
+        </div>
 
-    <h3>{{ $t('intent.detail.sp') }}</h3>
-    <el-tag v-for="tag in intentData.phrases" type="info" :key="tag" class="mx-1" closable :disable-transitions="false"
-        @close="removePhrase(tag)">
-        {{ tag }}
-    </el-tag>
-    <el-input v-if="phraseInputVisible" ref="phraseInputRef" v-model="phraseValue" class="ml-1 w-20" size="small"
-        @keyup.enter="newPhrase" /><!-- @blur="newPhrase"-->
-    <el-button v-else class="button-new-tag ml-1" size="small" @click="showPhraseInput" :disabled="phraseInputDisabled">
-        + {{ $t('intent.detail.addSp') }}
-    </el-button>
-    <div v-show="phraseInputDisabled">
-        This feature was disabled because <b>local model files were missing</b> or <b>api-key of OpenAI is empty</b>,
-        please
-        goto <router-link :to="{ name: 'settings', params: { robotId: robotId } }">settings</router-link> and select one
-        model first.
+        <!-- Similar phrases -->
+        <div class="tag-group">
+            <div class="tag-group-head">
+                <span class="tag-group-icon emerald"><RiBardLine /></span>
+                {{ $t('intent.detail.sp') }}
+            </div>
+            <div class="tag-group-body">
+                <el-tag v-for="tag in intentData.phrases" type="info" :key="tag" closable
+                    :disable-transitions="false" @close="removePhrase(tag)">
+                    {{ tag }}
+                </el-tag>
+                <el-input v-if="phraseInputVisible" ref="phraseInputRef" v-model="phraseValue" size="small"
+                    @keyup.enter="newPhrase" />
+                <el-button v-else size="small" @click="showPhraseInput" :disabled="phraseInputDisabled">
+                    <el-icon style="margin-right: 4px"><EpPlus /></el-icon>
+                    {{ $t('intent.detail.addSp') }}
+                </el-button>
+            </div>
+            <div class="disabled-tip" v-show="phraseInputDisabled">
+                This feature was disabled because <b>local model files were missing</b> or <b>api-key of OpenAI is
+                    empty</b>, please
+                goto <router-link :to="{ name: 'settings', params: { robotId: robotId } }">settings</router-link> and
+                select one
+                model first.
+            </div>
+        </div>
     </div>
-    <el-divider />
-    <el-alert v-if="showAddedPhraseFailedTip" :title="addPhraseFailedAlertTitle" type="error"
-        description="But don't worry, maybe you switched different embedding provider caused this. You can press 'Regenerate all similar sentences.' button below to fix this issue."
-        show-icon />
-    <div v-show="!phraseInputDisabled">
-        <el-button type="warning" plain :loading="regeneratingAllEmbeddings" @click="regenerateAll">
+
+    <div style="margin-top: 20px;">
+        <el-alert v-if="showAddedPhraseFailedTip" :title="addPhraseFailedAlertTitle" type="error"
+            description="But don't worry, maybe you switched different embedding provider caused this. You can press 'Regenerate all similar sentences.' button below to fix this issue."
+            show-icon style="margin-bottom: 16px;" />
+        <el-button v-show="!phraseInputDisabled" type="warning" plain :loading="regeneratingAllEmbeddings"
+            @click="regenerateAll">
             Regenerate all similar sentences.
         </el-button>
     </div>

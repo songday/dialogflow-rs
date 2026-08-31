@@ -70,6 +70,8 @@ export default {
     pub: "Publish all sub-flows",
     test: "Testing dialog flow",
     addSubFlow: "Add sub-flow",
+    subFlowList: "Sub-flows",
+    nodePalette: "Nodes",
     form: {
       name: "Sub-flow name",
     },

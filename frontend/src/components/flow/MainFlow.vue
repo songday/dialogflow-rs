@@ -3,6 +3,8 @@ import { ref, reactive, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { btoa, httpReq } from '../../assets/tools.js'
 import { useI18n } from 'vue-i18n'
+import BiChatSquareDots from '~icons/bi/chat-square-dots'
+import EpPlus from '~icons/ep/plus'
 // import { ElMessage, ElMessageBox } from 'element-plus';
 const { t, tm, rt } = useI18n();
 const route = useRoute();
@@ -110,55 +112,72 @@ const saveForm = async () => {
     hideForm();
 };
 </script>
-<style scoped></style>
-<template>
-    <!-- <el-page-header :title="t('common.back')" @back="goBack">
-        <template #content>
-            <span class="text-large font-600 mr-3"> {{ $t('mainflow.title') }} </span>
-        </template>
-<template #extra>
-            <div class="flex items-center">
-                <el-button type="primary" class="ml-2" @click="newMainFlow()">{{ $t('mainflow.add') }}</el-button>
-            </div>
-        </template>
-</el-page-header> -->
-    <h1>{{ $t('mainflow.title') }}</h1>
-    <el-button type="primary" class="ml-2" @click="newMainFlow()">{{ $t('mainflow.add') }}</el-button>
-    <el-table :data="tableData" stripe style="width: 100%">
-        <el-table-column prop="id" label="Id" width="240" />
-        <!-- <el-table-column prop="name" :label="tm('mainflow.table')[0]" width="500" /> -->
-        <el-table-column :label="tm('mainflow.table')[0]" width="500">
-            <template #default="scope">
-                <el-text style="cursor: pointer;" type="primary" size="large" @click="toSubflow(scope.$index, scope.row)">
-                    {{ scope.row.name }}
-                </el-text>
-            </template>
-        </el-table-column>
+<style scoped>
+.flow-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #4f46e5;
+    cursor: pointer;
+    transition: color 0.2s;
+}
 
-        <!-- <el-table-column prop="enabled" :label="tm('mainflow.table')[1]" width="80" /> -->
-        <el-table-column fixed="right" :label="tm('mainflow.table')[2]" min-width="40">
-            <template #default="scope">
-                <el-button link type="primary" @click="toSubflow(scope.$index, scope.row)">
-                    {{ $t('common.edit') }}
-                </el-button> |
-                <el-button link type="primary" @click="editMainFlow(scope.$index, scope.row)">
-                    {{ $t('common.changeName') }}
-                </el-button> |
-                <el-button link type="danger" @click="deleteMainFlow(scope.$index, scope.row)">
-                    {{ $t('common.del') }}
-                </el-button>
-            </template>
-        </el-table-column>
-    </el-table>
-    <el-dialog v-model="setFormVisible" :title="$t('mainflow.form.title')" width="60%">
-        <el-form :model="nodeData">
+.flow-name:hover {
+    color: #8b5cf6;
+    text-decoration: underline;
+}
+</style>
+<template>
+    <div class="page-header">
+        <h1 class="page-title">
+            <span class="page-title-icon"><BiChatSquareDots /></span>
+            {{ $t('mainflow.title') }}
+        </h1>
+        <div class="page-actions">
+            <el-button type="primary" @click="newMainFlow()">
+                <el-icon style="margin-right: 6px"><EpPlus /></el-icon>
+                {{ $t('mainflow.add') }}
+            </el-button>
+        </div>
+    </div>
+    <div class="page-card">
+        <el-table :data="tableData" stripe style="width: 100%">
+            <el-table-column prop="id" label="Id" width="240" />
+            <el-table-column :label="tm('mainflow.table')[0]">
+                <template #default="scope">
+                    <span class="flow-name" @click="toSubflow(scope.$index, scope.row)">
+                        <el-icon><BiChatSquareDots /></el-icon>
+                        {{ scope.row.name }}
+                    </span>
+                </template>
+            </el-table-column>
+
+            <el-table-column fixed="right" :label="tm('mainflow.table')[2]" width="240" align="center">
+                <template #default="scope">
+                    <el-button link type="primary" @click="toSubflow(scope.$index, scope.row)">
+                        {{ $t('common.edit') }}
+                    </el-button>
+                    <el-button link type="primary" @click="editMainFlow(scope.$index, scope.row)">
+                        {{ $t('common.changeName') }}
+                    </el-button>
+                    <el-button link type="danger" @click="deleteMainFlow(scope.$index, scope.row)">
+                        {{ $t('common.del') }}
+                    </el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+    </div>
+    <el-dialog v-model="setFormVisible" :title="$t('mainflow.form.title')" width="480px" destroy-on-close>
+        <el-form :model="mainFlowData">
             <el-form-item :label="$t('mainflow.form.name')" :label-width="formLabelWidth">
-                <el-input v-model="mainFlowData.name" autocomplete="off" />
+                <el-input v-model="mainFlowData.name" autocomplete="off" :placeholder="$t('mainflow.form.name')" />
             </el-form-item>
         </el-form>
         <template #footer>
-            <el-button type="primary" @click="saveForm()">{{ $t('common.save') }}</el-button>
             <el-button @click="hideForm()">{{ $t('common.cancel') }}</el-button>
+            <el-button type="primary" @click="saveForm()">{{ $t('common.save') }}</el-button>
         </template>
     </el-dialog>
 </template>

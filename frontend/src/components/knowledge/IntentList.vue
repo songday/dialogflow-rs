@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { httpReq } from '../../assets/tools.js'
 import { useI18n } from 'vue-i18n'
 const { t, tm, rt } = useI18n();
+import RiBardLine from '~icons/ri/bard-line';
+import EpPlus from '~icons/ep/plus';
 const route = useRoute()
 const router = useRouter();
 
@@ -102,72 +104,81 @@ function detectIntent() {
     })().then(() => loading.value = false);
 }
 </script>
+<style scoped>
+.count-badge {
+    display: inline-block;
+    min-width: 28px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    background: #eef2ff;
+    color: #6366f1;
+}
+</style>
 <template>
-    <!-- <el-page-header :title="t('common.back')" @back="goBack">
-        <template #content>
-            <span class="text-large font-600 mr-3">{{ $t('intent.title') }}</span>
-        </template>
-<template #extra>
-            <div class="flex items-center">
-                <el-button type="primary" class="ml-2" @click="dialogFormVisible = true">{{ $t('intent.add')
-                    }}</el-button>
-            </div>
-        </template>
-</el-page-header> -->
-    <h1>{{ $t('intent.title') }}</h1>
-    <el-button type="primary" class="ml-2" @click="dialogFormVisible = true">{{ $t('intent.add')
-        }}</el-button>
-    <el-button type="primary" @click="dryRunFormVisible = true">{{ t('intent.test')}}</el-button>
-    <el-table :data="intentData" stripe style="width: 100%">
-        <el-table-column prop="intent_name" :label="tm('intent.table')[0]" width="220" />
-        <el-table-column :label="tm('intent.table')[1]" width="180">
-            <template #default="scope">
-                {{ scope.row.keywords.length }}
-            </template>
-        </el-table-column>
-        <el-table-column :label="tm('intent.table')[2]" width="180">
-            <template #default="scope">
-                {{ scope.row.regexes.length }}
-            </template>
-        </el-table-column>
-        <el-table-column :label="tm('intent.table')[3]" width="230">
-            <template #default="scope">
-                {{ scope.row.phrases.length }}
-            </template>
-        </el-table-column>
-        <el-table-column fixed="right" :label="tm('intent.table')[4]" min-width="100">
-            <template #default="scope">
-                <el-button link type="primary" @click="editIntent(scope.$index, scope.row)">{{
-                    $t('common.edit') }}</el-button>
-                <el-button link type="danger" @click="deleteIntent(scope.$index, scope.row)">{{
-                    $t('common.del') }}</el-button>
-            </template>
-        </el-table-column>
-    </el-table>
-    <el-divider />
-    <el-dialog v-model="dialogFormVisible" :title="t('intent.form.title')">
+    <div class="page-header">
+        <h1 class="page-title">
+            <span class="page-title-icon"><RiBardLine /></span>
+            {{ $t('intent.title') }}
+        </h1>
+        <div class="page-actions">
+            <el-button @click="dryRunFormVisible = true">{{ t('intent.test')}}</el-button>
+            <el-button type="primary" @click="dialogFormVisible = true">
+                <el-icon style="margin-right: 6px"><EpPlus /></el-icon>
+                {{ $t('intent.add') }}
+            </el-button>
+        </div>
+    </div>
+    <div class="page-card">
+        <el-table :data="intentData" stripe style="width: 100%">
+            <el-table-column prop="intent_name" :label="tm('intent.table')[0]" width="220" />
+            <el-table-column :label="tm('intent.table')[1]" width="160" align="center">
+                <template #default="scope">
+                    <span class="count-badge">{{ scope.row.keywords.length }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column :label="tm('intent.table')[2]" width="160" align="center">
+                <template #default="scope">
+                    <span class="count-badge">{{ scope.row.regexes.length }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column :label="tm('intent.table')[3]" width="200" align="center">
+                <template #default="scope">
+                    <span class="count-badge">{{ scope.row.phrases.length }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column fixed="right" :label="tm('intent.table')[4]" width="160" align="center">
+                <template #default="scope">
+                    <el-button link type="primary" @click="editIntent(scope.$index, scope.row)">{{
+                        $t('common.edit') }}</el-button>
+                    <el-button link type="danger" @click="deleteIntent(scope.$index, scope.row)">{{
+                        $t('common.del') }}</el-button>
+                </template>
+            </el-table-column>
+        </el-table>
+    </div>
+    <el-dialog v-model="dialogFormVisible" :title="t('intent.form.title')" width="460px" destroy-on-close>
         <el-form :model="form">
             <el-form-item :label="t('intent.form.name')" :label-width="formLabelWidth">
-                <el-input v-model="intentName" autocomplete="off" />
+                <el-input v-model="intentName" autocomplete="off" :placeholder="t('intent.form.name')" />
             </el-form-item>
         </el-form>
         <template #footer>
-            <span class="dialog-footer">
-                <el-button type="primary" @click="dialogFormVisible = false; newIntent();">
-                    {{ $t('common.add') }}
-                </el-button>
-                <el-button @click="dialogFormVisible = false">{{ $t('common.cancel') }}</el-button>
-            </span>
+            <el-button @click="dialogFormVisible = false">{{ $t('common.cancel') }}</el-button>
+            <el-button type="primary" @click="dialogFormVisible = false; newIntent();">
+                {{ $t('common.add') }}
+            </el-button>
         </template>
     </el-dialog>
-    <el-drawer v-model="dryRunFormVisible" :title="t('intent.test')" direction="rtl" size="50%">
+    <el-drawer v-model="dryRunFormVisible" :title="t('intent.test')" direction="rtl" size="480px">
         <el-form>
             <el-form-item label="">
-                <el-input v-model="testIntentDetectionText" style="width: 240px"
-                    placeholder="Please input some texts" />
+                <el-input v-model="testIntentDetectionText" placeholder="Please input some texts" clearable />
             </el-form-item>
             <el-form-item label="">
-                <div>{{ intentDetectResult }}</div>
+                <el-alert v-if="intentDetectResult" :title="intentDetectResult" type="info" :closable="false" />
             </el-form-item>
         </el-form>
         <div class="demo-drawer__footer">

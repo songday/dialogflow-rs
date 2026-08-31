@@ -74,7 +74,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -105,7 +105,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -136,7 +136,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -167,7 +167,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -198,7 +198,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -229,7 +229,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -260,7 +260,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -291,7 +291,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -322,7 +322,7 @@ register({
                     circle: {
                         r: 5,
                         magnet: true,
-                        stroke: "black",
+                        stroke: "#a2a9b8",
                         strokeWidth: 1,
                         fill: "#fff",
                         style: {
@@ -402,7 +402,16 @@ onMounted(async () => {
         // height: canvas.offsetHeight,
         // height: 500,
         background: {
-            color: "#F2F7FA",
+            color: "#f7f8fa",
+        },
+        grid: {
+            visible: true,
+            type: "dot",
+            size: 16,
+            args: {
+                color: "#d8dce6",
+                thickness: 1,
+            },
         },
         autoResize: false,
         connecting: {
@@ -417,12 +426,12 @@ onMounted(async () => {
                     shape: "edge",
                     attrs: {
                         line: {
-                            stroke: "#8f8f8f",
-                            strokeWidth: 1,
+                            stroke: "#a2a9b8",
+                            strokeWidth: 1.5,
                             targetMarker: {
                                 name: "block",
-                                width: 12,
-                                height: 8,
+                                width: 10,
+                                height: 7,
                             },
                         },
                     },
@@ -432,14 +441,14 @@ onMounted(async () => {
         // https://x6.antv.vision/zh/docs/api/graph/interaction#highlighting
         // 可以通过 graph.options.highlighting.magnetAvailable.attrs.xxx = xxx 动态修改样式。
         highlighting: {
-            // 当链接桩可以被链接时，在链接桩外围渲染一个 2px 宽的红色矩形框
+            // 当链接桩可以被链接时，在链接桩外围渲染一个 2px 宽的高亮框
             magnetAvailable: {
                 name: "stroke",
                 args: {
                     padding: 4,
                     attrs: {
                         "stroke-width": 2,
-                        stroke: "black",
+                        stroke: "#626aef",
                     },
                 },
             },
@@ -601,16 +610,12 @@ async function showSubFlow(idx) {
 
 function switchSubFlow(idx) {
     const o = document.getElementById(subFlowId(selectedSubFlowIdx));
-    if (o) {
-        o.style.backgroundColor = "white";
-        o.style.color = "black";
-    }
+    if (o) o.classList.remove("activeSubFlow");
     // console.log(idx);
     selectedSubFlowIdx = idx;
     // console.log(subFlowId(selectedSubFlowIdx));
     const n = document.getElementById(subFlowId(selectedSubFlowIdx));
-    n.style.backgroundColor = "rgb(245,246,249)";
-    n.style.color = "rgb(131,88,179)";
+    if (n) n.classList.add("activeSubFlow");
     // console.log(subFlows.value[selectedSubFlowIdx].canvas);
     // console.log(selectedSubFlowIdx);
     if (subFlows.value[selectedSubFlowIdx].canvas) {
@@ -916,57 +921,187 @@ const popupRundryWindow = async () => {
     position: relative !important;
 }
 
-#canvas {
-    height: calc(100vh - 43px);
+/* ---------- Header ---------- */
+.el-header {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border-bottom: 1px solid #eef0f4;
+    box-shadow: 0 1px 4px rgba(31, 35, 41, 0.06);
+    z-index: 20;
 }
 
-.node-btn {
+.el-header .el-page-header {
+    flex: 1;
+    align-items: center;
+}
+
+.header-actions .el-button + .el-button {
+    margin-left: 0;
+}
+
+.header-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2329;
+}
+
+/* ---------- Header action buttons ---------- */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.demo-step {
+    color: #8a919f;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.icon-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: #626aef;
+    background: #eef0ff;
+    border: 1px solid #cdd1fd;
+    transition:
+        background 0.2s,
+        color 0.2s,
+        box-shadow 0.2s,
+        transform 0.15s;
+}
+
+.icon-btn:hover {
+    color: #fff;
+    background: #626aef;
+    border-color: #626aef;
+    box-shadow: 0 2px 8px rgba(98, 106, 239, 0.35);
+    transform: translateY(-1px);
+}
+
+.icon-btn.release-btn {
+    color: #00b578;
+    background: #e8f8f0;
+    border-color: #b3e6cd;
+}
+
+.icon-btn.release-btn:hover {
+    color: #fff;
+    background: #00b578;
+    border-color: #00b578;
+    box-shadow: 0 2px 8px rgba(0, 181, 120, 0.35);
+}
+
+.icon-btn.test-btn {
+    color: #fff;
+    background: linear-gradient(135deg, #626aef, #8b5cf6);
+    border-color: transparent;
+}
+
+.icon-btn.test-btn:hover {
+    color: #fff;
+    background: linear-gradient(135deg, #5058e0, #7a4be6);
+    box-shadow: 0 2px 10px rgba(98, 106, 239, 0.45);
+}
+
+.icon-btn.el-button.is-loading {
+    color: #626aef;
+}
+
+/* ---------- Sidebar ---------- */
+.el-aside {
+    background: #fff;
+    border-right: 1px solid #eef0f4;
+    padding: 12px 10px;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.aside-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #8a919f;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 6px 8px;
+}
+
+.newSubFlowBtn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #626aef;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #eef0ff, #f7f0ff);
+    border: 1px dashed #b9befc;
     cursor: pointer;
-    border: 1px solid #eee;
-    padding: 10px;
-    margin-bottom: 6px;
-    font-size: 9pt;
-    /* width: v-bind(nodesBtnWidth); */
-    width: 100px;
-    background-color: white;
+    font-size: 13px;
+    font-weight: 500;
+    transition:
+        background 0.2s,
+        box-shadow 0.2s,
+        transform 0.15s;
+    user-select: none;
 }
 
-.DialogNode {
-    border-left: 5px solid rgb(255, 196, 0);
+.newSubFlowBtn:hover {
+    background: linear-gradient(135deg, #e2e5ff, #f0e4ff);
+    box-shadow: 0 2px 8px rgba(98, 106, 239, 0.2);
+    transform: translateY(-1px);
 }
 
-.KnowledgeBaseAnswerNode {
-    border-left: 5px solid #efb7ba;
+.subFlowBtn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    padding: 8px 10px;
+    margin-top: 6px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #4e5969;
+    border: 1px solid transparent;
+    transition:
+        background 0.2s,
+        color 0.2s,
+        border-color 0.2s;
+    word-break: break-all;
 }
 
-.ConditionNode {
-    border-left: 5px solid rgb(145, 113, 227);
+.subFlowBtn:hover {
+    background: #f5f6f9;
+    color: #626aef;
 }
 
-.CollectNode {
-    border-left: 5px solid rgb(90, 213, 235);
+.subFlowBtn.activeSubFlow {
+    background: #eef0ff;
+    color: #626aef;
+    border-color: #cdd1fd;
+    font-weight: 600;
 }
 
-.GotoNode {
-    border-left: 5px solid rgb(67, 211, 153);
+.subFlowBtn .el-icon {
+    opacity: 0;
+    flex-shrink: 0;
+    transition: opacity 0.2s;
 }
 
-.ExternalHttpNode {
-    border-left: 5px solid rgb(1, 165, 188);
+.subFlowBtn:hover .el-icon {
+    opacity: 0.65;
 }
 
-.SendEmailNode {
-    border-left: 5px solid rgb(255, 101, 85);
+.subFlowBtn .el-icon:hover {
+    opacity: 1;
+    color: #f56c6c;
 }
 
-.EndNode {
-    border-left: 5px solid rgb(34, 25, 106);
-}
-
-.LlmChatNode {
-    border-left: 5px solid #6a2c70;
-}
-
+/* ---------- Node palette ---------- */
 .nodesBox {
     display: flex;
     flex-direction: column;
@@ -974,64 +1109,151 @@ const popupRundryWindow = async () => {
     top: 20px;
     left: 20px;
     z-index: 100;
-    width: 100px;
+    width: 116px;
+    padding: 10px 8px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 8px 24px rgba(31, 35, 41, 0.1);
 }
 
-.subFlowBtn {
-    padding: 5px;
-    border-bottom: gray solid 1px;
-    cursor: pointer;
-    font-size: 13px;
-}
-
-.userText {
-    text-align: right;
-    margin-bottom: 16px;
-}
-
-.userText span {
-    padding: 4px;
-    border: #91b6ff 1px solid;
-    border-radius: 6px;
-    background-color: #f1f6ff;
-}
-
-.responseText {
-    text-align: left;
-    margin-bottom: 16px;
-}
-
-.responseText span {
-    padding: 4px;
-    border: #8bda1d 1px solid;
-    border-radius: 6px;
-    background-color: #efffd8;
-    white-space: pre-wrap;
-    display: inline-block;
-}
-
-.terminateText {
+.palette-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #8a919f;
     text-align: center;
-    margin-bottom: 16px;
+    padding-bottom: 8px;
+    letter-spacing: 0.5px;
 }
 
-.terminateText span {
-    padding: 4px;
-    border: #d3d3d3 1px solid;
-    border-radius: 6px;
-    background-color: #ebebeb;
-    white-space: pre-wrap;
+.node-btn {
+    cursor: grab;
+    border: 1px solid #eef0f4;
+    padding: 9px 10px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    width: 100px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    background-color: #fff;
+    box-shadow: 0 1px 2px rgba(31, 35, 41, 0.05);
+    transition:
+        transform 0.15s,
+        box-shadow 0.15s,
+        border-color 0.15s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-left-width: 4px;
+    user-select: none;
+}
+
+.node-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(31, 35, 41, 0.12);
+}
+
+.node-btn:active {
+    cursor: grabbing;
+}
+
+.DialogNode {
+    border-left-color: #ffc400;
+}
+
+.KnowledgeBaseAnswerNode {
+    border-left-color: #efb7ba;
+}
+
+.ConditionNode {
+    border-left-color: #9171e3;
+}
+
+.CollectNode {
+    border-left-color: #5ad5eb;
+}
+
+.GotoNode {
+    border-left-color: #43d399;
+}
+
+.ExternalHttpNode {
+    border-left-color: #01a5bc;
+}
+
+.SendEmailNode {
+    border-left-color: #ff6555;
+}
+
+.EndNode {
+    border-left-color: #22196a;
+}
+
+.LlmChatNode {
+    border-left-color: #6a2c70;
+}
+
+/* ---------- Canvas ---------- */
+#canvas {
+    height: calc(100vh - 43px);
+    border: none !important;
+}
+
+/* ---------- Dry-run chat drawer ---------- */
+.chat-record {
+    margin-bottom: 14px;
+}
+
+.chat-record.userText {
+    text-align: right;
+}
+
+.chat-record.userText span {
     display: inline-block;
+    max-width: 80%;
+    padding: 8px 12px;
+    border-radius: 12px 12px 2px 12px;
+    background: linear-gradient(135deg, #626aef, #8b5cf6);
+    color: #fff;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: 0 2px 6px rgba(98, 106, 239, 0.25);
 }
 
-.newSubFlowBtn {
-    color: white;
-    padding-left: 5px;
-    padding-top: 5px;
-    padding-bottom: 5px;
-    background: linear-gradient(45deg, #e68dbf, pink);
-    cursor: pointer;
-    font-size: 16px;
+.chat-record.responseText {
+    text-align: left;
+}
+
+.chat-record.responseText span {
+    display: inline-block;
+    max-width: 80%;
+    padding: 8px 12px;
+    border-radius: 12px 12px 12px 2px;
+    background: #fff;
+    border: 1px solid #eef0f4;
+    color: #1f2329;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: 0 1px 3px rgba(31, 35, 41, 0.06);
+}
+
+.chat-record.terminateText {
+    text-align: center;
+}
+
+.chat-record.terminateText span {
+    display: inline-block;
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: #f2f3f5;
+    border: 1px solid #e5e6eb;
+    color: #86909c;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 </style>
 <template>
@@ -1041,67 +1263,72 @@ const popupRundryWindow = async () => {
             <el-header height="40px">
                 <el-page-header :title="t('common.back')" @back="goBack">
                     <template #content>
-                        <span class="text-large font-600 mr-3">{{
+                        <span class="header-title mr-3">{{
                             mainFlowName
                         }}</span>
                     </template>
                     <template #extra>
-                        <div class="flex items-center">
-                            <el-text v-show="isDemo">
-                                {{ $tm("flow.steps")[0] }}
-                                <el-icon :size="20">
-                                    <EpDArrowRight />
-                                </el-icon>
-                            </el-text>
-                            <el-button
-                                type="primary"
-                                class="ml-2"
-                                @click="saveSubFlow"
-                                :loading="saveLoading"
-                                size="large"
-                                v-show="!isDemo"
+                        <div class="header-actions">
+                            <el-text v-show="isDemo" class="demo-step">{{
+                                $tm("flow.steps")[0]
+                            }}</el-text>
+                            <el-tooltip
+                                :content="$t('flow.save')"
+                                placement="bottom"
                             >
-                                <el-icon :size="20"> <EpEdit /> </el-icon
-                                >{{ $t("flow.save") }}
-                            </el-button>
-                            <el-button
-                                type="success"
-                                @click="release"
-                                :loading="releaseLoading"
-                                size="large"
+                                <el-button
+                                    class="icon-btn"
+                                    circle
+                                    @click="saveSubFlow"
+                                    :loading="saveLoading"
+                                    v-show="!isDemo"
+                                >
+                                    <el-icon :size="17">
+                                        <EpEdit />
+                                    </el-icon>
+                                </el-button>
+                            </el-tooltip>
+                            <el-tooltip
+                                :content="$t('flow.pub')"
+                                placement="bottom"
                             >
-                                <el-icon :size="20"> <EpFinished /> </el-icon
-                                >{{ $t("flow.pub") }}
-                            </el-button>
-                            <!-- <div class="testBtn" @click="dryrun(); testingFormVisible = true">
-                                <el-icon>
-                                    <Promotion />
-                                </el-icon>
-                                测试流程
-                            </div> -->
-                            <el-text v-show="isDemo">
-                                {{ $tm("flow.steps")[1] }}
-                                <el-icon>
-                                    <EpDArrowRight />
-                                </el-icon>
-                            </el-text>
-                            <el-button
-                                color="#626aef"
-                                class="ml-2"
-                                @click="popupRundryWindow"
-                                size="large"
+                                <el-button
+                                    class="icon-btn release-btn"
+                                    circle
+                                    @click="release"
+                                    :loading="releaseLoading"
+                                >
+                                    <el-icon :size="17">
+                                        <EpFinished />
+                                    </el-icon>
+                                </el-button>
+                            </el-tooltip>
+                            <el-text v-show="isDemo" class="demo-step">{{
+                                $tm("flow.steps")[1]
+                            }}</el-text>
+                            <el-tooltip
+                                :content="$t('flow.test')"
+                                placement="bottom"
                             >
-                                <el-icon :size="20">
-                                    <EpPromotion />
-                                </el-icon>
-                                {{ $t("flow.test") }}
-                            </el-button>
+                                <el-button
+                                    class="icon-btn test-btn"
+                                    circle
+                                    @click="popupRundryWindow"
+                                >
+                                    <el-icon :size="17">
+                                        <EpPromotion />
+                                    </el-icon>
+                                </el-button>
+                            </el-tooltip>
                         </div>
                     </template>
                 </el-page-header>
             </el-header>
             <el-container>
-                <el-aside width="150px">
+                <el-aside width="170px">
+                    <div class="aside-title">{{
+                        $t("flow.subFlowList")
+                    }}</div>
                     <div
                         class="newSubFlowBtn"
                         @click="dialogFormVisible = true"
@@ -1118,7 +1345,7 @@ const popupRundryWindow = async () => {
                         @click="showSubFlow(index)"
                         class="subFlowBtn"
                     >
-                        {{ item.name }}
+                        <span>{{ item.name }}</span>
                         <span @click="removeSubFlow(index)">
                             <el-icon>
                                 <EpDelete />
@@ -1128,7 +1355,9 @@ const popupRundryWindow = async () => {
                 </el-aside>
                 <el-main v-loading="loading">
                     <div class="nodesBox">
-                        <!-- <div style="font-size: 9pt;">拖动下方节点</div> -->
+                        <div class="palette-title">{{
+                            $t("flow.nodePalette")
+                        }}</div>
                         <div
                             v-for="item in nodes"
                             :key="item.type"
@@ -1150,7 +1379,6 @@ const popupRundryWindow = async () => {
                     <div
                         id="canvas"
                         @dragover="dragoverDiv"
-                        style="border: 1px #000 solid"
                     ></div>
                     <TeleportContainer />
                 </el-main>
@@ -1189,6 +1417,7 @@ const popupRundryWindow = async () => {
                         <div
                             v-for="item in chatRecords"
                             :key="item.id"
+                            class="chat-record"
                             :class="item.textSource"
                         >
                             <!-- <span v-html="item.text"></span> -->
