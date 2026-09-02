@@ -1,16 +1,20 @@
 // use std::fs::File;
 // use std::io::Read;
 // use std::path::Path;
+use std::collections::HashMap;
 use std::io::{Cursor, Read};
 use std::sync::OnceLock;
 use std::vec::Vec;
 
-// use futures_util::StreamExt;
+use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 // use sqlx::{Row, Sqlite};
 // use text_splitter::{ChunkConfig, TextSplitter};
 use zip::ZipArchive;
+
+use text_splitter::TextSplitter;
 
 use super::dto::DocData;
 use crate::ai::embedding;
@@ -161,22 +165,69 @@ pub(crate) async fn delete(robot_id: &str, doc_id: i64) -> Result<()> {
     Ok(())
 }
 
+// chunk_size and overlap are counted in characters, so this works for both
+// Chinese (no whitespace between words) and English texts.
+// Paragraphs are kept intact whenever they fit into one chunk.
 fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let mut chunks = Vec::new();
-    let mut start = 0;
-
-    while start < words.len() {
-        let end = std::cmp::min(start + chunk_size, words.len());
-        let chunk = words[start..end].join(" ");
-        chunks.push(chunk);
-
-        if end == words.len() {
-            break;
+    let text = text.trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let mut chunks: Vec<String> = Vec::new();
+    let mut current = String::with_capacity(chunk_size * 4);
+    for para in text.split('\n') {
+        let para = para.trim();
+        if para.is_empty() {
+            continue;
         }
-        start = end.saturating_sub(overlap);
+        let para_len = para.chars().count();
+        if para_len > chunk_size {
+            // A single paragraph longer than chunk_size: split it into
+            // sliding windows of characters.
+            if !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+            }
+            let chars: Vec<char> = para.chars().collect();
+            let mut start = 0;
+            while start < chars.len() {
+                let end = std::cmp::min(start + chunk_size, chars.len());
+                chunks.push(chars[start..end].iter().collect());
+                if end == chars.len() {
+                    break;
+                }
+                start = end - overlap.min(chunk_size - 1);
+            }
+        } else {
+            let cur_len = current.chars().count();
+            if !current.is_empty() && cur_len + para_len + 1 > chunk_size {
+                // Flush the current chunk, carrying its tail over as overlap.
+                let tail: String = current
+                    .chars()
+                    .skip(current.chars().count().saturating_sub(overlap))
+                    .collect();
+                chunks.push(std::mem::take(&mut current));
+                current = tail;
+            }
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(para);
+        }
+    }
+    if !current.is_empty() {
+        chunks.push(current);
     }
     chunks
+}
+
+// Semantic chunking via text-splitter: splits at sentence/paragraph boundaries
+// while maximizing chunk length. Suitable for long-context embedding models
+// (OpenAI / Ollama etc.), where a much larger chunk capacity is affordable.
+fn chunk_text_semantic(text: &str, chunk_size: usize, overlap: usize) -> Result<Vec<String>> {
+    let splitter = TextSplitter::new(text_splitter::ChunkConfig::new(chunk_size).with_overlap(overlap).map_err(|e| {
+        Error::WithMessage(format!("Invalid chunk config: {e:?}"))
+    })?);
+    Ok(splitter.chunks(text).map(String::from).collect())
 }
 
 async fn save_doc_embedding(
@@ -185,34 +236,54 @@ async fn save_doc_embedding(
     doc_id: i64,
     doc_content: &str,
 ) -> Result<()> {
-    let chunks = chunk_text(doc_content, 500, 70);
-    let mut created_table = false;
-    for chunk in chunks.iter() {
-        let r = embedding::embedding(robot_id, chunk).await?;
-        if !created_table {
-            let sql = format!(
-                "CREATE TABLE IF NOT EXISTS {robot_id}_vec (
-                    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                    doc_id INTEGER NOT NULL,
-                    chunk_text TEXT NOT NULL,
-                    chunk_vec F32_BLOB({}) NOT NULL
-                );",
-                r.0.len()
-            );
-            tx.execute(&sql, ()).await?;
-            created_table = true;
-        }
-        let sql = format!(
-            "INSERT INTO {robot_id}_vec(doc_id, chunk_text, chunk_vec) VALUES(?1, ?2, vector32(?3));"
-        );
-        tx.execute(
-            &sql,
-            (
-                doc_id,
-                turso::Value::Text(String::from(chunk)),
-                embedding::vec_to_db(&r.0),
-            ),
-        )
+    // Local HuggingFace BERT models are capped at 512 tokens, so keep chunks
+    // small. Long-context remote models (OpenAI / Ollama) can afford much
+    // larger semantic chunks.
+    let long_context = !matches!(
+        crate::man::settings::get_settings(robot_id)?
+            .map(|s| s.sentence_embedding_provider.provider.clone()),
+        Some(embedding::SentenceEmbeddingProvider::HuggingFace(_))
+    );
+    let chunks = if long_context {
+        chunk_text_semantic(doc_content, 2000, 200)?
+    } else {
+        chunk_text(doc_content, 500, 70)
+    };
+    if chunks.is_empty() {
+        return Ok(());
+    }
+    // Embed all chunks up front with bounded concurrency, so the table can be
+    // created once with the right vector size and inserts reuse a prepared
+    // statement instead of parsing the SQL for every chunk.
+    let embeddings: Vec<(Vec<f32>, f32)> = futures_util::stream::iter(
+        chunks.iter().map(|c| embedding::embedding(robot_id, c)),
+    )
+    .buffered(4)
+    .try_collect()
+    .await?;
+    let vec_size = embeddings
+        .first()
+        .map(|(v, _)| v.len())
+        .ok_or_else(|| Error::WithMessage(String::from("Embedding data is empty.")))?;
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {robot_id}_vec (
+            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            doc_id INTEGER NOT NULL,
+            chunk_text TEXT NOT NULL,
+            chunk_vec F32_BLOB({vec_size}) NOT NULL
+        );"
+    );
+    tx.execute(&sql, ()).await?;
+    let sql = format!(
+        "INSERT INTO {robot_id}_vec(doc_id, chunk_text, chunk_vec) VALUES(?1, ?2, vector32(?3));"
+    );
+    let mut stmt = tx.prepare(&sql).await?;
+    for (chunk, (v, _)) in chunks.iter().zip(embeddings.iter()) {
+        stmt.execute((
+            doc_id,
+            turso::Value::Text(String::from(chunk)),
+            embedding::vec_to_db(v),
+        ))
         .await?;
         // log::info!("Embedding id={}", conn.last_insert_rowid());
     }
@@ -257,6 +328,121 @@ pub(super) fn parse_docx(b: Vec<u8>) -> Result<String> {
 
 fn parse_pdf() {}
 
+// Extracts search keywords from a user query: ASCII words (>= 2 chars,
+// lowercased) plus Chinese characters, which are combined into bigrams so
+// that e.g. "知识库" becomes "知识" / "识库". Bigrams work well for
+// substring matching without any tokenizer.
+fn extract_keywords(query: &str) -> Vec<String> {
+    let mut kws: Vec<String> = Vec::new();
+    let mut cjk = String::new();
+    let r = regex::Regex::new(r"[0-9A-Za-z_]{2,}|\p{Han}").unwrap();
+    for m in r.find_iter(query) {
+        let t = m.as_str();
+        if t.chars().next().unwrap().is_ascii() {
+            let w = t.to_lowercase();
+            if !kws.contains(&w) {
+                kws.push(w);
+            }
+        } else {
+            cjk.push_str(t);
+        }
+    }
+    let chars: Vec<char> = cjk.chars().collect();
+    if chars.len() <= 2 {
+        if !chars.is_empty() {
+            let w: String = chars.iter().collect();
+            if !kws.contains(&w) {
+                kws.push(w);
+            }
+        }
+    } else {
+        for w in chars.windows(2) {
+            let w: String = w.iter().collect();
+            if !kws.contains(&w) {
+                kws.push(w);
+            }
+        }
+    }
+    kws.truncate(8);
+    kws
+}
+
+// Reciprocal Rank Fusion: merges the vector recall list and the keyword
+// recall list into one ranking. Each document earns 1/(60 + rank) per list
+// it appears in, so documents found by both channels float to the top.
+fn rrf_merge(vec_hits: &[(i64, String)], kw_hits: &[(i64, String)]) -> Vec<String> {
+    let mut fused: HashMap<i64, (f64, &String)> = HashMap::new();
+    for hits in [vec_hits, kw_hits] {
+        for (rank, (id, text)) in hits.iter().enumerate() {
+            let score = 1.0 / (60.0 + rank as f64);
+            match fused.entry(*id) {
+                std::collections::hash_map::Entry::Occupied(mut e) => {
+                    e.get_mut().0 += score;
+                }
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert((score, text));
+                }
+            }
+        }
+    }
+    let mut ranked: Vec<(f64, &String)> = fused.into_values().collect();
+    ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.into_iter().take(4).map(|(_, t)| t.clone()).collect()
+}
+
+async fn keyword_recall(
+    conn: &turso::Connection,
+    robot_id: &str,
+    query: &str,
+) -> Result<Vec<(i64, String)>> {
+    let keywords = extract_keywords(query);
+    if keywords.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Escape LIKE wildcards, then match any keyword with an OR chain.
+    let escaped: Vec<String> = keywords
+        .iter()
+        .map(|k| {
+            k.replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        })
+        .collect();
+    let cond = escaped
+        .iter()
+        .enumerate()
+        .map(|(i, _)| format!("chunk_text LIKE ?{i} ESCAPE '\\'"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let sql = format!(
+        "SELECT id, chunk_text FROM {robot_id}_vec WHERE {cond} LIMIT 64"
+    );
+    let params: Vec<turso::Value> = escaped
+        .iter()
+        .map(|k| turso::Value::Text(k.clone()))
+        .collect();
+    let mut rows = conn.query(&sql, params).await?;
+    let mut hits: Vec<(i64, String, usize)> = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let id = row.get_value(0)?.as_integer().unwrap().clone();
+        let text = String::from(row.get_value(1)?.as_text().unwrap());
+        let lower = text.to_lowercase();
+        let score = keywords.iter().filter(|k| lower.contains(k.as_str())).count();
+        hits.push((id, text, score));
+    }
+    // Keep only chunks matching at least two keywords when possible, so a
+    // single common word does not flood the recall list.
+    hits.sort_by(|a, b| b.2.cmp(&a.2));
+    let min_score = hits.first().map(|h| h.2).unwrap_or(0).min(2).max(1);
+    hits.retain(|h| h.2 >= min_score);
+    hits.truncate(8);
+    Ok(hints_to_pairs(hits))
+}
+
+fn hints_to_pairs(hits: Vec<(i64, String, usize)>) -> Vec<(i64, String)> {
+    hits.into_iter().map(|(id, text, _)| (id, text)).collect()
+}
+
 pub(crate) async fn search_doc(
     robot_id: &str,
     query: &str,
@@ -267,7 +453,7 @@ pub(crate) async fn search_doc(
     let r = embedding::embedding(robot_id, query).await?;
     // log::info!("{:?}", &r.0);
     let sql = format!(
-        "SELECT chunk_text, vector_distance_cos(chunk_vec, vector32(?1)) AS distance FROM {robot_id}_vec WHERE distance < ?2 ORDER BY distance ASC LIMIT 1"
+        "SELECT id, chunk_text, vector_distance_cos(chunk_vec, vector32(?1)) AS distance FROM {robot_id}_vec WHERE distance < ?2 ORDER BY distance ASC LIMIT 8"
     );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
     let mut rows = conn
@@ -279,12 +465,27 @@ pub(crate) async fn search_doc(
             ],
         )
         .await?;
-    if let Some(row) = rows.next().await? {
+    let mut vec_hits: Vec<(i64, String)> = Vec::with_capacity(8);
+    while let Some(row) = rows.next().await? {
         log::info!(
             "{} {}",
             recall_distance,
-            row.get_value(1)?.as_real().unwrap(),
+            row.get_value(2)?.as_real().unwrap(),
         );
+        vec_hits.push((
+            row.get_value(0)?.as_integer().unwrap().clone(),
+            String::from(row.get_value(1)?.as_text().unwrap()),
+        ));
+    }
+    // Hybrid recall: fuse vector ranking with keyword (LIKE) ranking.
+    let chunks = match keyword_recall(&conn, robot_id, query).await {
+        Ok(kw_hits) => rrf_merge(&vec_hits, &kw_hits),
+        Err(e) => {
+            log::warn!("Keyword recall failed, fallback to vector only, err: {e:?}");
+            vec_hits.into_iter().map(|(_, t)| t).take(4).collect()
+        }
+    };
+    if !chunks.is_empty() {
         let prompts = vec![
             crate::ai::completion::Prompt {
                 role: String::from("system"),
@@ -298,7 +499,7 @@ pub(crate) async fn search_doc(
                 role: String::from("user"),
                 content: format!(
                     "文档内容：\n{}\n\n问题：{}",
-                    row.get_value(0)?.as_text().unwrap(),
+                    chunks.join("\n\n"),
                     query
                 ),
             },
