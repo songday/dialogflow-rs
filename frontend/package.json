@@ -20,18 +20,18 @@
     }
   },
   "dependencies": {
-    "@antv/x6": "^3.1.6",
+    "@antv/x6": "^3.1.8",
     "@antv/x6-vue-shape": "^3.0.2",
-    "@tiptap/extension-blockquote": "^3.11.1",
-    "@tiptap/extension-bubble-menu": "^3.11.1",
-    "@tiptap/extension-color": "^3.11.1",
-    "@tiptap/extension-highlight": "^3.11.1",
-    "@tiptap/extension-text-align": "^3.11.1",
-    "@tiptap/extension-text-style": "^3.11.1",
-    "@tiptap/extension-underline": "^3.11.1",
-    "@tiptap/pm": "^3.11.1",
-    "@tiptap/starter-kit": "^3.11.1",
-    "@tiptap/vue-3": "^3.11.1",
+    "@tiptap/extension-blockquote": "^3.31.0",
+    "@tiptap/extension-bubble-menu": "^3.31.0",
+    "@tiptap/extension-color": "^3.31.0",
+    "@tiptap/extension-highlight": "^3.31.0",
+    "@tiptap/extension-text-align": "^3.31.0",
+    "@tiptap/extension-text-style": "^3.31.0",
+    "@tiptap/extension-underline": "^3.31.0",
+    "@tiptap/pm": "^3.31.0",
+    "@tiptap/starter-kit": "^3.31.0",
+    "@tiptap/vue-3": "^3.31.0",
     "element-plus": "^2.13.4",
     "vue": "^3.5.29",
     "vue-i18n": "^11.2.8",
@@ -56,6 +56,6 @@
     "unplugin-auto-import": "^21.0.0",
     "unplugin-icons": "^23.0.1",
     "unplugin-vue-components": "^31.0.0",
-    "vite": "^7.3.1"
+    "vite": "^7.3.5"
   }
 }
