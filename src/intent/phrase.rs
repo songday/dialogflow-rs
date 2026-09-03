@@ -72,7 +72,7 @@ pub(crate) async fn search(robot_id: &str, vectors: &Vec<f32>) -> Result<Vec<(St
     let sql = format!(
         "SELECT intent_name, vector_distance_cos(phrase_vec, vector32(?1)) AS distance FROM {robot_id}",
     );
-    let mut results = conn.query(&sql, [serde_json::to_string(vectors)?]).await?;
+    let mut results = conn.query(sql, [serde_json::to_string(vectors)?]).await?;
     while let Some(r) = results.next().await? {
         log::info!(
             "intent_name = {}, distance = {}",
@@ -85,7 +85,7 @@ pub(crate) async fn search(robot_id: &str, vectors: &Vec<f32>) -> Result<Vec<(St
         "SELECT intent_id, intent_name, vector_distance_cos(phrase_vec, vector32(?1)) AS distance FROM {robot_id} ORDER BY distance ASC LIMIT 1",
     );
     // log::info!("sql = {} {}", &sql, serde_json::to_string(vectors)?);
-    let mut results = conn.query(&sql, [serde_json::to_string(vectors)?]).await?;
+    let mut results = conn.query(sql, [serde_json::to_string(vectors)?]).await?;
     // let results = sqlx::query::<Sqlite>(&sql)
     //     .bind(serde_json::to_string(vectors)?)
     //     .fetch_all(DATA_SOURCE.get().unwrap())
@@ -159,16 +159,16 @@ pub(crate) async fn add(
             )",
             vectors.0.len()
         );
-        conn.execute(&sql, ()).await?;
+        conn.execute(sql, ()).await?;
         let sql = format!(
             "INSERT INTO {robot_id} (intent_id, intent_name, phrase, phrase_vec)VALUES(?1, ?2, ?3, vector32(?4))",
         );
         conn.execute(
-            &sql,
+            sql,
             (
-                intent_id,
-                intent_name,
-                phrase,
+                String::from(intent_id),
+                String::from(intent_name),
+                String::from(phrase),
                 serde_json::to_string(&vectors.0)?,
             ),
         )
@@ -189,8 +189,12 @@ pub(crate) async fn add(
             format!("UPDATE {robot_id} SET phrase = ?1, phrase_vec = vector32(?2) WHERE id = ?3",);
         let vec_row_id = vec_row_id.unwrap();
         conn.execute(
-            &sql,
-            (phrase, serde_json::to_string(&vectors.0)?, vec_row_id),
+            sql,
+            (
+                String::from(phrase),
+                serde_json::to_string(&vectors.0)?,
+                vec_row_id,
+            ),
         )
         .await?;
         Ok(vec_row_id)
@@ -217,7 +221,7 @@ pub(crate) async fn remove(robot_id: &str, id: i64) -> Result<()> {
         .get()
         .unwrap()
         .connect()?
-        .execute(&sql, [id])
+        .execute(sql, [id])
         .await?;
     // sqlx::query::<Sqlite>(&sql)
     //     .bind(id)
@@ -232,7 +236,7 @@ pub(crate) async fn remove_by_intent_id(robot_id: &str, intent_id: &str) -> Resu
         .get()
         .unwrap()
         .connect()?
-        .execute(&sql, [intent_id])
+        .execute(sql, [String::from(intent_id)])
         .await?;
     // match sqlx::query::<Sqlite>(&sql)
     //     .bind(intent_id)
@@ -260,7 +264,7 @@ pub(crate) async fn remove_tables(robot_id: &str) -> Result<()> {
         .get()
         .unwrap()
         .connect()?
-        .execute(&sql, ())
+        .execute(sql, ())
         .await?;
     // match sqlx::query::<Sqlite>(&sql)
     //     .execute(DATA_SOURCE.get().unwrap())

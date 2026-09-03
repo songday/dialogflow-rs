@@ -66,14 +66,14 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
         CREATE INDEX idx_created_at ON {robot_id} (created_at);"
     );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
-    conn.execute(&sql, ()).await?;
+    conn.execute(sql, ()).await?;
     Ok(())
 }
 
 pub(crate) async fn list(robot_id: &str) -> Result<Vec<QuestionAnswerPair>> {
     let conn = DATA_SOURCE.get().unwrap().connect()?;
     let sql = format!("SELECT qa_data FROM {robot_id} ORDER BY created_at DESC",);
-    let mut rows = conn.query(&sql, ()).await?;
+    let mut rows = conn.query(sql, ()).await?;
     let mut d: Vec<QuestionAnswerPair> = Vec::with_capacity(10);
     while let Some(row) = rows.next().await? {
         d.push(serde_json::from_str(dbg!(
@@ -132,7 +132,7 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
                     ",
                     vectors.0.len(),
                 );
-                tx.execute(&sql, ()).await?;
+                tx.execute(sql, ()).await?;
                 created_table = true;
             }
             if insert_stmt.is_none() {
@@ -201,7 +201,7 @@ pub(crate) async fn retrieve_answer(
         ON q.id = v.qa_id
         "
     );
-    let mut results = conn.query(&sql, [embedding::vec_to_db(&vectors.0)]).await?;
+    let mut results = conn.query(sql, [embedding::vec_to_db(&vectors.0)]).await?;
     if let Some(row) = results.next().await? {
         return Ok((
             Some(serde_json::from_str(row.get_value(0)?.as_text().unwrap())?),

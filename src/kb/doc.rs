@@ -58,7 +58,7 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
         );"
     );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
-    conn.execute(&sql, ()).await?;
+    conn.execute(sql, ()).await?;
     // // log::info!("sql = {}", &sql);
     // let mut stream = sqlx::raw_sql(&sql).execute_many(DATA_SOURCE.get().unwrap());
     // while let Some(res) = stream.next().await {
@@ -98,7 +98,7 @@ pub(super) async fn list(robot_id: &str) -> Result<Vec<DocData>> {
         "SELECT id, file_name, file_size, doc_content FROM {robot_id} ORDER BY created_at DESC"
     );
     let conn = DATA_SOURCE.get().unwrap().connect()?;
-    let mut rows = conn.query(&sql, ()).await?;
+    let mut rows = conn.query(sql, ()).await?;
     let mut results = Vec::with_capacity(10);
     while let Some(row) = rows.next().await? {
         results.push(DocData {
@@ -122,11 +122,11 @@ pub(super) async fn save(
     );
     let mut conn = DATA_SOURCE.get().unwrap().connect()?;
     conn.execute(
-        &sql,
+        sql,
         (
-            file_name,
+            String::from(file_name),
             turso::Value::Integer(file_size as i64),
-            doc_content,
+            String::from(doc_content),
         ),
     )
     .await?;
@@ -142,10 +142,10 @@ pub(super) async fn update(robot_id: &str, doc_id: i64, doc_content: &str) -> Re
     let mut conn = DATA_SOURCE.get().unwrap().connect()?;
     let tx = conn.transaction().await?;
     let sql = format!("UPDATE {robot_id} SET doc_content = ?1 WHERE id = ?2");
-    let r = tx.execute(&sql, (doc_content, doc_id)).await?;
+    let r = tx.execute(sql, (String::from(doc_content), doc_id)).await?;
     if r > 0 {
         let sql = format!("DELETE FROM {robot_id}_vec WHERE doc_id = ?1");
-        tx.execute(&sql, [doc_id]).await?;
+        tx.execute(sql, [doc_id]).await?;
         save_doc_embedding(&tx, robot_id, doc_id, doc_content).await?;
         tx.commit().await?;
     } else {
@@ -158,9 +158,9 @@ pub(crate) async fn delete(robot_id: &str, doc_id: i64) -> Result<()> {
     let mut conn = DATA_SOURCE.get().unwrap().connect()?;
     let tx = conn.transaction().await?;
     let sql = format!("DELETE FROM {robot_id}_vec WHERE doc_id = ?1");
-    let _r = tx.execute(&sql, [doc_id]).await?;
+    let _r = tx.execute(sql, [doc_id]).await?;
     let sql = format!("DELETE FROM {robot_id} WHERE id = ?1");
-    let _r = tx.execute(&sql, [doc_id]).await?;
+    let _r = tx.execute(sql, [doc_id]).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -224,9 +224,11 @@ fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
 // while maximizing chunk length. Suitable for long-context embedding models
 // (OpenAI / Ollama etc.), where a much larger chunk capacity is affordable.
 fn chunk_text_semantic(text: &str, chunk_size: usize, overlap: usize) -> Result<Vec<String>> {
-    let splitter = TextSplitter::new(text_splitter::ChunkConfig::new(chunk_size).with_overlap(overlap).map_err(|e| {
-        Error::WithMessage(format!("Invalid chunk config: {e:?}"))
-    })?);
+    let splitter = TextSplitter::new(
+        text_splitter::ChunkConfig::new(chunk_size)
+            .with_overlap(overlap)
+            .map_err(|e| Error::WithMessage(format!("Invalid chunk config: {e:?}")))?,
+    );
     Ok(splitter.chunks(text).map(String::from).collect())
 }
 
@@ -255,12 +257,17 @@ async fn save_doc_embedding(
     // Embed all chunks up front with bounded concurrency, so the table can be
     // created once with the right vector size and inserts reuse a prepared
     // statement instead of parsing the SQL for every chunk.
-    let embeddings: Vec<(Vec<f32>, f32)> = futures_util::stream::iter(
-        chunks.iter().map(|c| embedding::embedding(robot_id, c)),
-    )
-    .buffered(4)
-    .try_collect()
-    .await?;
+    // Each future owns its data (no borrowed captures), otherwise the Send
+    // checker fails with "implementation of `Send` is not general enough".
+    let rid = String::from(robot_id);
+    let embeddings: Vec<(Vec<f32>, f32)> =
+        futures_util::stream::iter(chunks.clone().into_iter().map(|c| {
+            let rid = rid.clone();
+            async move { embedding::embedding(&rid, &c).await }
+        }))
+        .buffered(4)
+        .try_collect()
+        .await?;
     let vec_size = embeddings
         .first()
         .map(|(v, _)| v.len())
@@ -273,7 +280,7 @@ async fn save_doc_embedding(
             chunk_vec F32_BLOB({vec_size}) NOT NULL
         );"
     );
-    tx.execute(&sql, ()).await?;
+    tx.execute(sql, ()).await?;
     let sql = format!(
         "INSERT INTO {robot_id}_vec(doc_id, chunk_text, chunk_vec) VALUES(?1, ?2, vector32(?3));"
     );
@@ -414,20 +421,21 @@ async fn keyword_recall(
         .map(|(i, _)| format!("chunk_text LIKE ?{i} ESCAPE '\\'"))
         .collect::<Vec<_>>()
         .join(" OR ");
-    let sql = format!(
-        "SELECT id, chunk_text FROM {robot_id}_vec WHERE {cond} LIMIT 64"
-    );
+    let sql = format!("SELECT id, chunk_text FROM {robot_id}_vec WHERE {cond} LIMIT 64");
     let params: Vec<turso::Value> = escaped
         .iter()
         .map(|k| turso::Value::Text(k.clone()))
         .collect();
-    let mut rows = conn.query(&sql, params).await?;
+    let mut rows = conn.query(sql, params).await?;
     let mut hits: Vec<(i64, String, usize)> = Vec::new();
     while let Some(row) = rows.next().await? {
         let id = row.get_value(0)?.as_integer().unwrap().clone();
         let text = String::from(row.get_value(1)?.as_text().unwrap());
         let lower = text.to_lowercase();
-        let score = keywords.iter().filter(|k| lower.contains(k.as_str())).count();
+        let score = keywords
+            .iter()
+            .filter(|k| lower.contains(k.as_str()))
+            .count();
         hits.push((id, text, score));
     }
     // Keep only chunks matching at least two keywords when possible, so a
@@ -458,7 +466,7 @@ pub(crate) async fn search_doc(
     let conn = DATA_SOURCE.get().unwrap().connect()?;
     let mut rows = conn
         .query(
-            &sql,
+            sql,
             [
                 embedding::vec_to_db(&r.0),
                 turso::Value::Real(recall_distance),
@@ -497,11 +505,7 @@ pub(crate) async fn search_doc(
             },
             crate::ai::completion::Prompt {
                 role: String::from("user"),
-                content: format!(
-                    "文档内容：\n{}\n\n问题：{}",
-                    chunks.join("\n\n"),
-                    query
-                ),
+                content: format!("文档内容：\n{}\n\n问题：{}", chunks.join("\n\n"), query),
             },
         ];
         let mut s = String::with_capacity(1024);
