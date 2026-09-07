@@ -11,6 +11,7 @@ import {
 import { useI18n } from "vue-i18n";
 import EpPlus from "~icons/ep/plus";
 import EpWarning from "~icons/ep/warning";
+import EpChatDotRound from "~icons/ep/chat-dot-round";
 import RiBold from "~icons/ri/bold";
 import RiItalic from "~icons/ri/italic";
 import RiStrikethrough from "~icons/ri/strikethrough";
@@ -206,24 +207,10 @@ export default defineComponent({
             node.addPort({
                 group: "absolute",
                 args: { x: x, y: heightOffset },
-                markup: [
-                    { tagName: "circle", selector: "bopdy" },
-                    { tagName: "rect", selector: "bg" },
-                ],
                 attrs: {
                     text: {
                         text: this.nextSteps[0].label,
                         fontSize: 12,
-                    },
-                    // https://codesandbox.io/s/port-label-viwnos?file=/src/App.tsx
-                    bg: {
-                        ref: "text",
-                        refWidth: "100%",
-                        refHeight: "110%",
-                        refX: "-100%",
-                        refX2: -15,
-                        refY: -5,
-                        fill: "rgb(235,238,245)",
                     },
                 },
             });
@@ -613,6 +600,7 @@ export default defineComponent({
     components: {
         EpPlus,
         EpWarning,
+        EpChatDotRound,
         RiBold,
         RiItalic,
         RiStrikethrough,
@@ -678,19 +666,52 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
 </script>
 <style scoped>
 .nodeBox {
-    border: 2px #0000000e solid;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     height: 100%;
     width: 100%;
-    background-color: white;
+    background-color: #fff;
     overflow: hidden;
+    box-shadow: 0 2px 8px rgba(31, 45, 61, 0.08);
 }
 
 .nodeTitle {
-    background-color: rgb(255, 196, 0);
-    color: white;
-    font-weight: 500;
-    font-size: 14px;
-    padding: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #ffc400, #ff9500);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 7px 10px;
+}
+
+.titleIcon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.titleText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.nodeBody {
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #4e5969;
+    overflow: hidden;
 }
 
 /* .optionWidth {
@@ -727,14 +748,26 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
 <style lang="scss">
 /* Basic editor styles */
 .tiptap {
+    outline: none;
+
     :first-child {
         margin-top: 0;
     }
 
+    :last-child {
+        margin-bottom: 0;
+    }
+
+    p {
+        margin: 0.35em 0;
+        line-height: 1.7;
+    }
+
     blockquote {
-        border-left: 3px solid gray;
-        margin: 1.5rem 0;
+        border-left: 3px solid #c9cdd4;
+        margin: 0.5em 0;
         padding-left: 1rem;
+        color: #6b7280;
     }
 
     mark {
@@ -744,11 +777,43 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
         padding: 0.1rem 0.3rem;
     }
 }
+
+/* Rich text editor container */
+.editorWrap {
+    width: 100%;
+
+    .ProseMirror {
+        min-height: 160px;
+        max-height: 420px;
+        overflow-y: auto;
+        padding: 12px 14px;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 14px;
+        color: var(--app-text);
+        transition: border-color 0.2s, box-shadow 0.2s;
+
+        &:hover {
+            border-color: #c7cbf7;
+        }
+
+        &:focus {
+            border-color: var(--app-primary);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+        }
+    }
+}
 </style>
 <template>
     <div class="nodeBox">
         <div ref="nodeName" class="nodeTitle">
-            {{ nodeData.nodeName }}
+            <span class="titleIcon">
+                <el-icon size="12">
+                    <EpChatDotRound />
+                </el-icon>
+            </span>
+            <span class="titleText">{{ nodeData.nodeName }}</span>
             <span v-show="nodeData.invalidMessages.length > 0">
                 <el-tooltip
                     class="box-item"
@@ -763,7 +828,7 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                 </el-tooltip>
             </span>
         </div>
-        <div ref="nodeAnswer" style="white-space: pre-wrap; font-size: 12px">
+        <div ref="nodeAnswer" class="nodeBody">
             {{ preview }}
         </div>
         <!-- <el-text ref="nodeAnswer" line-clamp="2">
@@ -1100,8 +1165,8 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                         </button> -->
                     </div>
                     <editor-content
+                        class="editorWrap"
                         :editor="editor"
-                        style="width: 100%; border: #e5e9f2 1px solid"
                         v-if="editor && robotType == 'TextBot'"
                         v-model="nodeData.dialogText"
                     />

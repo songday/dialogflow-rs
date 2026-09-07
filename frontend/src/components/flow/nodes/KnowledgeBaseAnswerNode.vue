@@ -7,6 +7,7 @@ import {
 } from "../../../assets/tools.js";
 import { useI18n } from "vue-i18n";
 import EpWarning from "~icons/ep/warning";
+import EpReading from "~icons/ep/reading";
 const { t, tm, rt } = useI18n();
 const getNode = inject("getNode");
 const { robotId } = inject("robotId");
@@ -90,24 +91,10 @@ onMounted(async () => {
         node.addPort({
             group: "absolute",
             args: { x: x, y: heightOffset },
-            markup: [
-                { tagName: "circle", selector: "bopdy" },
-                { tagName: "rect", selector: "bg" },
-            ],
             attrs: {
                 text: {
                     text: "Goto next node",
                     fontSize: 12,
-                },
-                // https://codesandbox.io/s/port-label-viwnos?file=/src/App.tsx
-                bg: {
-                    ref: "text",
-                    refWidth: "100%",
-                    refHeight: "110%",
-                    refX: "-100%",
-                    refX2: -15,
-                    refY: -5,
-                    fill: "rgb(235,238,245)",
                 },
             },
         });
@@ -168,25 +155,64 @@ const nodeSetFormVisible = ref(false);
 </script>
 <style scoped>
 .nodeBox {
-    border: 2px #0000000e solid;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     height: 100%;
     width: 100%;
-    background-color: white;
+    background-color: #fff;
     font-size: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(31, 45, 61, 0.08);
 }
 
 .nodeTitle {
-    background-color: #efb7ba;
-    color: white;
-    font-weight: 500;
-    font-size: 14px;
-    padding: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #fb7185, #f43f5e);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 7px 10px;
+}
+
+.titleIcon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.titleText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.nodeBody {
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #4e5969;
+    overflow: hidden;
 }
 </style>
 <template>
     <div class="nodeBox">
         <div ref="nodeName" class="nodeTitle">
-            {{ nodeData.nodeName }}
+            <span class="titleIcon">
+                <el-icon size="12">
+                    <EpReading />
+                </el-icon>
+            </span>
+            <span class="titleText">{{ nodeData.nodeName }}</span>
             <span v-show="nodeData.invalidMessages.length > 0">
                 <el-tooltip
                     class="box-item"
@@ -201,7 +227,7 @@ const nodeSetFormVisible = ref(false);
                 </el-tooltip>
             </span>
         </div>
-        <div ref="nodeBrief" style="white-space: pre-wrap; font-size: 12px">
+        <div ref="nodeBrief" class="nodeBody">
             {{ brief }}
         </div>
         <!-- <teleport to="body"> -->
@@ -283,7 +309,7 @@ const nodeSetFormVisible = ref(false);
                     :label="formFields[3]"
                     :label-width="formLabelWidth"
                 >
-                    {{ modelId }} - {{ modelName }} (<router-link
+                    {{ modelId }} - {{ modelName }}(<router-link
                         :to="{ name: 'settings', params: { robotId: robotId } }"
                         >change</router-link
                     >)

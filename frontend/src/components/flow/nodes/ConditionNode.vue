@@ -6,6 +6,8 @@ import { useI18n } from 'vue-i18n'
 import EpPlus from '~icons/ep/plus'
 import EpMinus from '~icons/ep/minus'
 import EpWarning from '~icons/ep/warning'
+import EpDelete from '~icons/ep/delete'
+import EpSwitch from '~icons/ep/switch'
 const { t, tm, rt } = useI18n();
 const lastTimeBranchIdMap = new Map();
 const getNode = inject('getNode');
@@ -376,28 +378,173 @@ function removeConditionGroup(groupIdx) {
 </script>
 <style scoped>
 .nodeBox {
-    border: 2px #0000000e solid;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     height: 100%;
     width: 100%;
-    background-color: white;
+    background-color: #fff;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(31, 45, 61, 0.08);
 }
 
 .nodeTitle {
-    background-color: rgb(145, 113, 227);
-    color: white;
-    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+    color: #fff;
+    font-weight: 600;
     font-size: 0.9rem;
-    padding: 5px;
+    padding: 7px 10px;
+}
+
+.titleIcon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.titleText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
 }
 
 .optionWidth {
     width: 130px;
 }
+
+/* ===== condition branch dialog ===== */
+.cond-branch-dialog {
+    max-width: calc(100vw - 48px);
+}
+
+.cond-branch-dialog .el-dialog__body {
+    overflow-x: hidden;
+}
+
+.cond-hint {
+    font-size: 12px;
+    color: #8b5cf6;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    border-radius: 8px;
+    padding: 6px 12px;
+    margin-bottom: 12px;
+}
+
+.cond-group-card {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    border: 1px solid #eef1f6;
+    border-radius: 10px;
+    background: #fafbfe;
+    padding: 12px 14px 4px;
+}
+
+.cond-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.cond-row :deep(.el-select),
+.cond-row :deep(.el-input) {
+    max-width: 100%;
+}
+
+.cond-and-badge {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #8b5cf6;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 2px 0;
+}
+
+.cond-and-badge::before,
+.cond-and-badge::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: dashed #ddd6fe;
+    background-image: linear-gradient(to right, #ddd6fe 60%, transparent 40%);
+    background-size: 8px 1px;
+    background-repeat: repeat-x;
+}
+
+.cond-or-divider {
+    display: flex;
+    align-items: center;
+    margin: 14px 0 4px;
+}
+
+.cond-or-badge {
+    padding: 2px 14px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.35);
+}
+
+.cond-or-divider::before,
+.cond-or-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: #e4e7ef;
+}
+
+.cond-remove-group {
+    color: #ef4444;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    margin-top: 6px;
+}
+
+.cond-remove-group:hover {
+    color: #dc2626;
+}
+
+.cond-row-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 4px;
+}
+
+.cond-add-group {
+    margin-top: 14px;
+    border-style: dashed;
+}
 </style>
 <template>
     <div class="nodeBox">
         <div ref="nodeName" class="nodeTitle">
-            {{ nodeData.nodeName }}
+            <span class="titleIcon">
+                <el-icon size="12">
+                    <EpSwitch />
+                </el-icon>
+            </span>
+            <span class="titleText">{{ nodeData.nodeName }}</span>
             <span v-show="nodeData.invalidMessages.length > 0">
                 <el-tooltip class="box-item" effect="dark" :content="nodeData.invalidMessages.join('<br/>')"
                     placement="bottom" raw-content>
@@ -408,78 +555,89 @@ function removeConditionGroup(groupIdx) {
             </span>
         </div>
         <!-- <teleport to="body"> -->
-        <el-dialog v-model="branchSetFormVisible" :title="t('conditionNode.newBranch')" width="75%"
-            :append-to-body="true" :destroy-on-close="true">
-            <el-form :model="branch" :rules="branchValidators">
-                <el-form-item :label="t('conditionNode.condName')" :label-width="formLabelWidth" prop="branchName">
-                    <el-input v-model="branch.branchName" autocomplete="off" minlength="1" maxlength="15" />
+        <el-dialog v-model="branchSetFormVisible" :title="t('conditionNode.newBranch')" width="80%"
+            class="cond-branch-dialog" :append-to-body="true" :destroy-on-close="true">
+            <el-form :model="branch" :rules="branchValidators" label-position="top">
+                <el-form-item :label="t('conditionNode.condName')" prop="branchName">
+                    <el-input v-model="branch.branchName" autocomplete="off" minlength="1" maxlength="15"
+                        style="max-width: 320px;" />
                 </el-form-item>
-                <el-form-item v-for="(g, groupIndex) in branch.conditionGroup" :key="groupIndex"
-                    :label="t('conditionNode.condType')" :label-width="formLabelWidth">
-                    <div v-for="(c, index) in g" :key="index">
-                        <el-select v-model="c.conditionType" :placeholder="t('conditionNode.condTypePH')"
-                            @change="(v) => showOptions(v, groupIndex, index)" style="width:116px;">
-                            <el-option v-for="item in conditionTypes" :key="item.label" :label="item.label"
-                                :value="item.value" />
-                        </el-select>
-                        <el-select v-model="c.refChoice" :placeholder="t('conditionNode.comparedPH')"
-                            v-show="c.refOptions.length > 0" class="optionWidth"
-                            @change="(v) => percolateCompareOptions(c.conditionType, groupIndex, index, v)">
-                            <el-option v-for="item in c.refOptions" :key="item.label" :label="item.label"
-                                :value="item.value" />
-                        </el-select>
-                        <el-select v-model="c.compareType" :placeholder="t('conditionNode.compareTypePH')"
-                            v-show="c.compareOptions.length > 0" class="optionWidth">
-                            <el-option v-for="item in c.compareOptions" :key="item.label" :label="item.label"
-                                :value="item.value" @click.native="selectCompareOption(groupIndex, index, item)" />
-                        </el-select>
-                        <el-select v-model="c.targetValue" :placeholder="t('conditionNode.targetPH')"
-                            v-show="c.targetOptions.length > 0" class="optionWidth">
-                            <el-option v-for="item in c.targetOptions" :key="item.label" :label="item.label"
-                                :value="item.value" />
-                        </el-select>
-                        <el-select v-model="c.targetValueVariant" v-show="c.inputVariable" class="optionWidth">
-                            <el-option label="const value" value="Const" />
-                            <el-option label="variable value" value="Variable" />
-                        </el-select>
-                        <el-select v-model="c.targetValue" placeholder="Please choose a variable"
-                            v-show="c.inputVariable && c.targetValueVariant == 'Variable'" class="optionWidth">
-                            <el-option v-for="item in refOptionsSet['FlowVariable']" :key="item.label"
-                                :label="item.label" :value="item.value" />
-                        </el-select>
-                        <el-input v-model="c.targetValue" class="optionWidth"
-                            v-show="c.inputVariable && c.targetValueVariant == 'Const'" />
-                        <el-checkbox v-show="c.showCaseSensitiveCheckBox" v-model="c.caseSensitiveComparison"
-                            label="CaseSensitive" />
-                        <el-button-group>
-                            <el-button type="primary" @click="addContidion(g)">
-                                <el-icon>
-                                    <EpPlus />
-                                </el-icon>
-                                <!-- {{ t('conditionNode.andCond') }} -->
-                            </el-button>
-                            <el-button type="danger" v-show="g.length > 1" @click="g.splice(index, 1); console.log(g)">
-                                <el-icon>
-                                    <EpMinus />
-                                </el-icon>
-                            </el-button>
-                        </el-button-group>
-                        <el-divider border-style="dashed" />
+                <div class="cond-hint">{{ t('conditionNode.andCond') }} / {{ t('conditionNode.orCond') }}</div>
+                <template v-for="(g, groupIndex) in branch.conditionGroup" :key="groupIndex">
+                    <div v-if="groupIndex > 0" class="cond-or-divider">
+                        <span class="cond-or-badge">OR</span>
                     </div>
-                    <el-divider />
-                    <el-button type="danger" v-show="branch.conditionGroup.length > 1"
-                        @click="removeConditionGroup(groupIndex)">
-                        X
-                    </el-button>
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button type="primary" @click="addConditionGroup()">
-                        <el-icon>
-                            <EpPlus />
-                        </el-icon>
-                        <!-- {{ t('conditionNode.orCond') }} -->
-                    </el-button>
-                </el-form-item>
+                    <div class="cond-group-card">
+                        <div v-for="(c, index) in g" :key="index">
+                            <div v-if="index > 0" class="cond-and-badge">AND</div>
+                            <div class="cond-row">
+                                <el-select v-model="c.conditionType" :placeholder="t('conditionNode.condTypePH')"
+                                    @change="(v) => showOptions(v, groupIndex, index)" style="width:150px;">
+                                    <el-option v-for="item in conditionTypes" :key="item.label" :label="item.label"
+                                        :value="item.value" />
+                                </el-select>
+                                <el-select v-model="c.refChoice" :placeholder="t('conditionNode.comparedPH')"
+                                    v-show="c.refOptions.length > 0" class="optionWidth"
+                                    @change="(v) => percolateCompareOptions(c.conditionType, groupIndex, index, v)">
+                                    <el-option v-for="item in c.refOptions" :key="item.label" :label="item.label"
+                                        :value="item.value" />
+                                </el-select>
+                                <el-select v-model="c.compareType" :placeholder="t('conditionNode.compareTypePH')"
+                                    v-show="c.compareOptions.length > 0" class="optionWidth">
+                                    <el-option v-for="item in c.compareOptions" :key="item.label" :label="item.label"
+                                        :value="item.value" @click.native="selectCompareOption(groupIndex, index, item)" />
+                                </el-select>
+                                <el-select v-model="c.targetValue" :placeholder="t('conditionNode.targetPH')"
+                                    v-show="c.targetOptions.length > 0" class="optionWidth">
+                                    <el-option v-for="item in c.targetOptions" :key="item.label" :label="item.label"
+                                        :value="item.value" />
+                                </el-select>
+                                <el-select v-model="c.targetValueVariant" v-show="c.inputVariable" class="optionWidth">
+                                    <el-option label="const value" value="Const" />
+                                    <el-option label="variable value" value="Variable" />
+                                </el-select>
+                                <el-select v-model="c.targetValue" placeholder="Please choose a variable"
+                                    v-show="c.inputVariable && c.targetValueVariant == 'Variable'" class="optionWidth">
+                                    <el-option v-for="item in refOptionsSet['FlowVariable']" :key="item.label"
+                                        :label="item.label" :value="item.value" />
+                                </el-select>
+                                <el-input v-model="c.targetValue" class="optionWidth"
+                                    v-show="c.inputVariable && c.targetValueVariant == 'Const'" />
+                                <el-checkbox v-show="c.showCaseSensitiveCheckBox" v-model="c.caseSensitiveComparison"
+                                    label="CaseSensitive" />
+                                <span class="cond-row-actions">
+                                    <el-tooltip :content="t('conditionNode.andCond')" placement="top">
+                                        <el-button type="primary" plain circle @click="addContidion(g)">
+                                            <el-icon>
+                                                <EpPlus />
+                                            </el-icon>
+                                        </el-button>
+                                    </el-tooltip>
+                                    <el-tooltip v-if="g.length > 1" :content="t('common.del')" placement="top">
+                                        <el-button type="danger" plain circle @click="g.splice(index, 1)">
+                                            <el-icon>
+                                                <EpMinus />
+                                            </el-icon>
+                                        </el-button>
+                                    </el-tooltip>
+                                </span>
+                            </div>
+                        </div>
+                        <span v-if="branch.conditionGroup.length > 1" class="cond-remove-group"
+                            @click="removeConditionGroup(groupIndex)">
+                            <el-icon>
+                                <EpDelete />
+                            </el-icon>
+                            {{ t('common.del') }}
+                        </span>
+                    </div>
+                </template>
+                <el-button type="primary" plain class="cond-add-group" @click="addConditionGroup()">
+                    <el-icon>
+                        <EpPlus />
+                    </el-icon>
+                    {{ t('conditionNode.orCond') }}
+                </el-button>
             </el-form>
             <template #footer>
                 <span class="dialog-footer">
