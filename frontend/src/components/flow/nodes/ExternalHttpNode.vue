@@ -8,6 +8,7 @@ import {
 } from "../../../assets/tools.js";
 import { useI18n } from "vue-i18n";
 import EpWarning from "~icons/ep/warning";
+import EpConnection from "~icons/ep/connection";
 const { t, tm, rt } = useI18n();
 const nodeSetFormVisible = ref(false);
 const getNode = inject("getNode");
@@ -165,19 +166,51 @@ onMounted(async () => {
 </script>
 <style scoped>
 .nodeBox {
-    border: 2px #0000000e solid;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     height: 100%;
     width: 100%;
-    background-color: white;
+    background-color: #fff;
     font-size: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(31, 45, 61, 0.08);
 }
 
 .nodeTitle {
-    background-color: rgb(1, 165, 188);
-    color: white;
-    font-weight: 500;
-    font-size: 14px;
-    padding: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #06b6d4, #0891b2);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 7px 10px;
+}
+
+.titleIcon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.titleText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.nodeBody {
+    padding: 8px 10px;
+    line-height: 1.8;
+    color: #4e5969;
+    overflow: hidden;
 }
 
 .optionWidth {
@@ -187,7 +220,12 @@ onMounted(async () => {
 <template>
     <div class="nodeBox">
         <div ref="nodeName" class="nodeTitle">
-            {{ nodeData.nodeName }}
+            <span class="titleIcon">
+                <el-icon size="12">
+                    <EpConnection />
+                </el-icon>
+            </span>
+            <span class="titleText">{{ nodeData.nodeName }}</span>
             <span v-show="nodeData.invalidMessages.length > 0">
                 <el-tooltip
                     class="box-item"
@@ -202,7 +240,7 @@ onMounted(async () => {
                 </el-tooltip>
             </span>
         </div>
-        <div>Call Http: {{ nodeData.httpApiName }}</div>
+        <div class="nodeBody">Call Http: {{ nodeData.httpApiName }}</div>
         <!-- <teleport to="body"> -->
         <el-drawer
             v-model="nodeSetFormVisible"
@@ -239,13 +277,11 @@ onMounted(async () => {
                     </el-select>
                 </el-form-item>
                 <el-form-item label="Sync/Async" :label-width="formLabelWidth">
-                    <!-- <el-switch v-model="httpApiData.asyncReq" class="mb-2" active-text="Asynchronous" inactive-text="Synchronous" /> -->
-                    <input
-                        type="checkbox"
-                        id="_asyncReq_"
+                    <el-switch
                         v-model="nodeData.asyncReq"
-                        :checked="nodeData.asyncReq"
-                    /><label for="_asyncReq_">Asynchronous</label>
+                        active-text="Asynchronous"
+                        inactive-text="Synchronous"
+                    />
                 </el-form-item>
                 <el-form-item
                     label="Timeout"

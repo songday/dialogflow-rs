@@ -7,6 +7,7 @@ import {
 } from "../../../assets/tools.js";
 import { useI18n } from "vue-i18n";
 import EpWarning from "~icons/ep/warning";
+import EpCollection from "~icons/ep/collection";
 const { t, tm, rt } = useI18n();
 const nodeSetFormVisible = ref(false);
 const nodeData = reactive({
@@ -149,19 +150,51 @@ const formLabelWidth = "140px";
 </script>
 <style scoped>
 .nodeBox {
-    border: 2px #0000000e solid;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     height: 100%;
     width: 100%;
-    background-color: white;
+    background-color: #fff;
     font-size: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(31, 45, 61, 0.08);
 }
 
 .nodeTitle {
-    background-color: rgb(90, 213, 235);
-    color: white;
-    font-weight: 500;
-    font-size: 14px;
-    padding: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 7px 10px;
+}
+
+.titleIcon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.titleText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.nodeBody {
+    padding: 8px 10px;
+    line-height: 1.8;
+    color: #4e5969;
+    overflow: hidden;
 }
 
 .optionWidth {
@@ -171,7 +204,12 @@ const formLabelWidth = "140px";
 <template>
     <div class="nodeBox">
         <div ref="nodeName" class="nodeTitle">
-            {{ nodeData.nodeName }}
+            <span class="titleIcon">
+                <el-icon size="12">
+                    <EpCollection />
+                </el-icon>
+            </span>
+            <span class="titleText">{{ nodeData.nodeName }}</span>
             <span v-show="nodeData.invalidMessages.length > 0">
                 <el-tooltip
                     class="box-item"
@@ -186,11 +224,13 @@ const formLabelWidth = "140px";
                 </el-tooltip>
             </span>
         </div>
-        <div>
-            {{ t("collectNode.cTypeName") }}: {{ nodeData.collectTypeName }}
-        </div>
-        <div>
-            {{ t("collectNode.varName") }}: {{ nodeData.collectSaveVarName }}
+        <div class="nodeBody">
+            <div>
+                {{ t("collectNode.cTypeName") }}: {{ nodeData.collectTypeName }}
+            </div>
+            <div>
+                {{ t("collectNode.varName") }}: {{ nodeData.collectSaveVarName }}
+            </div>
         </div>
         <!-- <teleport to="body"> -->
         <el-drawer

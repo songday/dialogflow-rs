@@ -31,6 +31,14 @@ import EpFinished from "~icons/ep/finished";
 import EpPlus from "~icons/ep/plus";
 import EpPromotion from "~icons/ep/promotion";
 import EpDArrowRight from "~icons/ep/d-arrow-right";
+import EpChatDotRound from "~icons/ep/chat-dot-round";
+import EpSwitch from "~icons/ep/switch";
+import EpCollection from "~icons/ep/collection";
+import EpReading from "~icons/ep/reading";
+import EpMagicStick from "~icons/ep/magic-stick";
+import EpConnection from "~icons/ep/connection";
+import EpMessage from "~icons/ep/message";
+import EpCircleClose from "~icons/ep/circle-close";
 const { t, tm, rt } = useI18n();
 
 const route = useRoute();
@@ -343,39 +351,56 @@ const nodes = [
         name: tm("flow.nodes")[0],
         type: "DialogNode",
         desc: tm("flow.nodesDesc")[0],
+        icon: EpChatDotRound,
     },
     {
         name: tm("flow.nodes")[4],
         type: "KnowledgeBaseAnswerNode",
         desc: "Knowledge base answer node",
+        icon: EpReading,
     },
-    { name: tm("flow.nodes")[5], type: "LlmChatNode", desc: "Llm chat node" },
+    {
+        name: tm("flow.nodes")[5],
+        type: "LlmChatNode",
+        desc: "Llm chat node",
+        icon: EpMagicStick,
+    },
     {
         name: tm("flow.nodes")[1],
         type: "ConditionNode",
         desc: tm("flow.nodesDesc")[1],
+        icon: EpSwitch,
     },
     {
         name: tm("flow.nodes")[2],
         type: "CollectNode",
         desc: tm("flow.nodesDesc")[2],
+        icon: EpCollection,
     },
     {
         name: tm("flow.nodes")[6],
         type: "ExternalHttpNode",
         desc: "Request and send data to external HTTP API with variables",
+        icon: EpConnection,
     },
     {
         name: tm("flow.nodes")[7],
         type: "SendEmailNode",
         desc: "Sending an email an many recipients",
+        icon: EpMessage,
     },
     {
         name: tm("flow.nodes")[3],
         type: "GotoNode",
         desc: tm("flow.nodesDesc")[3],
+        icon: EpDArrowRight,
     },
-    { name: tm("flow.nodes")[8], type: "EndNode", desc: "Ending node" },
+    {
+        name: tm("flow.nodes")[8],
+        type: "EndNode",
+        desc: "Ending node",
+        icon: EpCircleClose,
+    },
 ];
 let selectedSubFlowIdx = -1;
 // let offsetLeft = 0;
@@ -1159,40 +1184,51 @@ const popupRundryWindow = async () => {
     cursor: grabbing;
 }
 
+.node-btn-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.node-btn-icon {
+    flex: none;
+}
+
 .DialogNode {
-    border-left-color: #ffc400;
+    border-left-color: #ff9500;
 }
 
 .KnowledgeBaseAnswerNode {
-    border-left-color: #efb7ba;
+    border-left-color: #f43f5e;
 }
 
 .ConditionNode {
-    border-left-color: #9171e3;
+    border-left-color: #8b5cf6;
 }
 
 .CollectNode {
-    border-left-color: #5ad5eb;
+    border-left-color: #0ea5e9;
 }
 
 .GotoNode {
-    border-left-color: #43d399;
+    border-left-color: #10b981;
 }
 
 .ExternalHttpNode {
-    border-left-color: #01a5bc;
+    border-left-color: #0891b2;
 }
 
 .SendEmailNode {
-    border-left-color: #ff6555;
+    border-left-color: #ef4444;
 }
 
 .EndNode {
-    border-left-color: #22196a;
+    border-left-color: #3b4a8f;
 }
 
 .LlmChatNode {
-    border-left-color: #6a2c70;
+    border-left-color: #7c3aed;
 }
 
 /* ---------- Canvas ---------- */
@@ -1372,7 +1408,12 @@ const popupRundryWindow = async () => {
                                 :content="item.desc"
                                 placement="right-start"
                             >
-                                <span> {{ item.name }}</span>
+                                <span class="node-btn-label">
+                                    <el-icon :size="13" class="node-btn-icon">
+                                        <component :is="item.icon" />
+                                    </el-icon>
+                                    {{ item.name }}
+                                </span>
                             </el-tooltip>
                         </div>
                     </div>

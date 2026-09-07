@@ -6,6 +6,7 @@ import {
     httpReq,
 } from "../../../assets/tools.js";
 import EpWarning from "~icons/ep/warning";
+import EpMessage from "~icons/ep/message";
 import { useI18n } from "vue-i18n";
 const { t, tm } = useI18n();
 
@@ -203,29 +204,117 @@ const saveForm = () => {
 const hideForm = () => {
     nodeSetFormVisible.value = false;
 };
-const formLabelWidth = "100px";
 </script>
 <style scoped>
 .nodeBox {
-    border: 2px #0000000e solid;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
     height: 100%;
     width: 100%;
-    background-color: white;
+    background-color: #fff;
     font-size: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(31, 45, 61, 0.08);
 }
 
 .nodeTitle {
-    background-color: rgb(255, 101, 85);
-    color: white;
-    font-weight: 500;
-    font-size: 14px;
-    padding: 5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #ff6555, #ef4444);
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 7px 10px;
+}
+
+.titleIcon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.nodeBody {
+    padding: 9px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 12px;
+    color: #4e5969;
+    overflow: hidden;
+}
+
+.briefRow {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+}
+
+.briefLabel {
+    flex: none;
+    color: #86909c;
+}
+
+.briefValue {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.briefEmpty {
+    color: #c9cdd4;
+    font-style: italic;
+}
+
+.titleText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+
+.formHint {
+    color: #86909c;
+    font-size: 12px;
+    line-height: 1.4;
+    display: block;
+    margin-top: 4px;
+}
+
+.sectionDivider {
+    margin: 4px 0 18px;
+}
+
+.sectionDivider :deep(.el-divider__text) {
+    padding: 0 8px;
+    background-color: transparent;
+}
+
+.sectionTitle {
+    color: #86909c;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
 }
 </style>
 <template>
     <div class="nodeBox">
         <div ref="nodeName" class="nodeTitle">
-            {{ nodeData.nodeName }}
+            <span class="titleIcon">
+                <el-icon size="12">
+                    <EpMessage />
+                </el-icon>
+            </span>
+            <span class="titleText">{{ nodeData.nodeName }}</span>
             <span v-show="nodeData.invalidMessages.length > 0">
                 <el-tooltip
                     class="box-item"
@@ -234,14 +323,28 @@ const formLabelWidth = "100px";
                     placement="bottom"
                     raw-content
                 >
-                    <el-icon color="yellow" size="16">
+                    <el-icon color="#fde047" size="16">
                         <EpWarning />
                     </el-icon>
                 </el-tooltip>
             </span>
         </div>
-        <div>To: {{ nodeData.to }}</div>
-        <div>Subject: {{ nodeData.subject }}</div>
+        <div class="nodeBody">
+            <div class="briefRow">
+                <span class="briefLabel">To:</span>
+                <span class="briefValue" :class="{ briefEmpty: !nodeData.to }">{{
+                    nodeData.to || "not set"
+                }}</span>
+            </div>
+            <div class="briefRow">
+                <span class="briefLabel">Subject:</span>
+                <span
+                    class="briefValue"
+                    :class="{ briefEmpty: !nodeData.subject }"
+                    >{{ nodeData.subject || "not set" }}</span
+                >
+            </div>
+        </div>
         <!-- <teleport to="body"> -->
         <el-drawer
             v-model="nodeSetFormVisible"
@@ -252,16 +355,18 @@ const formLabelWidth = "100px";
             :destroy-on-close="true"
         >
             <el-form
-                label-width="100px"
+                label-position="top"
                 :model="nodeData"
-                style="max-width: 500px"
+                style="max-width: 560px"
             >
-                <el-form-item :label="t('common.nodeName')">
+                <el-form-item :label="t('common.nodeName')" prop="nodeName">
                     <el-input v-model="nodeData.nodeName" />
                 </el-form-item>
+                <el-divider class="sectionDivider">
+                    <span class="sectionTitle">Recipients</span>
+                </el-divider>
                 <el-form-item
                     label="From"
-                    :label-width="formLabelWidth"
                     prop="from"
                     :rules="[
                         {
@@ -276,7 +381,10 @@ const formLabelWidth = "100px";
                         },
                     ]"
                 >
-                    <el-input v-model="nodeData.from" placeholder="" />
+                    <el-input
+                        v-model="nodeData.from"
+                        placeholder="sender@example.com"
+                    />
                 </el-form-item>
                 <el-form-item
                     label="To"
@@ -294,17 +402,29 @@ const formLabelWidth = "100px";
                         },
                     ]"
                 >
-                    <el-input v-model="nodeData.to" placeholder="" />
-                </el-form-item>
-                <el-form-item label="">
-                    Separate multiple recipients with semicolons
+                    <el-input
+                        v-model="nodeData.to"
+                        placeholder="recipient@example.com;another@example.com"
+                    />
+                    <span class="formHint"
+                        >Separate multiple recipients with semicolons</span
+                    >
                 </el-form-item>
                 <el-form-item label="Cc">
-                    <el-input v-model="nodeData.cc" placeholder="" />
+                    <el-input
+                        v-model="nodeData.cc"
+                        placeholder="cc@example.com"
+                    />
                 </el-form-item>
                 <el-form-item label="Bcc">
-                    <el-input v-model="nodeData.bcc" placeholder="" />
+                    <el-input
+                        v-model="nodeData.bcc"
+                        placeholder="bcc@example.com"
+                    />
                 </el-form-item>
+                <el-divider class="sectionDivider">
+                    <span class="sectionTitle">Message</span>
+                </el-divider>
                 <el-form-item
                     label="Subject"
                     prop="subject"
@@ -312,7 +432,10 @@ const formLabelWidth = "100px";
                         { required: true, message: 'Subject is required' },
                     ]"
                 >
-                    <el-input v-model="nodeData.subject" placeholder="" />
+                    <el-input
+                        v-model="nodeData.subject"
+                        placeholder="Email subject"
+                    />
                 </el-form-item>
                 <el-form-item
                     label="Content"
@@ -323,28 +446,26 @@ const formLabelWidth = "100px";
                 >
                     <el-input
                         v-model="nodeData.content"
-                        :rows="2"
+                        :rows="8"
                         type="textarea"
-                        placeholder="Please input"
+                        placeholder="Email body..."
                     />
                 </el-form-item>
                 <el-form-item label="Content type">
-                    <el-radio-group v-model="nodeData.contentType" class="ml-4">
-                        <el-radio value="TextHtml" size="large"
-                            >text/html</el-radio
+                    <el-radio-group v-model="nodeData.contentType">
+                        <el-radio-button value="TextHtml"
+                            >text/html</el-radio-button
                         >
-                        <el-radio value="TextPlain" size="large"
-                            >text/plain</el-radio
+                        <el-radio-button value="TextPlain"
+                            >text/plain</el-radio-button
                         >
                     </el-radio-group>
                 </el-form-item>
-                <el-form-item label="">
-                    <input
-                        type="checkbox"
-                        id="_asyncSend_"
+                <el-form-item>
+                    <el-switch
                         v-model="nodeData.asyncSend"
-                        :checked="nodeData.asyncSend"
-                    /><label for="_asyncSend_">Send asynchronously</label>
+                        active-text="Send asynchronously"
+                    />
                 </el-form-item>
             </el-form>
             <div class="demo-drawer__footer">
