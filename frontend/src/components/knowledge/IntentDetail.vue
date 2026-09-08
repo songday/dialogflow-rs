@@ -1,11 +1,18 @@
 <script setup>
-import { nextTick, reactive, onMounted, ref } from 'vue';
+import { nextTick, reactive, onMounted, ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 // import { ElMessage, ElMessageBox } from 'element-plus'
 import { httpReq } from '../../assets/tools.js'
 import { useI18n } from 'vue-i18n'
 const { t, tm, rt } = useI18n();
 import RiBardLine from '~icons/ri/bard-line';
+import RiArrowLeftLine from '~icons/ri/arrow-left-line';
+import RiKey2Line from '~icons/ri/key-2-line';
+import RiCodeSSlashLine from '~icons/ri/code-s-slash-line';
+import RiChatQuoteLine from '~icons/ri/chat-quote-line';
+import RiSparkling2Line from '~icons/ri/sparkling-2-line';
+import RiRefreshLine from '~icons/ri/refresh-line';
+import RiAddLine from '~icons/ri/add-line';
 import EpPlus from '~icons/ep/plus';
 const route = useRoute();
 const router = useRouter();
@@ -253,24 +260,74 @@ const goBack = () => {
 }
 </script>
 <style scoped>
+.detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.detail-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.detail-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--app-text);
+}
+
+.detail-title .detail-title-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: #eef2ff;
+    color: var(--app-primary);
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.detail-subtitle {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--app-text-secondary);
+}
+
 .tag-groups {
     display: flex;
     flex-direction: column;
-    gap: 22px;
+    gap: 18px;
 }
 
 .tag-group {
     background: #fff;
-    border: 1px solid #eef1f6;
+    border: 1px solid var(--app-card-border);
     border-radius: 14px;
-    padding: 20px;
+    padding: 20px 22px;
+    box-shadow: 0 1px 3px rgba(31, 45, 61, 0.04);
+    transition: box-shadow 0.2s;
+}
+
+.tag-group:hover {
+    box-shadow: 0 4px 14px rgba(31, 45, 61, 0.07);
 }
 
 .tag-group-head {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 16px;
     font-size: 16px;
     font-weight: 600;
     color: #1f2d3d;
@@ -284,6 +341,7 @@ const goBack = () => {
     height: 34px;
     border-radius: 10px;
     font-size: 17px;
+    flex-shrink: 0;
 }
 
 .tag-group-icon.indigo {
@@ -307,51 +365,143 @@ const goBack = () => {
     color: #a0a6b1;
 }
 
+.count-badge {
+    display: inline-block;
+    min-width: 26px;
+    padding: 1px 9px;
+    border-radius: 999px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
 .tag-group-body {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+    min-height: 34px;
 }
 
+/* Colorful tags per section */
 .tag-group-body .el-tag {
     max-width: 100%;
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 0 10px;
+    border: none;
+}
+
+.tag-group.kw .el-tag {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+
+.tag-group.re .el-tag {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.tag-group.sp .el-tag {
+    background: #d1fae5;
+    color: #047857;
+}
+
+.tag-group-body .el-tag :deep(.el-tag__close) {
+    color: inherit;
+    opacity: 0.55;
+}
+
+.tag-group-body .el-tag :deep(.el-tag__close:hover) {
+    background: rgba(0, 0, 0, 0.06);
+    color: inherit;
+    opacity: 1;
 }
 
 .tag-group-body .el-input {
-    width: 140px;
+    width: 160px;
+}
+
+/* Mono style for regex tags */
+.tag-group.re .el-tag {
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    font-size: 12.5px;
+}
+
+.tag-group-empty {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #b3b9c4;
+    padding: 4px 2px;
 }
 
 .disabled-tip {
-    margin-top: 12px;
+    margin-top: 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #f9fafb;
+    border: 1px dashed #e5e7eb;
     font-size: 13px;
     color: #86909c;
     line-height: 1.8;
 }
+
+.footer-actions {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
 </style>
 <template>
-    <el-page-header :title="t('common.back')" @back="goBack">
-        <template #content>
-            <span class="text-large font-600 mr-3">{{ $t('intent.detail.edit') }}: {{ intentName }} </span>
-        </template>
-    </el-page-header>
+    <div class="detail-header">
+        <div class="detail-header-left">
+            <el-button text @click="goBack">
+                <el-icon style="margin-right: 4px"><RiArrowLeftLine /></el-icon>
+                {{ t('common.back') }}
+            </el-button>
+        </div>
+    </div>
 
-    <div class="tag-groups" style="margin-top: 20px;">
+    <div class="detail-header" style="margin-bottom: 16px;">
+        <div class="detail-header-left">
+            <h1 class="detail-title">
+                <span class="detail-title-icon"><RiBardLine /></span>
+                {{ $t('intent.detail.edit') }}: {{ intentName }}
+            </h1>
+        </div>
+        <div class="detail-subtitle">{{ intentData.keywords.length + intentData.regexes.length + intentData.phrases.length }} entries total</div>
+    </div>
+
+    <div class="tag-groups">
         <!-- Keywords -->
-        <div class="tag-group">
+        <div class="tag-group kw">
             <div class="tag-group-head">
-                <span class="tag-group-icon indigo"><RiBardLine /></span>
+                <span class="tag-group-icon indigo"><RiKey2Line /></span>
                 {{ $t('intent.detail.kw') }}
+                <span class="count-badge">{{ intentData.keywords.length }}</span>
                 <span class="tag-group-hint">Case insensitive</span>
             </div>
             <div class="tag-group-body">
-                <el-tag v-for="tag in intentData.keywords" type="info" :key="tag" closable
+                <el-tag v-for="tag in intentData.keywords" :key="tag" closable
                     :disable-transitions="false" @close="removeKeyword(tag)">
                     {{ tag }}
                 </el-tag>
+                <span class="tag-group-empty" v-if="!keywordInputVisible && intentData.keywords.length === 0">
+                    No keywords yet —
+                </span>
                 <el-input v-if="keywordInputVisible" ref="keywordInputRef" v-model="keywordValue" size="small"
-                    @keyup.enter="newKeyword" @blur="newKeyword" />
-                <el-button v-else size="small" @click="showKeyWordInput">
+                    placeholder="Press Enter to add" @keyup.enter="newKeyword" @blur="newKeyword" />
+                <el-button v-else size="small" plain class="add-btn" @click="showKeyWordInput">
                     <el-icon style="margin-right: 4px"><EpPlus /></el-icon>
                     {{ $t('intent.detail.addKw') }}
                 </el-button>
@@ -359,19 +509,23 @@ const goBack = () => {
         </div>
 
         <!-- Regexes -->
-        <div class="tag-group">
+        <div class="tag-group re">
             <div class="tag-group-head">
-                <span class="tag-group-icon amber"><RiBardLine /></span>
+                <span class="tag-group-icon amber"><RiCodeSSlashLine /></span>
                 {{ $t('intent.detail.re') }}
+                <span class="count-badge">{{ intentData.regexes.length }}</span>
             </div>
             <div class="tag-group-body">
-                <el-tag v-for="tag in intentData.regexes" type="info" :key="tag" closable
+                <el-tag v-for="tag in intentData.regexes" :key="tag" closable
                     :disable-transitions="false" @close="removeRegex(tag)">
                     {{ tag }}
                 </el-tag>
+                <span class="tag-group-empty" v-if="!regexInputVisible && intentData.regexes.length === 0">
+                    No regexes yet —
+                </span>
                 <el-input v-if="regexInputVisible" ref="regexInputRef" v-model="regexValue" size="small"
-                    @keyup.enter="newRegex" @blur="newRegex" />
-                <el-button v-else size="small" @click="showRegexInput">
+                    placeholder="Press Enter to add" @keyup.enter="newRegex" @blur="newRegex" />
+                <el-button v-else size="small" plain class="add-btn" @click="showRegexInput">
                     <el-icon style="margin-right: 4px"><EpPlus /></el-icon>
                     {{ $t('intent.detail.addRe') }}
                 </el-button>
@@ -379,39 +533,47 @@ const goBack = () => {
         </div>
 
         <!-- Similar phrases -->
-        <div class="tag-group">
+        <div class="tag-group sp">
             <div class="tag-group-head">
-                <span class="tag-group-icon emerald"><RiBardLine /></span>
+                <span class="tag-group-icon emerald"><RiChatQuoteLine /></span>
                 {{ $t('intent.detail.sp') }}
+                <span class="count-badge">{{ intentData.phrases.length }}</span>
             </div>
             <div class="tag-group-body">
-                <el-tag v-for="tag in intentData.phrases" type="info" :key="tag" closable
+                <el-tag v-for="tag in intentData.phrases" :key="tag" closable
                     :disable-transitions="false" @close="removePhrase(tag)">
                     {{ tag }}
                 </el-tag>
+                <span class="tag-group-empty" v-if="!phraseInputVisible && intentData.phrases.length === 0 && !phraseInputDisabled">
+                    No similar phrases yet —
+                </span>
                 <el-input v-if="phraseInputVisible" ref="phraseInputRef" v-model="phraseValue" size="small"
-                    @keyup.enter="newPhrase" />
-                <el-button v-else size="small" @click="showPhraseInput" :disabled="phraseInputDisabled">
+                    placeholder="Press Enter to add" @keyup.enter="newPhrase" />
+                <el-button v-else size="small" plain class="add-btn" @click="showPhraseInput" :disabled="phraseInputDisabled">
                     <el-icon style="margin-right: 4px"><EpPlus /></el-icon>
                     {{ $t('intent.detail.addSp') }}
                 </el-button>
             </div>
             <div class="disabled-tip" v-show="phraseInputDisabled">
-                This feature was disabled because <b>local model files were missing</b> or <b>api-key of OpenAI is
-                    empty</b>, please
-                goto <router-link :to="{ name: 'settings', params: { robotId: robotId } }">settings</router-link> and
-                select one
-                model first.
+                <el-icon style="margin-top: 4px; flex-shrink: 0"><RiSparkling2Line /></el-icon>
+                <span>
+                    This feature was disabled because <b>local model files were missing</b> or <b>api-key of OpenAI is
+                        empty</b>, please
+                    goto <router-link :to="{ name: 'settings', params: { robotId: robotId } }">settings</router-link> and
+                    select one
+                    model first.
+                </span>
             </div>
         </div>
     </div>
 
-    <div style="margin-top: 20px;">
+    <div class="footer-actions">
         <el-alert v-if="showAddedPhraseFailedTip" :title="addPhraseFailedAlertTitle" type="error"
             description="But don't worry, maybe you switched different embedding provider caused this. You can press 'Regenerate all similar sentences.' button below to fix this issue."
-            show-icon style="margin-bottom: 16px;" />
+            show-icon style="flex: 1; min-width: 280px;" />
         <el-button v-show="!phraseInputDisabled" type="warning" plain :loading="regeneratingAllEmbeddings"
             @click="regenerateAll">
+            <el-icon v-if="!regeneratingAllEmbeddings" style="margin-right: 6px"><RiRefreshLine /></el-icon>
             Regenerate all similar sentences.
         </el-button>
     </div>
