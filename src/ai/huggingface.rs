@@ -10,6 +10,7 @@ use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 use candle_transformers::models::gemma::{Config as GemmaConfig, Model as GemmaModel};
 use candle_transformers::models::llama::{Cache as LlamaCache, Llama, LlamaConfig, LlamaEosToks};
+use candle_transformers::models::moondream::Model as MoondreamModel;
 use candle_transformers::models::parler_tts::{Config as ParlerTtsConfig, Model as ParlerTtsModel};
 use candle_transformers::models::phi3::{Config as Phi3Config, Model as Phi3};
 use futures_util::StreamExt;
@@ -39,6 +40,7 @@ pub(crate) enum HuggingFaceModel {
     TinyLlama1_1bChatV1_0,
     Gemma2bInstruct,
     Gemma7bInstruct,
+    Moondream2,
     ParlerTtsMiniV1,
     ParlerTtsLargeV1,
     WhisperLargeV3,
@@ -49,6 +51,7 @@ pub(crate) enum LoadedHuggingFaceModel {
     Llama((Device, Llama, LlamaCache, Tokenizer, Option<LlamaEosToks>)),
     Gemma((Device, GemmaModel, Tokenizer)),
     Phi3((Device, Phi3, Tokenizer)),
+    Moondream((Device, MoondreamModel, Tokenizer)),
 }
 
 impl LoadedHuggingFaceModel {
@@ -64,6 +67,9 @@ impl LoadedHuggingFaceModel {
             HuggingFaceModelType::Phi3 => {
                 LoadedHuggingFaceModel::Phi3(load_phi3_model_files(&info)?)
             }
+            HuggingFaceModelType::Moondream => {
+                LoadedHuggingFaceModel::Moondream(load_moondream_model_files(&info)?)
+            }
             HuggingFaceModelType::Bert => {
                 LoadedHuggingFaceModel::Bert(load_bert_model_files(info.repository)?)
             }
@@ -78,6 +84,7 @@ pub(crate) enum HuggingFaceModelType {
     Llama,
     Gemma,
     Phi3,
+    Moondream,
 }
 
 // enum LoadedHfModel {
@@ -96,6 +103,10 @@ pub(crate) struct HuggingFaceModelInfo {
 }
 
 impl HuggingFaceModelInfo {
+    pub(super) fn supports_vision(&self) -> bool {
+        matches!(self.model_type, HuggingFaceModelType::Moondream)
+    }
+
     pub(super) fn convert_prompt(
         &self,
         s: &str,
@@ -391,6 +402,26 @@ impl HuggingFaceModel {
                 tokenizer_filename: "tokenizer.json",
                 dimenssions: 1024,
                 model_type: HuggingFaceModelType::Gemma,
+            },
+            HuggingFaceModel::Moondream2 => HuggingFaceModelInfo {
+                repository: "vikhyatk/moondream2",
+                mirror: "vikhyatk/moondream2",
+                model_files: {
+                    let mut v = get_common_model_files();
+                    let mut idx = 0usize;
+                    for &f in v.iter() {
+                        if f.eq("model.safetensors") {
+                            break;
+                        }
+                        idx += 1;
+                    }
+                    v.remove(idx);
+                    v
+                },
+                model_index_file: "model.safetensors.index.json",
+                tokenizer_filename: "tokenizer.json",
+                dimenssions: 1024,
+                model_type: HuggingFaceModelType::Moondream,
             },
             HuggingFaceModel::ParlerTtsMiniV1 => HuggingFaceModelInfo {
                 repository: "parler-tts/parler-tts-mini-v1",
@@ -965,6 +996,23 @@ pub(crate) fn load_parler_tts_model_files(
     let config_filename = construct_model_file_path(info.repository, "config.json");
     let config: ParlerTtsConfig = serde_json::from_reader(std::fs::File::open(config_filename)?)?;
     let model = ParlerTtsModel::new(&config, vb)?;
+    Ok((device, model, tokenizer))
+}
+
+pub(crate) fn load_moondream_model_files(
+    info: &HuggingFaceModelInfo,
+) -> Result<(Device, MoondreamModel, Tokenizer)> {
+    let tokenizer = init_tokenizer(info.repository)?;
+    let device = device()?;
+    let config = MoondreamConfig::v2();
+    let dtype = if device.is_cuda() {
+        DType::F16
+    } else {
+        DType::F32
+    };
+    let filenames = get_model_files(info)?;
+    let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
+    let model = MoondreamModel::new(&config, vb)?;
     Ok((device, model, tokenizer))
 }
 

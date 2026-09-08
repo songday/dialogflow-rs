@@ -301,6 +301,7 @@ fn gen_router() -> Router {
         .route("/kb/qa/dryrun", get(kb::qa_dryrun))
         .route("/management/settings/smtp/test", post(settings::smtp_test))
         .route("/flow/answer", post(rt::answer))
+        .route("/flow/answer/multipart", post(rt::answer_multipart))
         .route("/flow/answer/sse", post(rt::answer_sse))
         .route("/ai/text/generation", post(ai::gen_text))
         .route("/version.json", get(version))

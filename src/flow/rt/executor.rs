@@ -25,6 +25,16 @@ pub(in crate::flow::rt) async fn process(
         req.session_id = Some(scru128::new_string());
     }
     let mut ctx = Context::get(&req.robot_id, req.session_id.as_ref().unwrap());
+    if !req.attachments.is_empty() {
+        match crate::ai::dto::UserMediaData::from_attachments(&req.attachments) {
+            Ok(m) => {
+                if !m.is_empty() {
+                    ctx.user_media = Some(m);
+                }
+            }
+            Err(m) => return Err(Error::WithMessage(m)),
+        }
+    }
     // log::info!("get ctx {:?}", now.elapsed());
     // let now = std::time::Instant::now();
     if ctx.no_node() {

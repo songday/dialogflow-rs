@@ -90,6 +90,8 @@ quick-xml = "0.42.0"
 text-splitter = "0.32"
 # num_cpus = "1.17.0"
 turso = "0.7.2"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+base64 = "0.23.1"
 # sqlite-vec = { path = "/mnt/d/work/sqlite-vec/bindings/rust/" }
 
 [build-dependencies]

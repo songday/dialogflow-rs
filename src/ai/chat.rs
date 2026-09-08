@@ -66,6 +66,7 @@ pub(crate) async fn chat(
     robot_id: &str,
     // prompt: &str,
     chat_history: Option<Vec<Prompt>>,
+    media: Option<&crate::ai::dto::UserMediaData>,
     connect_timeout: Option<u32>,
     read_timeout: Option<u32>,
     result_sender: ResultSender<'_, StreamingResponseData>,
@@ -78,6 +79,7 @@ pub(crate) async fn chat(
                     robot_id,
                     &m,
                     chat_history,
+                    media,
                     settings.chat_provider.max_response_token_length as usize,
                     result_sender,
                 )?;
@@ -87,6 +89,9 @@ pub(crate) async fn chat(
                 open_ai(
                     &m,
                     chat_history,
+                    media,
+                    &settings.chat_provider.api_url,
+                    &settings.chat_provider.api_key,
                     connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis),
                     read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis),
                     &settings.chat_provider.proxy_url,
@@ -100,6 +105,7 @@ pub(crate) async fn chat(
                     &settings.chat_provider.api_url,
                     &m,
                     chat_history,
+                    media,
                     connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis),
                     read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis),
                     &settings.chat_provider.proxy_url,
@@ -121,12 +127,21 @@ fn huggingface(
     robot_id: &str,
     m: &HuggingFaceModel,
     chat_history: Option<Vec<Prompt>>,
+    media: Option<&crate::ai::dto::UserMediaData>,
     sample_len: usize,
     mut result_sender: ResultSender<'_, StreamingResponseData>,
 ) -> Result<()> {
     let info = m.get_info();
     // log::info!("model_type={:?}", &info.model_type);
-    let new_prompt = info.convert_prompt("", chat_history)?;
+    let empty_media = crate::ai::dto::UserMediaData::default();
+    let media = media.unwrap_or(&empty_media);
+    if !media.is_empty() && !info.supports_vision() {
+        return Err(Error::WithMessage(format!(
+            "Model {:?} doesn't support image input, please configure a vision model (e.g. Moondream2, or OpenAI/Ollama vision models).",
+            &info.model_type
+        )));
+    }
+    let new_prompt = info.convert_prompt("", chat_history.clone())?;
     log::info!("Prompt: {}", &new_prompt);
     let mut model = LOADED_MODELS.lock().unwrap_or_else(|e| {
         log::warn!("{:#?}", &e);
@@ -136,7 +151,7 @@ fn huggingface(
         let r = LoadedHuggingFaceModel::load(m)?;
         model.insert(String::from(robot_id), r);
     };
-    let loaded_model = model.get(robot_id).unwrap();
+    let loaded_model = model.get_mut(robot_id).unwrap();
     match loaded_model {
         LoadedHuggingFaceModel::Gemma(m) => super::gemma::gen_text(
             &m.0,
@@ -168,6 +183,31 @@ fn huggingface(
             Some(0.5),
             &mut result_sender,
         ),
+        LoadedHuggingFaceModel::Moondream((device, model, tokenizer)) => {
+            // Moondream's text backbone doesn't take a chat-formatted prompt,
+            // the user question is the last user message.
+            let question = chat_history
+                .as_ref()
+                .and_then(|h| {
+                    h.iter()
+                        .rev()
+                        .find(|p| p.role.eq("user") && !p.content.is_empty())
+                })
+                .map(|p| p.content.clone())
+                .unwrap_or_default();
+            super::moondream::gen_text(
+                device,
+                model,
+                tokenizer,
+                super::moondream::MoondreamInput {
+                    prompt: &question,
+                    images_base64: &media.images,
+                },
+                sample_len,
+                Some(0.5),
+                &mut result_sender,
+            )
+        }
         LoadedHuggingFaceModel::Bert(_m) => Err(Error::WithMessage(format!(
             "Unsuported model type {:?}.",
             &info.model_type
@@ -179,6 +219,9 @@ fn huggingface(
 async fn open_ai(
     m: &str,
     chat_history: Option<Vec<Prompt>>,
+    media: Option<&crate::ai::dto::UserMediaData>,
+    api_url: &str,
+    api_key: &str,
     connect_timeout_millis: u32,
     read_timeout_millis: u32,
     proxy_url: &str,
@@ -199,6 +242,8 @@ async fn open_ai(
         String::from("content"),
         Value::from("You are a helpful assistant."),
     );
+    let empty_media = crate::ai::dto::UserMediaData::default();
+    let media = media.unwrap_or(&empty_media);
     let mut messages: Vec<Value> = match chat_history {
         Some(h) if !h.is_empty() => {
             let mut d = Vec::with_capacity(h.len() + 1);
@@ -213,10 +258,41 @@ async fn open_ai(
         _ => Vec::with_capacity(1),
     };
     messages[0] = Value::Object(sys_message);
-    let mut user_message = Map::new();
-    user_message.insert(String::from("role"), Value::from("user"));
-    // user_message.insert(String::from("content"), Value::from(s));
-    messages.push(Value::Object(user_message));
+    // OpenAI-compatible vision format: the last user message's content becomes
+    // an array of typed parts (text + image_url) when images are present.
+    // Works with OpenAI, vLLM and other OpenAI-compatible servers.
+    if !media.is_empty() {
+        let last_user_idx = messages.iter().rposition(|m| {
+            m.get("role").and_then(|r| r.as_str()) == Some("user")
+        });
+        if let Some(idx) = last_user_idx {
+            let msg = messages[idx].as_object().unwrap();
+            let text = msg
+                .get("content")
+                .and_then(|c| c.as_str())
+                .unwrap_or_default()
+                .to_string();
+            let mut parts: Vec<Value> = Vec::with_capacity(media.images.len() + 1);
+            if !text.is_empty() {
+                let mut text_part = Map::new();
+                text_part.insert(String::from("type"), Value::from("text"));
+                text_part.insert(String::from("text"), Value::String(text));
+                parts.push(Value::Object(text_part));
+            }
+            for img in media.images.iter() {
+                let mut image_url = Map::new();
+                image_url.insert(String::from("url"), Value::String(img.clone()));
+                let mut part = Map::new();
+                part.insert(String::from("type"), Value::from("image_url"));
+                part.insert(String::from("image_url"), Value::Object(image_url));
+                parts.push(Value::Object(part));
+            }
+            let mut new_msg = Map::new();
+            new_msg.insert(String::from("role"), Value::from("user"));
+            new_msg.insert(String::from("content"), Value::Array(parts));
+            messages[idx] = Value::Object(new_msg);
+        }
+    }
     let messages = Value::Array(messages);
     req_body.insert(String::from("messages"), messages);
 
@@ -226,10 +302,15 @@ async fn open_ai(
     };
     req_body.insert(String::from("stream"), Value::Bool(stream));
     let obj = Value::Object(req_body);
+    let u = if api_url.is_empty() {
+        String::from("https://api.openai.com/v1/chat/completions")
+    } else {
+        String::from(api_url)
+    };
     let req = client
-        .post("https://api.openai.com/v1/chat/completions")
+        .post(u)
         .header("Content-Type", "application/json")
-        .header("Authorization", "Bearer ")
+        .header("Authorization", format!("Bearer {api_key}"))
         .body(serde_json::to_string(&obj)?);
     let res = req.send().await?;
     match result_sender {
@@ -293,6 +374,7 @@ async fn ollama(
     m: &str,
     // s: &str,
     chat_history: Option<Vec<Prompt>>,
+    media: Option<&crate::ai::dto::UserMediaData>,
     connect_timeout_millis: u32,
     read_timeout_millis: u32,
     proxy_url: &str,
@@ -312,16 +394,38 @@ async fn ollama(
     };
     req_body.insert(String::from("stream"), Value::Bool(stream));
 
+    let empty_media = crate::ai::dto::UserMediaData::default();
+    let media = media.unwrap_or(&empty_media);
     let messages: Vec<Value> = match chat_history {
         Some(h) if !h.is_empty() => {
             let mut d = Vec::with_capacity(h.len() + 1);
+            let mut seen_user = false;
             for p in h.into_iter() {
-                if p.content.is_empty() {
+                let is_user = p.role.eq("user");
+                if p.content.is_empty() && !(is_user && !media.is_empty() && !seen_user) {
                     continue;
                 }
                 let mut map = Map::new();
-                map.insert("role".into(), Value::String(p.role));
+                map.insert("role".into(), Value::String(p.role.clone()));
                 map.insert("content".into(), Value::String(p.content));
+                // Ollama expects raw base64 (no data URI prefix) in "images",
+                // attached to the last user message.
+                if is_user && !media.is_empty() && !seen_user {
+                    seen_user = true;
+                    let images: Vec<Value> = media
+                        .images
+                        .iter()
+                        .map(|img| {
+                            Value::String(match img.split_once(",") {
+                                Some((prefix, rest)) if prefix.starts_with("data:") => {
+                                    String::from(rest)
+                                }
+                                _ => img.clone(),
+                            })
+                        })
+                        .collect();
+                    map.insert("images".into(), Value::Array(images));
+                }
                 d.push(Value::from(map));
             }
             d
