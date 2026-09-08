@@ -9,6 +9,7 @@ class DialogFlowAiSDK {
         this.version = 1;
         this.sessionId = options.sessionId || this.newSessionId();
         this.importVariables = [];
+        this.attachments = [];
         this.chatHasEnded = false;
     }
 
@@ -25,7 +26,7 @@ class DialogFlowAiSDK {
     MessageKind = Object.freeze({
         PLAIN_TEXT: 'PlainText',
         RICH_TEXT: 'RichText',
-        IMAGE: 'Timeout',
+        IMAGE: 'Image',
     });
 
     newSessionId() {
@@ -41,10 +42,26 @@ class DialogFlowAiSDK {
             sessionId: this.sessionId,
             userInputResult: null,
             userInput: userInput || "",
+            attachments: self.attachments.splice(0, self.attachments.length),
             importVariables: self.importVariables.splice(0, self.importVariables.length),
             userInputIntent: userInputIntent
         };
         return body;
+    }
+
+    // attachment: { mimeType: 'image/jpeg', data: '<base64 or https URL>' }
+    // or an image URL string, which is converted automatically.
+    appendAttachment(attachment) {
+        if (typeof attachment === 'string') {
+            attachment = { mimeType: 'image/jpeg', data: attachment };
+        }
+        if (!attachment || !attachment.data) {
+            throw new Error('Invalid attachment: missing data');
+        }
+        if (!attachment.mimeType) {
+            attachment.mimeType = 'image/jpeg';
+        }
+        this.attachments.push(attachment);
     }
 
     appendImportVariable(name, value, kind) {
@@ -78,6 +95,8 @@ class DialogFlowAiSDK {
             data.userInputResult = this.chatHistory.length == 0 || data.userInput.length > 0 ? this.UserInputResult.SUCCESSFUL : this.UserInputResult.FAILED;
         if (data.importVariables == null)
             data.importVariables = [];
+        if (data.attachments == null)
+            data.attachments = [];
         if (data.userInputIntent != null && data.userInputIntent == '')
             data.userInputIntent = null;
     }
@@ -130,12 +149,24 @@ class DialogFlowAiSDK {
     async sendMessage(message) {
         const self = this;
 
+        // message.attachments: [{ mimeType, data }] or image URL strings.
+        const messageAttachments = message.attachments || [];
+        for (const a of messageAttachments)
+            self.appendAttachment(a);
+
         // 构造请求体
         const body = self.genRequestBody(message.content, null);
         self.correctData(body);
 
-        if (message.content)
-            self.addChat(message.content, 'userText', message.type, -1);
+        if (message.content || body.attachments.length > 0) {
+            const chatIdx = self.addChat(message.content || '', 'userText', message.type, -1);
+            if (body.attachments.length > 0) {
+                const record = self.chatHistory[chatIdx];
+                record.images = body.attachments
+                    .filter((a) => a.mimeType && a.mimeType.startsWith('image/'))
+                    .map((a) => a.data.startsWith('http') ? a.data : `data:${a.mimeType};base64,${a.data}`);
+            }
+        }
         // const res = {
         //     type: self.MessageKind.PLAIN_TEXT,
         //     content: '......',
