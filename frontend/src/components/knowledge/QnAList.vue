@@ -1,13 +1,13 @@
 <script setup>
-import { reactive, ref, onMounted, nextTick } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { httpReq } from '../../assets/tools.js'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { httpReq, cloneObj } from '../../assets/tools.js'
 import { useI18n } from 'vue-i18n'
-const { t, tm, rt } = useI18n();
+const { t, tm } = useI18n();
 import MaterialSymbolsBook5Outline from '~icons/material-symbols/book-5-outline';
 import EpPlus from '~icons/ep/plus';
-const route = useRoute()
-const router = useRouter();
+import EpMinus from '~icons/ep/minus';
+const route = useRoute();
 const robotId = route.params.robotId
 const qaData = reactive({
     id: null,
@@ -18,56 +18,72 @@ const qaData = reactive({
     answer: '',
 })
 const tableData = reactive([])
-const objectSpanMethod = ({ row, column, rowIndex, columnIndex }) => {
-    console.log(column);
-    return { rowspan: column.length, colspan: 1 }
-}
 const listQa = async () => {
-    const t = await httpReq('GET', 'kb/qa', { robotId: robotId }, null, null);
-    console.log(t);
-    if (t.status == 200)
-        tableData.splice(0, tableData.length, ...t.data);
+    const resp = await httpReq('GET', 'kb/qa', { robotId: robotId }, null, null);
+    if (resp.status == 200)
+        tableData.splice(0, tableData.length, ...resp.data);
 }
 onMounted(() => {
     listQa();
 })
+// Deep-clone the row into the form, so editing never mutates tableData directly
+// (also preserves question/similarQuestions vec_row_id without stale leftovers)
+const resetForm = (d) => {
+    qaData.id = d ? d.id : null;
+    qaData.question = d ? cloneObj(d.question) : { question: '' };
+    qaData.similarQuestions = d ? cloneObj(d.similarQuestions) : [];
+    qaData.answer = d ? d.answer : '';
+}
 const newQa = () => {
-    qaData.id = null;
-    qaData.question.question = '';
-    qaData.similarQuestions = [];
-    qaData.answer = ''
+    resetForm(null);
     dialogVisible.value = true
 }
 const showQaDetail = (idx) => {
-    qaDetailIdx.value = idx
     const d = tableData[idx];
     if (d) {
-        qaData.id = d.id;
-        qaData.question.question = d.question.question;
-        qaData.similarQuestions.splice(0, qaData.similarQuestions.length, ...d.similarQuestions);
-        qaData.answer = d.answer
+        qaDetailIdx.value = idx
+        resetForm(d)
         qaDetailVisible.value = true
     }
 }
 const editQa = (idx) => {
     const d = tableData[idx];
     if (d) {
-        qaData.id = d.id;
-        qaData.question.question = d.question.question;
-        qaData.similarQuestions.splice(0, qaData.similarQuestions.length, ...d.similarQuestions);
-        qaData.answer = d.answer
+        resetForm(d)
         dialogVisible.value = true
     }
 }
+const saving = ref(false)
 const saveQa = async () => {
-    const t = await httpReq('POST', 'kb/qa', { robotId: robotId }, null, qaData);
-    console.log(t);
-    dialogVisible.value = false
-    listQa()
+    if (!formRef.value || !(await formRef.value.validate().catch(() => false)))
+        return;
+    // Trim and drop blank similar questions before submitting
+    const payload = cloneObj(qaData);
+    payload.question.question = payload.question.question.trim();
+    payload.similarQuestions = payload.similarQuestions
+        .map(q => ({ ...q, question: (q.question || '').trim() }))
+        .filter(q => q.question !== '');
+    payload.answer = payload.answer.trim();
+    saving.value = true;
+    try {
+        const resp = await httpReq('POST', 'kb/qa', { robotId: robotId }, null, payload);
+        if (resp.status == 200) {
+            ElMessage.success(t('common.saved'));
+            dialogVisible.value = false
+            listQa()
+        } else {
+            ElMessage.error(resp.err?.message || t('common.errTip'));
+        }
+    } finally {
+        saving.value = false;
+    }
 }
 const deleteQa = async (idx) => {
+    const d = tableData[idx];
+    if (!d)
+        return;
     ElMessageBox.confirm(
-        'Confirm to delete this QnA?',
+        t('kb.qa.delConfirm'),
         'Warning',
         {
             confirmButtonText: t('common.del'),
@@ -75,45 +91,54 @@ const deleteQa = async (idx) => {
             type: 'warning',
         }
     ).then(async () => {
-        const d = tableData[idx];
-        if (d) {
-            qaData.id = d.id;
-            const t = await httpReq('DELETE', 'kb/qa', { robotId: robotId }, null, qaData);
-            console.log(t);
+        const payload = {
+            id: d.id,
+            question: d.question,
+            similarQuestions: d.similarQuestions,
+            answer: d.answer,
+        };
+        const resp = await httpReq('DELETE', 'kb/qa', { robotId: robotId }, null, payload);
+        if (resp.status == 200) {
+            ElMessage.success(t('common.deleted'));
             nextTick(() => {
                 qaDetailVisible.value = false
                 listQa()
             })
+        } else {
+            ElMessage.error(resp.err?.message || t('common.errTip'));
         }
     }).catch(() => {
-        // ElMessage({
-        //     type: 'info',
-        //     message: 'Delete canceled',
-        // })
+        // Delete canceled
     })
 }
-const testQa = (text) => {
-    loading.value = true;
-    (async function (text) {
-        const t = await httpReq('GET', 'kb/qa/dryrun', { robotId: robotId, text: text }, null, null);
-        console.log(t);
-        if (t.status == 200)
-            testQnAResult.value = t.data[0].answer + ' (Distance: ' + t.data[1] + ')';
-        else
-            testQnAResult.value = t.err.message;
-    })(text).then(() => loading.value = false);
-}
-const goBack = () => {
-    router.push({ name: 'robotDetail', params: { robotId: robotId } });
-}
-
-const dialogVisible = ref(false)
-const qaDetailVisible = ref(false)
-const qaDetailIdx = ref(0)
-const dryRunFormVisible = ref(false)
 const loading = ref(false)
 const testQnAText = ref('')
 const testQnAResult = ref('')
+const testQa = async () => {
+    if (!testQnAText.value.trim())
+        return;
+    loading.value = true;
+    try {
+        const resp = await httpReq('GET', 'kb/qa/dryrun', { robotId: robotId, text: testQnAText.value }, null, null);
+        if (resp.status == 200)
+            testQnAResult.value = resp.data[0].answer + ' (Distance: ' + resp.data[1] + ')';
+        else
+            testQnAResult.value = resp.err?.message || t('common.errTip');
+    } finally {
+        loading.value = false;
+    }
+}
+
+const dialogVisible = ref(false)
+const dialogTitle = computed(() => qaData.id == null ? t('kb.qa.addTitle') : t('kb.qa.editTitle'))
+const qaDetailVisible = ref(false)
+const qaDetailIdx = ref(0)
+const dryRunFormVisible = ref(false)
+const formRef = ref()
+const rules = {
+    'question.question': [{ required: true, message: () => t('kb.qa.rules.question'), trigger: 'blur' }],
+    answer: [{ required: true, message: () => t('kb.qa.rules.answer'), trigger: 'blur' }],
+}
 const formLabelWidth = '120px'
 </script>
 <style scoped>
@@ -129,6 +154,11 @@ const formLabelWidth = '120px'
     color: #6366f1;
 }
 
+.qa-question {
+    font-weight: 600;
+    color: #1f2d3d;
+}
+
 .qa-answer {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -136,105 +166,144 @@ const formLabelWidth = '120px'
     overflow: hidden;
     color: #4e5969;
 }
+
+.similar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.similar-row .el-input {
+    flex: 1;
+}
+
+.similar-add {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.form-tip {
+    font-size: 12px;
+    color: #98a2b3;
+    line-height: 1.5;
+}
 </style>
 <template>
     <div class="page-header">
         <h1 class="page-title">
             <span class="page-title-icon"><MaterialSymbolsBook5Outline /></span>
-            Questions and answer
+            {{ $t('kb.qa.title') }}
         </h1>
         <div class="page-actions">
-            <el-button @click="dryRunFormVisible = true">Test QnA</el-button>
+            <el-button @click="dryRunFormVisible = true">{{ $t('kb.qa.test') }}</el-button>
             <el-button type="primary" @click="newQa">
                 <el-icon style="margin-right: 6px"><EpPlus /></el-icon>
-                Add QnA pair
+                {{ $t('kb.qa.add') }}
             </el-button>
         </div>
     </div>
     <div class="page-card">
-        <el-table :data="tableData" stripe style="width: 100%">
-            <el-table-column prop="question.question" label="Question" min-width="300" />
-            <el-table-column label="No. of similar questions" width="190" align="center">
+        <el-table :data="tableData" stripe style="width: 100%" :empty-text="t('kb.qa.empty')">
+            <el-table-column prop="question.question" :label="tm('kb.qa.table')[0]" min-width="300">
+                <template #default="scope">
+                    <span class="qa-question">{{ scope.row.question.question }}</span>
+                </template>
+            </el-table-column>
+            <el-table-column :label="tm('kb.qa.table')[1]" width="190" align="center">
                 <template #default="scope">
                     <span class="similar-count">{{ scope.row.similarQuestions.length }}</span>
                 </template>
             </el-table-column>
-            <el-table-column prop="answer" label="Answer" min-width="240">
+            <el-table-column prop="answer" :label="tm('kb.qa.table')[2]" min-width="240">
                 <template #default="scope">
                     <span class="qa-answer">{{ scope.row.answer }}</span>
                 </template>
             </el-table-column>
-            <el-table-column fixed="right" label="Operations" width="200" align="center">
+            <el-table-column fixed="right" :label="tm('kb.qa.table')[3]" width="200" align="center">
                 <template #default="scope">
-                    <el-button link type="primary" @click="showQaDetail(scope.$index)">Detail</el-button>
-                    <el-button link type="primary" @click="editQa(scope.$index)">Edit</el-button>
-                    <el-button link type="danger" @click="deleteQa(scope.$index)">Delete</el-button>
+                    <el-button link type="primary" @click="showQaDetail(scope.$index)">{{ $t('common.toDetail') }}
+                    </el-button>
+                    <el-button link type="primary" @click="editQa(scope.$index)">{{ $t('common.edit') }}</el-button>
+                    <el-button link type="danger" @click="deleteQa(scope.$index)">{{ $t('common.del') }}</el-button>
                 </template>
             </el-table-column>
         </el-table>
     </div>
-    <el-dialog v-model="dialogVisible" title="Add new QA" width="720px" destroy-on-close>
-        <el-form :model="qaData">
-            <el-form-item label="Question" :label-width="formLabelWidth">
-                <el-input v-model="qaData.question.question" placeholder="The question users may ask" />
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="720px" destroy-on-close>
+        <el-form ref="formRef" :model="qaData" :rules="rules">
+            <el-form-item :label="$t('kb.qa.form.question')" prop="question.question" :label-width="formLabelWidth">
+                <el-input v-model="qaData.question.question" :placeholder="$t('kb.qa.form.questionPH')" maxlength="200" />
             </el-form-item>
-            <el-form-item v-for="(item, index) in qaData.similarQuestions" :id="index" :key="index"
-                :label="index == 0 ? 'Similar questions' : ''" :label-width="formLabelWidth">
-                <el-input v-model="qaData.similarQuestions[index].question" placeholder="A variant phrasing of the question"
-                    style="width: 90%;" />
-                <el-button circle type="danger" plain @click="qaData.similarQuestions.splice(index, 1)">-</el-button>
+            <el-form-item v-for="(item, index) in qaData.similarQuestions" :key="index"
+                :label="index == 0 ? $t('kb.qa.form.similar') : ''" :label-width="formLabelWidth">
+                <div class="similar-row">
+                    <el-input v-model="item.question" :placeholder="$t('kb.qa.form.similarPH')" maxlength="200" />
+                    <el-button circle type="danger" plain @click="qaData.similarQuestions.splice(index, 1)">
+                        <el-icon><EpMinus /></el-icon>
+                    </el-button>
+                </div>
             </el-form-item>
             <el-form-item label="" :label-width="formLabelWidth">
-                <el-button plain @click="qaData.similarQuestions.push({ question: '' })">Add similar
-                    question</el-button>
+                <div class="similar-add">
+                    <el-button plain @click="qaData.similarQuestions.push({ question: '' })">
+                        <el-icon style="margin-right: 4px"><EpPlus /></el-icon>
+                        {{ $t('kb.qa.form.addSimilar') }}
+                    </el-button>
+                    <span class="form-tip">{{ $t('kb.qa.form.similarTip') }}</span>
+                </div>
             </el-form-item>
-            <el-form-item label="Answer" :label-width="formLabelWidth">
-                <el-input v-model="qaData.answer" placeholder="The answer given to users" type="textarea" :rows="5" />
+            <el-form-item :label="$t('kb.qa.form.answer')" prop="answer" :label-width="formLabelWidth">
+                <el-input v-model="qaData.answer" :placeholder="$t('kb.qa.form.answerPH')" type="textarea" :rows="5"
+                    maxlength="2000" show-word-limit />
             </el-form-item>
         </el-form>
         <template #footer>
             <div class="dialog-footer">
-                <el-button @click="dialogVisible = false">Cancel</el-button>
-                <el-button type="primary" @click="saveQa">
+                <el-button @click="dialogVisible = false">{{ $t('common.cancel') }}</el-button>
+                <el-button type="primary" :loading="saving" @click="saveQa">
                     {{ $t('common.save') }}
                 </el-button>
             </div>
         </template>
     </el-dialog>
-    <el-drawer v-model="qaDetailVisible" title="Detail of QnA" direction="rtl" size="480px">
+    <el-drawer v-model="qaDetailVisible" :title="$t('kb.qa.detail')" direction="rtl" size="480px">
         <el-form>
-            <el-form-item label="Question" :label-width="formLabelWidth">
+            <el-form-item :label="$t('kb.qa.form.question')" :label-width="formLabelWidth">
                 {{ qaData.question.question }}
             </el-form-item>
-            <el-form-item label="Similar questions" :label-width="formLabelWidth"
+            <el-form-item :label="$t('kb.qa.form.similar')" :label-width="formLabelWidth"
                 v-show="qaData.similarQuestions.length > 0">
-                <div v-for="(item, idx) in qaData.similarQuestions" :id="idx" :key="idx">
+                <div v-for="(item, idx) in qaData.similarQuestions" :key="idx">
                     {{ item.question }}
                 </div>
             </el-form-item>
-            <el-form-item label="Answer" :label-width="formLabelWidth">
+            <el-form-item :label="$t('kb.qa.form.answer')" :label-width="formLabelWidth">
                 {{ qaData.answer }}
             </el-form-item>
         </el-form>
         <div class="demo-drawer__footer">
-            <el-button type="primary" @click="dialogVisible = true">Edit</el-button>
-            <el-button type="danger" @click="deleteQa(qaDetailIdx)">Delete</el-button>
-            <el-button @click="qaDetailVisible = false">Close</el-button>
+            <el-button type="primary" @click="qaDetailVisible = false; editQa(qaDetailIdx)">{{ $t('common.edit') }}
+            </el-button>
+            <el-button type="danger" @click="deleteQa(qaDetailIdx)">{{ $t('common.del') }}</el-button>
+            <el-button @click="qaDetailVisible = false">{{ $t('common.close') }}</el-button>
         </div>
     </el-drawer>
-    <el-drawer v-model="dryRunFormVisible" title="Test QnA" direction="rtl" size="480px">
+    <el-drawer v-model="dryRunFormVisible" :title="$t('kb.qa.test')" direction="rtl" size="480px">
         <el-form>
             <el-form-item label="">
-                <el-input v-model="testQnAText" placeholder="Please input some texts" clearable
-                    @keyup.enter="testQa(testQnAText)" />
+                <el-input v-model="testQnAText" :placeholder="$t('kb.qa.testPH')" clearable
+                    @keyup.enter="testQa" />
             </el-form-item>
             <el-form-item label="">
                 <el-alert v-if="testQnAResult" :title="testQnAResult" type="info" :closable="false" />
             </el-form-item>
         </el-form>
         <div class="demo-drawer__footer">
-            <el-button type="primary" :loading="loading" @click="testQa(testQnAText)">Test</el-button>
-            <el-button @click="dryRunFormVisible = false">Close</el-button>
+            <el-button type="primary" :loading="loading" @click="testQa">{{ $t('kb.qa.test') }}</el-button>
+            <el-button @click="dryRunFormVisible = false">{{ $t('common.close') }}</el-button>
         </div>
     </el-drawer>
 </template>
