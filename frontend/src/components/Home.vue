@@ -673,7 +673,7 @@ const compareDifferentRobotTypeData = [
                     </span>
                 </router-link>
                 <a
-                    href="https://dialogflowai.github.io/doc"
+                    href="https://dialogflowai.github.io/#/doc"
                     target="_blank"
                     class="feature-card"
                 >
