@@ -430,13 +430,8 @@ onMounted(async () => {
             color: "#f7f8fa",
         },
         grid: {
-            visible: true,
-            type: "dot",
-            size: 16,
-            args: {
-                color: "#d8dce6",
-                thickness: 1,
-            },
+            visible: false,
+            size: 1,
         },
         autoResize: false,
         connecting: {
