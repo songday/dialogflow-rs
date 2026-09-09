@@ -7,6 +7,7 @@ pub(crate) mod dto;
 pub(crate) mod executor;
 pub(crate) mod facade;
 pub(crate) mod node;
+pub(crate) mod var_replace;
 // pub(crate) mod node_impl;
 // pub(crate) mod request;
 // pub(crate) mod response;
