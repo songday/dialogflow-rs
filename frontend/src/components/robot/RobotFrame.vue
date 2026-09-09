@@ -131,6 +131,10 @@ const isCollapse = ref(false)
 .frame-main {
     padding: 24px 32px;
     min-width: 0;
+    /* el-main defaults to overflow: auto, which becomes the sticky
+       positioning viewport; since the actual scrolling happens on the
+       window, that breaks position: sticky inside child pages. */
+    overflow: visible;
 }
 </style>
 <template>
