@@ -21,8 +21,6 @@ use crate::result::Result;
 use crate::variable::crud as variable;
 use crate::variable::dto::{VariableType, VariableValue};
 
-const VAR_WRAP_SYMBOL: char = '`';
-
 // #[repr(u8)]
 // #[derive(PartialEq)]
 // pub(in crate::flow::rt) enum RuntimeNodeTypeId {
@@ -92,58 +90,17 @@ pub(crate) trait RuntimeNode {
 }
 
 async fn replace_vars(text: &str, req: &Request, ctx: &mut Context) -> Result<String> {
-    let mut new_str = String::with_capacity(128);
-    let mut start = 0usize;
-    while let Some(mut begin) = text[start..].find(VAR_WRAP_SYMBOL) {
-        begin += start;
-        new_str.push_str(&text[start..begin]);
-        if let Some(mut end) = text[begin + 1..].find(VAR_WRAP_SYMBOL) {
-            end = begin + end + 1;
-            // println!("{} {} {} {}", &text[begin + 1..],start, begin,end);
-            let var = variable::get(&req.robot_id, &text[begin + 1..end])?;
-            if let Some(v) = var {
-                if let Some(value) = v.get_value2(req, ctx).await {
-                    new_str.push_str(&value.val_to_string());
-                }
-                start = end + 1;
-            } else {
-                new_str.push_str(&text[begin..end]);
-                start = end;
-            }
-            // new_str.push_str(&variable::get_value(&text[begin + 1..end - 1], req, ctx));
-        } else {
-            start = begin;
-            break;
-        }
-    }
-    // loop {
-    //     if let Some(mut begin) = text[start..].find(VAR_WRAP_SYMBOL) {
-    //         begin += start;
-    //         new_str.push_str(&text[start..begin]);
-    //         if let Some(mut end) = text[begin + 1..].find(VAR_WRAP_SYMBOL) {
-    //             end = begin + end + 1;
-    //             // println!("{} {} {} {}", &text[begin + 1..],start, begin,end);
-    //             let var = variable::get(&req.robot_id, &text[begin + 1..end])?;
-    //             if let Some(v) = var {
-    //                 if let Some(value) = v.get_value(req, ctx) {
-    //                     new_str.push_str(&value.val_to_string());
-    //                 }
-    //                 start = end + 1;
-    //             } else {
-    //                 new_str.push_str(&text[begin..end]);
-    //                 start = end;
-    //             }
-    //             // new_str.push_str(&variable::get_value(&text[begin + 1..end - 1], req, ctx));
-    //         } else {
-    //             start = begin;
-    //             break;
-    //         }
-    //     } else {
-    //         break;
-    //     }
-    // }
-    new_str.push_str(&text[start..]);
-    Ok(new_str)
+    super::var_replace::replace_vars_with(text, |name| async {
+        let var = variable::get(&req.robot_id, name)?;
+        Ok(match var {
+            Some(v) => v
+                .get_value2(req, ctx)
+                .await
+                .map(|value| value.val_to_string()),
+            None => None,
+        })
+    })
+    .await
 }
 
 #[inline]
@@ -250,6 +207,7 @@ impl RuntimeNode for LlmGenTextNode {
             let robot_id = req.robot_id.clone();
             let connect_timeout = self.connect_timeout;
             let read_timeout = self.read_timeout;
+            let media = ctx.user_media.clone();
             // let (s, r) = tokio::sync::mpsc::channel::<String>(1);
             if channel_sender.sender.is_none() {
                 let (s, r) = tokio::sync::mpsc::channel::<StreamingResponseData>(2);
@@ -275,6 +233,7 @@ impl RuntimeNode for LlmGenTextNode {
                 if let Err(e) = crate::ai::chat::chat(
                     &robot_id,
                     Some(chat_history),
+                    media.as_ref(),
                     connect_timeout,
                     read_timeout,
                     ResultSender::ChannelSender(sender_wrappoer),
@@ -290,6 +249,7 @@ impl RuntimeNode for LlmGenTextNode {
             if let Err(e) = crate::ai::chat::chat(
                 &req.robot_id,
                 Some(chat_history),
+                ctx.user_media.as_ref(),
                 self.connect_timeout,
                 self.read_timeout,
                 ResultSender::StrBuf(&mut s),
@@ -744,6 +704,7 @@ impl LlmChatNode {
             let robot_id = req.robot_id.clone();
             let connect_timeout = self.connect_timeout;
             let read_timeout = self.read_timeout;
+            let media = ctx.user_media.clone();
             // let (s, r) = tokio::sync::mpsc::channel::<String>(1);
             if channel_sender.sender.is_none() {
                 let (s, r) = tokio::sync::mpsc::channel::<StreamingResponseData>(2);
@@ -759,6 +720,7 @@ impl LlmChatNode {
                 if let Err(e) = crate::ai::chat::chat(
                     &robot_id,
                     chat_history,
+                    media.as_ref(),
                     connect_timeout,
                     read_timeout,
                     ResultSender::ChannelSender(sender_wrapper),
@@ -775,6 +737,7 @@ impl LlmChatNode {
             if let Err(e) = crate::ai::chat::chat(
                 &req.robot_id,
                 chat_history,
+                ctx.user_media.as_ref(),
                 self.connect_timeout,
                 self.read_timeout,
                 ResultSender::StrBuf(&mut s),
