@@ -60,6 +60,7 @@ import { FontFamily, TextStyle } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import Blockquote from "@tiptap/extension-blockquote";
 import TextAlign from "@tiptap/extension-text-align";
+import { Variable } from "./variableExtension.js";
 import MaterialSymbolsFormatAlignLeft from "~icons/material-symbols/format-align-left";
 import MaterialSymbolsFormatAlignCenter from "~icons/material-symbols/format-align-center";
 import MaterialSymbolsFormatAlignRight from "~icons/material-symbols/format-align-right";
@@ -235,45 +236,44 @@ export default defineComponent({
         this.robotType = getRobotType(this.robotId);
         console.log("robotType=" + this.robotType);
         // console.log(this.nodeData.dialogText)
-        if (this.robotType == "TextBot") {
-            this.editor = new Editor({
-                extensions: [
-                    // Blockquote,
-                    Color,
-                    Highlight.configure({ multicolor: true }),
-                    StarterKit,
-                    Underline,
-                    TextStyle,
-                    TextAlign.configure({
-                        types: ["heading", "paragraph"],
-                    }),
-                ],
-                // content: '<p>I’m running Tiptap with Vue.js. 🎉</p>',
-                content: this.nodeData.dialogText,
-                editorProps: {
-                    // https://github.com/ueberdosis/tiptap/issues/943
-                    transformPastedText(text) {
-                        return text
-                            .replace(/\u200B/g, "")
-                            .replace(/[\xA0|\u3000]/g, " ");
-                    },
-                    transformPastedHTML(html) {
-                        return html
-                            .replace(/\u200B/g, "")
-                            .replace(/[\xA0|\u3000]/g, " ");
-                    },
+        this.editor = new Editor({
+            extensions: [
+                // Blockquote,
+                Color,
+                Highlight.configure({ multicolor: true }),
+                StarterKit,
+                Underline,
+                TextStyle,
+                Variable,
+                TextAlign.configure({
+                    types: ["heading", "paragraph"],
+                }),
+            ],
+            // content: '<p>I’m running Tiptap with Vue.js. 🎉</p>',
+            content: this.nodeData.dialogText,
+            editorProps: {
+                // https://github.com/ueberdosis/tiptap/issues/943
+                transformPastedText(text) {
+                    return text
+                        .replace(/​/g, "")
+                        .replace(/[ 　]/g, " ");
                 },
-                onUpdate: () => {
-                    // HTML
-                    this.$emit("update:modelValue", this.editor.getHTML());
-                    this.nodeData.dialogText = this.editor.getHTML();
+                transformPastedHTML(html) {
+                    return html
+                        .replace(/​/g, "")
+                        .replace(/[ 　]/g, " ");
+                },
+            },
+            onUpdate: () => {
+                // HTML
+                this.$emit("update:modelValue", this.editor.getHTML());
+                this.nodeData.dialogText = this.editor.getHTML();
 
-                    // JSON
-                    // this.$emit('update:modelValue', this.editor.getJSON())
-                },
-            });
-            this.$emit("update:modelValue", this.nodeData.dialogText);
-        }
+                // JSON
+                // this.$emit('update:modelValue', this.editor.getJSON())
+            },
+        });
+        this.$emit("update:modelValue", this.nodeData.dialogText);
         httpReq(
             "GET",
             "management/settings",
@@ -298,6 +298,10 @@ export default defineComponent({
     },
     beforeUnmount() {
         if (this.editor) this.editor.destroy();
+    },
+    unmounted() {
+        // The watcher reads `editor` — guard against it firing after destroy.
+        this.editor = null;
     },
     methods: {
         hideForm() {
@@ -357,7 +361,7 @@ export default defineComponent({
             ) {
                 t = this.nodeData.dialogLlmGenPrompt;
             }
-            let p = t.replace(/<[^>]+>/g, "").replace(/\r/g, "");
+            let p = this.dialogTextToPlain(t);
             if (p) {
                 const array = p.split("\n");
                 // console.log(array.splice(3, array.length - 3))
@@ -410,6 +414,42 @@ export default defineComponent({
                 direction: "bottom",
             });
         },
+        // Convert dialog text (plain or HTML with variable chips) to plain
+        // preview text, keeping variable names wrapped in back ticks so the
+        // template can render them as chips.
+        dialogTextToPlain(t) {
+            if (!t) return "";
+            // Extract variable chip labels before stripping tags.
+            const varsInText = [];
+            const varHtml = t.replace(
+                /<var\s+[^>]*data-var-name="([^"]*)"[^>]*>[\s\S]*?<\/var>/g,
+                (m, name) => {
+                    varsInText.push(name);
+                    return "\x00" + (varsInText.length - 1) + "\x00";
+                },
+            );
+            let p = varHtml
+                .replace(/<br\s*\/?>/gi, "\n")
+                .replace(/<\/p>/gi, "\n")
+                .replace(/<[^>]+>/g, "")
+                .replace(/\r/g, "");
+            // Restore chip markers as `name` (back ticks are only a preview
+            // marker here; backend still resolves them as real variables).
+            p = p.replace(/\x00(\d+)\x00/g, (m, i) => "\x01" + varsInText[i] + "\x01");
+            p = p.replace(/\x01([^\x01]*)\x01/g, "`$1`");
+            return p;
+        },
+        // Split preview text into plain / variable segments for chip rendering.
+        splitPreviewSegments(t) {
+            const segments = [];
+            if (!t) return segments;
+            const parts = t.split(/`([^`]*)`/);
+            for (let i = 0; i < parts.length; i++) {
+                if (parts[i] === "") continue;
+                segments.push({ isVar: i % 2 == 1, text: parts[i] });
+            }
+            return segments;
+        },
         saveForm() {
             let text = "";
             for (let i = 0; i < this.nextSteps.length; i++) {
@@ -428,8 +468,9 @@ export default defineComponent({
             branch.branchId = port.id;
             this.validate();
             this.setPreview();
-            this.nodeData.dialogTextType =
-                this.robotType == "TextBot" ? "TextHtml" : "TextPlain";
+            // All robot types now edit through tiptap; the editor emits HTML.
+            // Callers that only accept plain text read `preview` instead.
+            this.nodeData.dialogTextType = "TextHtml";
             // console.log('dialogTextType=' + this.nodeData.dialogTextType);
             // console.log(this.preview);
             node.removeData({ silent: true });
@@ -460,26 +501,22 @@ export default defineComponent({
             this.varDialogVisible = true;
         },
         insertVar() {
-            this.nodeData.dialogText += "`" + this.selectedVar + "`";
-            /*
-            const t = this.$refs.textArea;
-            // console.log(t);
-            t.focus();
-            let sel = window.getSelection();
-            if (this.lastEditRange) {
-                sel.removeAllRanges();
-                sel.addRange(this.lastEditRange);
-                const range = sel.getRangeAt(0);
-                // console.log(range);
-                range.insertNode(document.createTextNode('`' + this.selectedVar + '`'));
-                range.collapse(false)
-                this.lastEditRange = sel.getRangeAt(0);
+            if (!this.selectedVar) return;
+            const item = this.vars.find(
+                (v) => v.varName === this.selectedVar,
+            );
+            if (this.editor) {
+                // Rich-text editor: insert an atomic variable chip at the cursor.
+                this.editor
+                    .chain()
+                    .focus()
+                    .insertVariable(this.selectedVar, item?.varType)
+                    .run();
+                this.nodeData.dialogText = this.editor.getHTML();
+                this.$emit("update:modelValue", this.nodeData.dialogText);
             } else {
-                this.nodeData.dialogText += '`' + this.selectedVar + '`';
-                // selection.selectAllChildren(t.value);
-                // selection.collapseToEnd()
+                this.nodeData.dialogText += "`" + this.selectedVar + "`";
             }
-            */
             this.varDialogVisible = false;
         },
         changeEditorNote() {
@@ -633,6 +670,7 @@ export default defineComponent({
     emits: ["update:modelValue"],
     watch: {
         modelValue(value) {
+            if (!this.editor) return;
             // HTML
             const isSame = this.editor.getHTML() === value;
 
@@ -714,6 +752,22 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
     overflow: hidden;
 }
 
+/* Variable chip on the canvas node preview */
+.previewVarChip {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    padding: 0 5px;
+    margin: 0 1px;
+    border-radius: 6px;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #4f46e5;
+    white-space: nowrap;
+    vertical-align: baseline;
+}
+
 /* .optionWidth {
     width: 110px;
 } */
@@ -776,6 +830,29 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
         box-decoration-break: clone;
         padding: 0.1rem 0.3rem;
     }
+
+    /* Variable chip rendered by the custom `variable` inline node */
+    var.var-chip {
+        display: inline-block;
+        font-style: normal;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.86em;
+        line-height: 1.6;
+        padding: 0 0.5em;
+        margin: 0 0.15em;
+        border-radius: 0.45em;
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        color: #4f46e5;
+        white-space: nowrap;
+        user-select: none;
+        -webkit-user-select: none;
+
+        &.ProseMirror-selectednode {
+            background: #e0e7ff;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35);
+        }
+    }
 }
 
 /* Rich text editor container */
@@ -829,7 +906,15 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
             </span>
         </div>
         <div ref="nodeAnswer" class="nodeBody">
-            {{ preview }}
+            <template
+                v-for="(seg, idx) in splitPreviewSegments(preview)"
+                :key="idx"
+            >
+                <span v-if="seg.isVar" class="previewVarChip">{{
+                    seg.text
+                }}</span>
+                <template v-else>{{ seg.text }}</template>
+            </template>
         </div>
         <!-- <el-text ref="nodeAnswer" line-clamp="2">
             {{ preview }}
@@ -881,13 +966,6 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                             <el-radio value="1">Plain text</el-radio>
                             <el-radio value="2">Rich text</el-radio>
                         </el-radio-group> -->
-                    <el-input
-                        v-if="editor == null || robotType != 'TextBot'"
-                        ref="textArea"
-                        v-model="nodeData.dialogText"
-                        type="textarea"
-                        @blur="getSel"
-                    />
                     <!-- <div v-show="textEditor == '1'" ref="textArea" v-text="nodeData.dialogText" class="divInputBox"
                             contenteditable="true" @blur="getSel"></div> -->
                     <!-- <EleTipTap v-show="textEditor == '2'" :editorText="nodeData.dialogText" @updatedEditorText="editorCallback" /> -->
@@ -1167,8 +1245,7 @@ watch(this.nodeData.dialogText, async (newT, oldT) => {
                     <editor-content
                         class="editorWrap"
                         :editor="editor"
-                        v-if="editor && robotType == 'TextBot'"
-                        v-model="nodeData.dialogText"
+                        v-if="editor"
                     />
                 </el-form-item>
                 <el-form-item

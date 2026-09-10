@@ -76,11 +76,10 @@ pub(crate) async fn list(robot_id: &str) -> Result<Vec<QuestionAnswerPair>> {
     let mut rows = conn.query(sql, ()).await?;
     let mut d: Vec<QuestionAnswerPair> = Vec::with_capacity(10);
     while let Some(row) = rows.next().await? {
-        d.push(serde_json::from_str(dbg!(
-            row.get_value(0)?.as_text().unwrap()
-        ))?);
+        d.push(serde_json::from_str(row.get_value(0)?.as_text().unwrap())?);
     }
     Ok(d)
+
 }
 
 pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i64> {
@@ -91,15 +90,16 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
         let sql = format!("INSERT INTO {robot_id}(qa_data, created_at)VALUES(?, unixepoch())");
         let mut stmt = tx.prepare(&sql).await?;
         stmt.execute((serde_json::to_string(&d)?,)).await?;
-        // record_id = conn.last_insert_rowid();
-        record_id = time::UtcDateTime::now().unix_timestamp() - 1760025600000;
+        record_id = tx.last_insert_rowid();
         d.id = Some(record_id);
     } else {
-        let sql = format!("UPDATE {robot_id} SET qa_data = ? WHERE id = ?");
-        let mut stmt = tx.prepare(&sql).await?;
         record_id = d.id.unwrap();
-        stmt.execute((serde_json::to_string(&d)?, record_id))
-            .await?;
+        // Drop all existing vectors of this QnA; they are re-inserted below.
+        // This also cleans up rows orphaned by similar questions removed in
+        // this edit, which a plain per-row UPDATE would leave behind.
+        let sql = format!("DELETE FROM {robot_id}_vec WHERE qa_id = ?1");
+        let mut stmt = tx.prepare(&sql).await?;
+        stmt.execute([turso::Value::Integer(record_id)]).await?;
     }
     let mut questions: Vec<&mut QuestionData> = Vec::with_capacity(5);
     questions.push(&mut d.question);
@@ -111,7 +111,6 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
     let mut created_table = false;
 
     let mut insert_stmt = Option::None::<turso::Statement>;
-    let mut update_stmt = Option::None::<turso::Statement>;
     for q in questions.iter_mut() {
         let vectors = embedding::embedding(robot_id, &q.question).await?;
         if vectors.0.is_empty() {
@@ -121,48 +120,38 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
         }
 
         log::info!("vectors.0.len() = {}", vectors.0.len());
-        if q.vec_row_id.is_none() {
-            if !created_table {
-                let sql = format!(
-                    "CREATE TABLE IF NOT EXISTS {robot_id}_vec (
-                        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-                        qa_id INTEGER NOT NULL,
-                        qa_vec F32_BLOB({}) NOT NULL
-                    );
-                    ",
-                    vectors.0.len(),
+        if !created_table {
+            let sql = format!(
+                "CREATE TABLE IF NOT EXISTS {robot_id}_vec (
+                    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    qa_id INTEGER NOT NULL,
+                    qa_vec F32_BLOB({}) NOT NULL
                 );
-                tx.execute(sql, ()).await?;
-                created_table = true;
-            }
-            if insert_stmt.is_none() {
-                let sql = format!(
-                    "INSERT INTO {robot_id}_vec (qa_id, qa_vec)VALUES(?1, vector32(?2))",
-                    //  ON CONFLICT(rowid) DO UPDATE SET qa_vec = excluded.qa_vec;
-                );
-                insert_stmt = Some(tx.prepare(&sql).await?);
-            }
-            let id = insert_stmt
-                .as_mut()
-                .unwrap()
-                .execute((record_id, embedding::vec_to_db(&vectors.0)))
-                .await?;
-            q.vec_row_id = Some(id);
-        } else {
-            if update_stmt.is_none() {
-                let sql = format!(
-                    "UPDATE {robot_id}_vec SET qa_vec = vector32(?1) WHERE qa_id = ?2",
-                    //  ON CONFLICT(rowid) DO UPDATE SET qa_vec = excluded.qa_vec;
-                );
-                update_stmt = Some(tx.prepare(&sql).await?);
-            }
-            update_stmt
-                .as_mut()
-                .unwrap()
-                .execute((embedding::vec_to_db(&vectors.0), q.vec_row_id.unwrap()))
-                .await?;
+                ",
+                vectors.0.len(),
+            );
+            tx.execute(sql, ()).await?;
+            created_table = true;
         }
+        if insert_stmt.is_none() {
+            let sql = format!(
+                "INSERT INTO {robot_id}_vec (qa_id, qa_vec)VALUES(?1, vector32(?2))",
+            );
+            insert_stmt = Some(tx.prepare(&sql).await?);
+        }
+        insert_stmt
+            .as_mut()
+            .unwrap()
+            .execute((record_id, embedding::vec_to_db(&vectors.0)))
+            .await?;
+        q.vec_row_id = Some(tx.last_insert_rowid() as u64);
     }
+    // Write the JSON back with the real id and the vec row ids assigned
+    // above, otherwise edits would re-insert vectors every time.
+    let sql = format!("UPDATE {robot_id} SET qa_data = ? WHERE id = ?");
+    let mut stmt = tx.prepare(&sql).await?;
+    stmt.execute((serde_json::to_string(&d)?, record_id))
+        .await?;
     tx.commit().await?;
     Ok(record_id)
 }
@@ -197,7 +186,7 @@ pub(crate) async fn retrieve_answer(
     let sql = format!(
         "
         SELECT qa_data, v.distance FROM {robot_id} q INNER JOIN
-        (SELECT qa_id, vector_distance_cos(phrase_vec, vector32(?1)) AS distance FROM {robot_id}_vec ORDER BY distance ASC LIMIT 1) v
+        (SELECT qa_id, vector_distance_cos(qa_vec, vector32(?1)) AS distance FROM {robot_id}_vec ORDER BY distance ASC LIMIT 1) v
         ON q.id = v.qa_id
         "
     );

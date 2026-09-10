@@ -43,6 +43,8 @@ pub(crate) struct Context {
     pub(crate) none_persistent_vars: HashMap<String, VariableValue>,
     #[serde(skip)]
     pub(crate) none_persistent_data: HashMap<String, String>,
+    #[serde(skip)]
+    pub(crate) user_media: Option<crate::ai::dto::UserMediaData>,
     last_active_time: u64,
     pub(crate) chat_history: Vec<Prompt>,
 }
@@ -117,6 +119,7 @@ impl Context {
             user_input_intent: None,
             none_persistent_vars: HashMap::with_capacity(16),
             none_persistent_data: HashMap::with_capacity(16),
+            user_media: None,
             last_active_time: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

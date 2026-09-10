@@ -22,6 +22,9 @@ pub(crate) struct Request {
     pub(crate) user_input_result: UserInputResult,
     #[serde(rename = "userInput")]
     pub(crate) user_input: String,
+    #[serde(default)]
+    #[serde(rename = "attachments")]
+    pub(crate) attachments: Vec<crate::ai::dto::Attachment>,
     #[serde(rename = "importVariables")]
     pub(crate) import_variables: Option<Vec<SimpleVariable>>,
     #[serde(rename = "userInputIntent")]

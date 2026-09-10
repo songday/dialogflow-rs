@@ -430,13 +430,8 @@ onMounted(async () => {
             color: "#f7f8fa",
         },
         grid: {
-            visible: true,
-            type: "dot",
-            size: 16,
-            args: {
-                color: "#d8dce6",
-                thickness: 1,
-            },
+            visible: false,
+            size: 1,
         },
         autoResize: false,
         connecting: {
@@ -748,9 +743,29 @@ const dryrunChatRecords = ref();
 const testingFormVisible = ref(false);
 const userAsk = ref("");
 const chatRecords = ref([]);
+const pendingImages = ref([]);
+const dryrunImageInput = ref();
 let dialogFlowAiSDK = null;
+function onDryrunImagesSelected(e) {
+    const files = Array.from(e.target.files || []);
+    for (const f of files) {
+        if (!f.type.startsWith("image/")) continue;
+        const reader = new FileReader();
+        reader.onload = () => {
+            // reader.result is a data URI: "data:image/jpeg;base64,..."
+            const base64 = reader.result.split(",")[1];
+            pendingImages.value.push({ mimeType: f.type, data: base64 });
+        };
+        reader.readAsDataURL(f);
+    }
+    e.target.value = "";
+}
+function removePendingImage(idx) {
+    pendingImages.value.splice(idx, 1);
+}
 async function dryrun() {
-    if (chatRecords.value.length > 0 && !userAsk.value) return;
+    if (chatRecords.value.length > 0 && !userAsk.value && pendingImages.value.length == 0)
+        return;
     if (waitingResponse.value) return;
     waitingResponse.value = true;
     if (dialogFlowAiSDK == null) {
@@ -764,6 +779,7 @@ async function dryrun() {
     await dialogFlowAiSDK.sendMessage({
         type: dialogFlowAiSDK.MessageKind.PLAIN_TEXT,
         content: userAsk.value,
+        attachments: pendingImages.value,
     });
     if (dialogFlowAiSDK.chatHasEnded) {
         dialogFlowAiSDK.addChat(
@@ -775,6 +791,7 @@ async function dryrun() {
         dryrunDisabled.value = true;
     }
     userAsk.value = "";
+    pendingImages.value.splice(0, pendingImages.value.length);
     waitingResponse.value = false;
     dryrunInput.value.focus();
     nextTick(() => {
@@ -920,6 +937,7 @@ async function dryrunClear() {
     dialogFlowAiSDK = null;
     chatRecords.value.splice(0, chatRecords.value.length);
     userAsk.value = "";
+    pendingImages.value.splice(0, pendingImages.value.length);
     // sessionId = '';
     dryrunDisabled.value = false;
     await dryrun();
@@ -1291,6 +1309,12 @@ const popupRundryWindow = async () => {
     white-space: pre-wrap;
     word-break: break-word;
 }
+.chat-record .chat-images {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
 </style>
 <template>
     <div>
@@ -1462,6 +1486,17 @@ const popupRundryWindow = async () => {
                             :class="item.textSource"
                         >
                             <!-- <span v-html="item.text"></span> -->
+                            <div v-if="item.images && item.images.length" class="chat-images">
+                                <el-image
+                                    v-for="(img, imgIdx) in item.images"
+                                    :key="imgIdx"
+                                    :src="img"
+                                    :preview-src-list="item.images"
+                                    :initial-index="imgIdx"
+                                    fit="cover"
+                                    style="width: 96px; height: 96px; border-radius: 4px"
+                                />
+                            </div>
                             <el-text v-if="item.answerType == 'TextPlain'">{{
                                 item.text
                             }}</el-text>
@@ -1472,32 +1507,75 @@ const popupRundryWindow = async () => {
             </template>
             <template #footer>
                 <div style="flex: auto">
-                    <el-input
-                        ref="dryrunInput"
-                        :disabled="dryrunDisabled"
-                        v-model="userAsk"
-                        placeholder=""
-                        style="width: 200px"
-                        @keypress="
-                            (e) => {
-                                if (e.keyCode == 13) dryrun();
-                            }
-                        "
-                    />
-                    <el-button-group>
-                        <el-button
-                            type="primary"
-                            :disabled="dryrunDisabled"
-                            @click="dryrun"
-                            :loading="waitingResponse"
-                            >{{
-                                waitingResponse ? "Sending" : $t("flow.send")
-                            }}</el-button
+                    <div
+                        v-if="pendingImages.length"
+                        style="margin-bottom: 6px; display: flex; gap: 6px; flex-wrap: wrap"
+                    >
+                        <div
+                            v-for="(img, idx) in pendingImages"
+                            :key="idx"
+                            style="position: relative"
                         >
-                        <el-button @click="dryrunClear">{{
-                            $t("flow.reset")
-                        }}</el-button>
-                    </el-button-group>
+                            <el-image
+                                :src="`data:${img.mimeType};base64,${img.data}`"
+                                fit="cover"
+                                style="width: 48px; height: 48px; border-radius: 4px"
+                            />
+                            <el-button
+                                size="small"
+                                type="danger"
+                                circle
+                                style="
+                                    position: absolute;
+                                    top: -6px;
+                                    right: -6px;
+                                    transform: scale(0.7);
+                                "
+                                @click="removePendingImage(idx)"
+                            >×</el-button>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px">
+                        <el-input
+                            ref="dryrunInput"
+                            :disabled="dryrunDisabled"
+                            v-model="userAsk"
+                            placeholder=""
+                            style="flex: 1"
+                            @keypress="
+                                (e) => {
+                                    if (e.keyCode == 13) dryrun();
+                                }
+                            "
+                        />
+                        <el-button-group>
+                            <el-button
+                                :disabled="dryrunDisabled"
+                                @click="dryrunImageInput.click()"
+                                >🖼</el-button
+                            >
+                            <el-button
+                                type="primary"
+                                :disabled="dryrunDisabled"
+                                @click="dryrun"
+                                :loading="waitingResponse"
+                                >{{
+                                    waitingResponse ? "Sending" : $t("flow.send")
+                                }}</el-button
+                            >
+                            <el-button @click="dryrunClear">{{
+                                $t("flow.reset")
+                            }}</el-button>
+                        </el-button-group>
+                    </div>
+                    <input
+                        ref="dryrunImageInput"
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        style="display: none"
+                        @change="onDryrunImagesSelected"
+                    />
                 </div>
             </template>
         </el-drawer>

@@ -2,7 +2,6 @@
 import { ref, reactive, onMounted, onUnmounted, provide } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { copyProperties, httpReq, getRobotType } from "../../assets/tools.js";
-// import { ElMessage } from 'element-plus';
 import { useI18n } from "vue-i18n";
 import chatPicThumbnail from "@/assets/usedByLlmChatNode-thumbnail.png";
 import chatPic from "@/assets/usedByLlmChatNode.png";
@@ -11,7 +10,7 @@ import textGenerationPic from "@/assets/usedByDialogNodeTextGeneration.png";
 import sentenceEmbeddingPicThumbnail from "@/assets/usedBySentenceEmbedding-thumbnail.png";
 import sentenceEmbeddingPic from "@/assets/usedBySentenceEmbedding.png";
 
-const { t, tm } = useI18n();
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const robotId = route.params.robotId;
@@ -125,26 +124,22 @@ const downloadingUrl = ref("");
 const downloadingProgress = ref("");
 
 onMounted(async () => {
-    let t = await httpReq(
+    const r = await httpReq(
         "GET",
         "management/settings",
         { robotId: robotId },
         null,
         null,
     );
-    console.log(t);
-    if (t.status == 200) {
-        copyProperties(t.data, settings);
+    if (r.status == 200) {
+        copyProperties(r.data, settings);
         maxSessionIdleMin.value = settings.maxSessionIdleSec / 60;
-        // const d = t.data;
-        // settings.port = d.port;
-        // settings.maxSessionDurationMin = d.maxSessionDurationMin;
+        if (settings.sentenceEmbeddingProvider.similarityThreshold != null)
+            similarityThreshold.value = Math.round(
+                settings.sentenceEmbeddingProvider.similarityThreshold * 100,
+            );
         originalSentenceEmbeddingModelId.value =
-            t.data.sentenceEmbeddingProvider.provider.id;
-        console.log(
-            "originalSentenceEmbeddingModelId=",
-            originalSentenceEmbeddingModelId,
-        );
+            r.data.sentenceEmbeddingProvider.provider.id;
         await changeChatProvider(settings.chatProvider.provider.id);
         await changeTextGenerationProvider(
             settings.textGenerationProvider.provider.id,
@@ -152,7 +147,6 @@ onMounted(async () => {
         await changeSentenceEmbeddingProvider(
             settings.sentenceEmbeddingProvider.provider.id,
         );
-        changeTtsProvider(settings.ttsProvider.provider.id);
     }
     await checkHfModelFiles();
 });
@@ -164,7 +158,6 @@ async function checkHfModelFiles() {
     const repostories = new Map();
     if (settings.chatProvider.provider.id == "HuggingFace") {
         for (let i = 0; i < chatModelOptions.length; i++) {
-            console.log(chatModelOptions[i].value);
             if (
                 chatModelOptions[i].value ==
                 settings.chatProvider.provider.model
@@ -173,14 +166,13 @@ async function checkHfModelFiles() {
                 const p = l.lastIndexOf(" ");
                 if (p > -1) l = l.substring(0, p);
                 chatModelRepository.value = l;
-                repostories.set(showHfIncorrectGenerationModelTip, l);
+                repostories.set(showHfIncorrectChatModelTip, l);
                 break;
             }
         }
     } else showHfIncorrectChatModelTip.value = false;
     if (settings.textGenerationProvider.provider.id == "HuggingFace") {
         for (let i = 0; i < textGenerationModelOptions.length; i++) {
-            console.log(textGenerationModelOptions[i].value);
             if (
                 textGenerationModelOptions[i].value ==
                 settings.textGenerationProvider.provider.model
@@ -196,7 +188,6 @@ async function checkHfModelFiles() {
     } else showHfIncorrectGenerationModelTip.value = false;
     if (settings.sentenceEmbeddingProvider.provider.id == "HuggingFace") {
         for (let i = 0; i < sentenceEmbeddingModelOptions.length; i++) {
-            console.log(sentenceEmbeddingModelOptions[i].value);
             if (
                 sentenceEmbeddingModelOptions[i].value ==
                 settings.sentenceEmbeddingProvider.provider.model
@@ -218,7 +209,6 @@ async function checkHfModelFiles() {
             null,
             Array.from(repostories.values()),
         );
-        console.log(r);
         if (r && r.data) {
             for (let [k, v] of repostories.entries()) {
                 if (r.data[v] == false) {
@@ -227,29 +217,6 @@ async function checkHfModelFiles() {
             }
         }
     }
-    // showHfIncorrectGenerationModelTip.value = false;
-    // showHfIncorrectEmbeddingModelTip.value = false;
-    // if (settings.textGenerationProvider.provider.id != 'HuggingFace' && settings.sentenceEmbeddingProvider.provider.id != 'HuggingFace') {
-    //     return;
-    // }
-    // const r = await httpReq("POST", 'management/settings/model/check', { robotId: robotId }, null, repostories.keys());
-    // console.log(r);
-    // if (r && r.status != 200) {
-    //     for (let i = 0; i < sentenceEmbeddingModelOptions.length; i++) {
-    //         console.log(sentenceEmbeddingModelOptions[i].value)
-    //         if (sentenceEmbeddingModelOptions[i].value == settings.sentenceEmbeddingProvider.provider.model) {
-    //             let l = sentenceEmbeddingModelOptions[i].label;
-    //             const p = l.lastIndexOf(' ');
-    //             if (p > -1)
-    //                 l = l.substring(0, p);
-    //             sentenceEmbeddingModelRepository.value = l;
-    //             break;
-    //         }
-    //     }
-    //     showHfIncorrectEmbeddingModelTip.value = true;
-    //     // ElMessage.error(r.err.message);
-    // } else
-    //     showHfIncorrectEmbeddingModelTip.value = false;
 }
 
 async function save() {
@@ -258,11 +225,11 @@ async function save() {
         settings.sentenceEmbeddingProvider.provider.id
     ) {
         ElMessageBox.confirm(
-            "Sentence embedding model has been changed, this may cause dimension mismatch issue <strong>(You can regenerate all sentences to resolve)</strong>. Continue?",
-            "Warning",
+            t("botSettings.modelChangedWarning"),
+            t("common.warning"),
             {
-                confirmButtonText: "OK",
-                cancelButtonText: "Cancel",
+                confirmButtonText: t("common.confirm"),
+                cancelButtonText: t("common.cancel"),
                 type: "warning",
                 dangerouslyUseHTMLString: true,
             },
@@ -280,14 +247,13 @@ async function saveSettings() {
     settings.maxSessionIdleSec = maxSessionIdleMin.value * 60;
     settings.sentenceEmbeddingProvider.similarityThreshold =
         similarityThreshold.value / 100;
-    let r = await httpReq(
+    const r = await httpReq(
         "POST",
         "management/settings",
         { robotId: robotId },
         null,
         settings,
     );
-    console.log(r);
     if (r.status == 200) {
         ElMessage({ type: "success", message: t("common.saved") });
         await checkHfModelFiles();
@@ -307,15 +273,14 @@ async function downloadModels(m) {
         null,
         null,
     );
-    console.log(r);
     if (r != null && r.data != null && r.data.downloading) {
-        const m =
+        const msg =
             "Downloading: " +
-            r.url +
+            r.data.url +
             " (" +
             ((r.data.downloadedLen / r.data.totalLen) * 100).toFixed(2) +
-            "), please wait until it finish.";
-        ElMessage.error(m);
+            "%), please wait until it finish.";
+        ElMessage.error(msg);
         return;
     }
     httpReq(
@@ -325,13 +290,10 @@ async function downloadModels(m) {
         null,
         m,
     ).then((r) => {
-        console.log(r);
         if (r == null || r.status != 200) {
             ElMessage.error("Download failed: " + r.err.message);
             return;
         }
-        // showHfEmbeddingModelDownloadProgress.value = false;
-        // showHfIncorrectEmbeddingModelTip.value = true;
         if (m == "sentenceEmbedding") {
             showHfIncorrectEmbeddingModelTip.value = false;
             showHfEmbeddingModelDownloadProgress.value = true;
@@ -361,7 +323,6 @@ async function showDownloadProgress() {
         null,
         null,
     );
-    console.log(r);
     if (r != null && r.data != null) {
         if (r.data.err) {
             ElMessage.error(r.data.err);
@@ -393,65 +354,22 @@ const smtpTest = async () => {
         null,
         settings,
     );
-    console.log(r);
     if (r.status == 200) {
         smtpPassed.value = true;
         smtpFailed.value = false;
     } else {
-        smtpFailedDetail.value = t(r.err.message);
+        const m = t(r.err.message);
+        smtpFailedDetail.value = m ? m : r.err.message;
         smtpPassed.value = false;
         smtpFailed.value = true;
     }
     loading.value = false;
 };
 
-const ollamaModels = [
-    // { label: 'Meta Llama 3.3 70b', value: 'llama3.3:70b' },
-    // { label: 'Meta Llama 3.1 8b', value: 'llama3.1:8b' },
-    // { label: 'Meta Llama 3.1 70b', value: 'llama3.1:70b' },
-    // { label: 'Meta Llama 3 8b', value: 'llama3:8b' },
-    // { label: 'Meta Llama 3 70b', value: 'llama3:70b' },
-    // { label: 'DeepSeek-R1 1.5b', value: 'deepseek-r1:1.5b' },
-    // { label: 'DeepSeek-R1 7b', value: 'deepseek-r1:7b' },
-    // { label: 'DeepSeek-R1 8b', value: 'deepseek-r1:8b' },
-    // { label: 'DeepSeek-R1 14b', value: 'deepseek-r1:14b' },
-    // { label: 'DeepSeek-R1 32b', value: 'deepseek-r1:32b' },
-    // { label: 'DeepSeek-R1 70b', value: 'deepseek-r1:70b' },
-    // { label: 'DeepSeek-R1 671b', value: 'deepseek-r1:671b' },
-    // { label: 'Phi-3 3.8b', value: 'phi3:3.8b' },
-    // { label: 'Phi-3 14b', value: 'phi3:14b' },
-    // { label: 'Phi-3 instruct', value: 'phi3:instruct' },
-    // { label: 'Gemma 3 1b', value: 'gemma3:1b' },
-    // { label: 'Gemma 3 4b', value: 'gemma3:4b' },
-    // { label: 'Gemma 3 12b', value: 'gemma3:12b' },
-    // { label: 'Gemma 3 27b', value: 'gemma3:27b' },
-    // { label: 'Gemma 2 9b', value: 'gemma2:9b' },
-    // { label: 'Gemma 2 27b', value: 'gemma2:27b' },
-    // { label: 'WizardLM-2 7b', value: 'wizardlm2:7b' },
-    // { label: 'WizardLM-2 8x22b', value: 'wizardlm2:8x22b' },
-    // { label: 'Mistral Small 3.1 24b', value: 'mistral-small3.1:24b' },
-    // { label: 'Mistral 7b', value: 'mistral:7b' },
-    // { label: 'Mixtral 8x7b', value: 'mixtral:8x7b' },
-    // { label: 'Mixtral 8x22b', value: 'mixtral:8x22b' },
-    // { label: 'Qwen 3 0.6b', value: 'qwen3:0.6b' },
-    // { label: 'Qwen 3 1.7b', value: 'qwen3:1.7b' },
-    // { label: 'Qwen 3 4b', value: 'qwen3:4b' },
-    // { label: 'Qwen 3 8b', value: 'qwen3:8b' },
-    // { label: 'Qwen 3 14b', value: 'qwen3:14b' },
-    // { label: 'Qwen 3 30b', value: 'qwen3:30b' },
-    // { label: 'Qwen 3 32b', value: 'qwen3:32b' },
-    // { label: 'Qwen 3 235b', value: 'qwen3:235b' },
-    // { label: 'Qwen 2 1.5b', value: 'qwen2:1.5b' },
-    // { label: 'Qwen 2 7b', value: 'qwen2:7b' },
-    // { label: 'Qwen 2 72b', value: 'qwen2:72b' },
-    // { label: 'TinyLlama 1.1b', value: 'tinyllama:1.1b' },
-    // { label: 'Yi 1.5 6b', value: 'yi:6b' },
-    // { label: 'Yi 1.5 9b', value: 'yi:9b' },
-    // { label: 'Yi 1.5 34b', value: 'yi:34b' },
-];
+const ollamaModels = [];
 provide("ollamaModels", { ollamaModels });
 
-// https://docs.spring.io/spring-ai/reference/api/embeddings.html
+// https://docs.spring.io/spring-ai/reference/api/chat/completions.html
 const chatProviders = [
     {
         id: "HuggingFace",
@@ -505,13 +423,11 @@ const chatProviders = [
             },
             {
                 label: "Qwen/Qwen2-7B-Instruct (15.4GB)",
-                value: "Qwen2_72BInstruct",
-                dimenssions: 384,
+                value: "Qwen2_7BInstruct",
             },
             {
                 label: "Qwen/Qwen2-72B-Instruct (144GB)",
                 value: "Qwen2_72BInstruct",
-                dimenssions: 384,
             },
             {
                 label: "TinyLlama/TinyLlama-1.1B-Chat-v1.0 (2.2GB)",
@@ -526,15 +442,14 @@ const chatProviders = [
         apiUrlDisabled: true,
         showApiKeyInput: true,
         models: [
-            { label: "gpt-4o", value: "gpt-4" },
-            { label: "gpt-4o-mini", value: "gpt-4-mini" },
+            { label: "gpt-4o", value: "gpt-4o" },
+            { label: "gpt-4o-mini", value: "gpt-4o-mini" },
             { label: "gpt-4", value: "gpt-4" },
             { label: "gpt-4-turbo", value: "gpt-4-turbo" },
             { label: "gpt-4-vision-preview", value: "gpt-4-vision-preview" },
             { label: "gpt-4-32k", value: "gpt-4-32k" },
             { label: "gpt-3.5-turbo", value: "gpt-3.5-turbo" },
             { label: "gpt-3.5-turbo-16k", value: "gpt-3.5-turbo-16k" },
-            { label: "gpt-3.5-turbo", value: "gpt-3.5-turbo" },
         ],
     },
     {
@@ -614,13 +529,11 @@ const textGenerationProviders = [
             },
             {
                 label: "Qwen/Qwen2-7B-Instruct (15.4GB)",
-                value: "Qwen2_72BInstruct",
-                dimenssions: 384,
+                value: "Qwen2_7BInstruct",
             },
             {
                 label: "Qwen/Qwen2-72B-Instruct (144GB)",
                 value: "Qwen2_72BInstruct",
-                dimenssions: 384,
             },
             {
                 label: "TinyLlama/TinyLlama-1.1B-Chat-v1.0 (2.2GB)",
@@ -641,7 +554,6 @@ const textGenerationProviders = [
             { label: "gpt-4-32k", value: "gpt-4-32k" },
             { label: "gpt-3.5-turbo", value: "gpt-3.5-turbo" },
             { label: "gpt-3.5-turbo-16k", value: "gpt-3.5-turbo-16k" },
-            { label: "gpt-3.5-turbo", value: "gpt-3.5-turbo" },
         ],
     },
     {
@@ -680,7 +592,6 @@ const sentenceEmbeddingProviders = [
             {
                 label: "sentence-transformers/all-MiniLM-L6-v2 (91MB)",
                 value: "AllMiniLML6V2",
-                dimenssions: 384,
             },
             {
                 label: "sentence-transformers/paraphrase-MiniLM-L12-v2 (135MB)",
@@ -798,10 +709,9 @@ const changeChatProvider = async (n) => {
             if (chatProviders[i].apiUrlDisabled)
                 settings.chatProvider.apiUrl = chatProviders[i].apiUrl;
             else {
-                settings.chatProvider.apiUrl =
-                    sentenceEmbeddingDynamicReqUrlMap.get(
-                        settings.chatProvider.provider.id,
-                    );
+                settings.chatProvider.apiUrl = chatDynamicReqUrlMap.get(
+                    settings.chatProvider.provider.id,
+                );
                 if (!settings.chatProvider.apiUrl)
                     settings.chatProvider.apiUrl = chatProviders[i].apiUrl;
             }
@@ -811,7 +721,7 @@ const changeChatProvider = async (n) => {
                 chatProviders[i].showApiKeyInput;
             choosedChatProvider.value = n;
             if (n == "Ollama") {
-                let r = await httpReq(
+                const r = await httpReq(
                     "GET",
                     "management/settings/model/ollama/list",
                     { url: chatProviders[i].apiUrl },
@@ -838,7 +748,6 @@ const changeChatProvider = async (n) => {
                 chatModelOptions.length,
                 ...chatProviders[i].models,
             );
-            // console.log(modelOptions.length)
             break;
         }
     }
@@ -859,7 +768,7 @@ const changeTextGenerationProvider = async (n) => {
                     textGenerationProviders[i].apiUrl;
             else {
                 settings.textGenerationProvider.apiUrl =
-                    sentenceEmbeddingDynamicReqUrlMap.get(
+                    textGenerationDynamicReqUrlMap.get(
                         settings.textGenerationProvider.provider.id,
                     );
                 if (!settings.textGenerationProvider.apiUrl)
@@ -872,7 +781,7 @@ const changeTextGenerationProvider = async (n) => {
                 textGenerationProviders[i].showApiKeyInput;
             choosedTextGenerationProvider.value = n;
             if (n == "Ollama") {
-                let r = await httpReq(
+                const r = await httpReq(
                     "GET",
                     "management/settings/model/ollama/list",
                     { url: textGenerationProviders[i].apiUrl },
@@ -901,7 +810,6 @@ const changeTextGenerationProvider = async (n) => {
                 textGenerationModelOptions.length,
                 ...textGenerationProviders[i].models,
             );
-            // console.log(modelOptions.length)
             break;
         }
     }
@@ -935,10 +843,10 @@ const changeSentenceEmbeddingProvider = async (n) => {
                 sentenceEmbeddingProviders[i].showApiKeyInput;
             choosedSentenceEmbeddingProvider.value = n;
             if (n == "Ollama") {
-                let r = await httpReq(
+                const r = await httpReq(
                     "GET",
                     "management/settings/model/ollama/list",
-                    { url: chatProviders[i].apiUrl },
+                    { url: sentenceEmbeddingProviders[i].apiUrl },
                     null,
                     null,
                 );
@@ -964,7 +872,6 @@ const changeSentenceEmbeddingProvider = async (n) => {
                 sentenceEmbeddingModelOptions.length,
                 ...sentenceEmbeddingProviders[i].models,
             );
-            // console.log(modelOptions.length)
             break;
         }
     }
@@ -983,76 +890,6 @@ const addAnotherSentenceEmbeddingOllamaModel = (m) => {
     anotherSentenceEmbeddingOllamaModel.value = "";
 };
 
-// TTS
-
-// https://docs.spring.io/spring-ai/reference/api/embeddings.html
-const ttsProviders = [
-    {
-        id: "HuggingFace",
-        name: "HuggingFace",
-        apiUrl: "Model will be downloaded locally at ./data/models",
-        apiUrlDisabled: true,
-        showApiKeyInput: false,
-        models: [
-            {
-                label: "parler-tts/parler-tts-mini-v1 (English 3.51GB)",
-                value: "ParlerTtsMiniV1",
-            },
-            {
-                label: "parler-tts/parler-tts-large-v1 (English 9.35GB)",
-                value: "ParlerTtsLargeV1",
-            },
-        ],
-    },
-    // {
-    //     id: 'ChatTTS',
-    //     name: 'ChatTTS',
-    //     apiUrl: 'http://localhost:11434/api/embeddings',
-    //     apiUrlDisabled: false,
-    //     showApiKeyInput: false,
-    //     models: [
-    //         { label: 'nomic-embed-text:v1.5', value: 'nomic-embed-text:v1.5' },
-    //         { label: 'mxbai-embed-large:335m', value: 'mxbai-embed-large:335m' },
-    //         { label: 'snowflake-arctic-embed:335m', value: 'snowflake-arctic-embed:335m' },
-    //         { label: 'jina-embeddings-v2-base-en', value: 'jina/jina-embeddings-v2-base-en:latest' },
-    //     ],
-    // },
-    // {
-    //     id: 'MicrosoftTTS',
-    //     name: 'MicrosoftTTS',
-    //     apiUrl: 'http://localhost:11434/api/embeddings',
-    //     apiUrlDisabled: false,
-    //     showApiKeyInput: false,
-    //     models: [
-    //         { label: 'nomic-embed-text:v1.5', value: 'nomic-embed-text:v1.5' },
-    //         { label: 'mxbai-embed-large:335m', value: 'mxbai-embed-large:335m' },
-    //         { label: 'snowflake-arctic-embed:335m', value: 'snowflake-arctic-embed:335m' },
-    //         { label: 'jina-embeddings-v2-base-en', value: 'jina/jina-embeddings-v2-base-en:latest' },
-    //     ],
-    // },
-];
-const ttsModelOptions = reactive([]);
-const ttsDynamicReqUrlMap = new Map();
-const choosedTtsProvider = ref("");
-const changeTtsProvider = (n) => {
-    if (choosedTtsProvider.value)
-        ttsDynamicReqUrlMap.set(
-            choosedTtsProvider.value,
-            settings.ttsProvider.apiUrl,
-        );
-    for (let i = 0; i < ttsProviders.length; i++) {
-        if (ttsProviders[i].id == n) {
-            ttsModelOptions.splice(
-                0,
-                ttsModelOptions.length,
-                ...ttsProviders[i].models,
-            );
-            // console.log(modelOptions.length)
-            break;
-        }
-    }
-};
-
 const usedByLlmChatNodeBig = [chatPic];
 const usedByTextGenerationBig = [textGenerationPic];
 const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
@@ -1060,852 +897,858 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
 <template>
     <div class="page-header">
         <h1 class="page-title">{{ $t("settings.title") }}</h1>
+        <el-button @click="goBack()">{{ $t("common.back") }}</el-button>
     </div>
-    <div class="section-title">{{ t("settings.commonSettings") }}</div>
-    <el-row>
-        <el-col :span="12" :offset="1">
-            <el-form :model="settings">
-                <el-form-item
-                    :label="$t('botSettings.prompt3')"
+
+    <el-card class="settings-card" shadow="never">
+        <template #header>
+            <div class="section-title">{{ $t("settings.commonSettings") }}</div>
+        </template>
+        <el-form :model="settings" :label-width="formLabelWidth">
+            <el-form-item :label="$t('botSettings.prompt3')">
+                <el-input-number
+                    v-model="maxSessionIdleMin"
+                    :min="2"
+                    :max="1440"
+                />
+                <span class="form-item-suffix">{{
+                    $t("botSettings.prompt4")
+                }}</span>
+            </el-form-item>
+        </el-form>
+    </el-card>
+
+    <el-card class="settings-card" shadow="never">
+        <template #header>
+            <div class="section-title">
+                {{ $t("botSettings.chatModel") }}
+                <el-tooltip effect="light" placement="right">
+                    <template #content>
+                        <span v-html="$t('botSettings.chatModelTip')"></span>
+                    </template>
+                    <el-button circle>?</el-button>
+                </el-tooltip>
+            </div>
+        </template>
+        <el-row>
+            <el-col :span="16">
+                <el-form
+                    :model="settings.chatProvider"
                     :label-width="formLabelWidth"
                 >
-                    <el-input-number
-                        v-model="maxSessionIdleMin"
-                        :min="2"
-                        :max="1440"
-                    />
-                    {{ $t("botSettings.prompt4") }}
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button type="primary" @click="save">
-                        {{ $t("common.save") }}
-                    </el-button>
-                    <el-button @click="goBack()">{{
-                        $t("common.back")
-                    }}</el-button>
-                </el-form-item>
-            </el-form>
-        </el-col>
-    </el-row>
-    <div class="section-title">
-        {{ t("botSettings.chatModel") }}
-        <el-tooltip effect="light" placement="right">
-            <template #content>
-                You don’t need to download the large model file unless you want
-                to use the functionalities described below.
-                <br />
-                Currently, its function is merely to provide automatic response
-                capabilities and suggested reply templates for dialogue nodes.
-            </template>
-            <el-button circle>?</el-button>
-        </el-tooltip>
-    </div>
-    <el-row>
-        <el-col :span="11" :offset="1">
-            <el-form
-                :model="settings.chatProvider"
-                :label-width="formLabelWidth"
-                style="max-width: 600px"
-            >
-                <el-form-item :label="t('botSettings.provider')">
-                    <el-radio-group
-                        v-model="settings.chatProvider.provider.id"
-                        size="large"
-                        @change="changeChatProvider"
-                    >
-                        <el-radio-button
-                            v-for="item in chatProviders"
-                            :id="item.id"
-                            :key="item.id"
-                            :label="item.id"
-                            :value="item.id"
+                    <el-form-item :label="t('botSettings.provider')">
+                        <el-radio-group
+                            v-model="settings.chatProvider.provider.id"
+                            @change="changeChatProvider"
+                        >
+                            <el-radio-button
+                                v-for="item in chatProviders"
+                                :id="item.id"
+                                :key="item.id"
+                                :label="item.id"
+                                :value="item.id"
+                            />
+                        </el-radio-group>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.reqAddr')">
+                        <el-input
+                            v-model="settings.chatProvider.apiUrl"
+                            :disabled="settings.chatProvider.apiUrlDisabled"
                         />
-                    </el-radio-group>
-                </el-form-item>
-                <el-form-item :label="t('botSettings.reqAddr')">
-                    <el-input
-                        v-model="settings.chatProvider.apiUrl"
-                        :disabled="settings.chatProvider.apiUrlDisabled"
-                    />
-                </el-form-item>
-                <el-form-item
-                    label="OpenAI API key"
-                    v-show="settings.chatProvider.showApiKeyInput"
-                >
-                    <el-input v-model="settings.chatProvider.apiKey" />
-                </el-form-item>
-                <el-form-item :label="t('botSettings.model')">
-                    <el-select
-                        ref="chatModelSelector"
-                        v-model="settings.chatProvider.provider.model"
-                        placeholder="Choose a model"
+                    </el-form-item>
+                    <el-form-item
+                        :label="$t('botSettings.apiKey')"
+                        v-show="settings.chatProvider.showApiKeyInput"
                     >
-                        <el-option
-                            v-for="item in chatModelOptions"
-                            :id="item.value"
-                            :key="item.value"
-                            :label="item.label"
-                            :value="item.value"
+                        <el-input
+                            v-model="settings.chatProvider.apiKey"
+                            show-password
                         />
-                        <template #footer>
-                            <el-button
-                                :disabled="
-                                    settings.chatProvider.provider.id !=
-                                    'Ollama'
-                                "
-                                v-if="!isAddingAnotherChatOllamaModel"
-                                text
-                                bg
-                                @click="isAddingAnotherChatOllamaModel = true"
-                            >
-                                Another ollama model
-                            </el-button>
-                            <template v-else>
-                                <el-input
-                                    v-model="anotherChatOllamaModel"
-                                    placeholder="input model name"
-                                    style="margin-bottom: 8px"
-                                />
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.model')">
+                        <el-select
+                            ref="chatModelSelector"
+                            v-model="settings.chatProvider.provider.model"
+                            :placeholder="$t('botSettings.chooseModel')"
+                        >
+                            <el-option
+                                v-for="item in chatModelOptions"
+                                :id="item.value"
+                                :key="item.value"
+                                :label="item.label"
+                                :value="item.value"
+                            />
+                            <template #footer>
                                 <el-button
-                                    type="primary"
+                                    :disabled="
+                                        settings.chatProvider.provider.id !=
+                                        'Ollama'
+                                    "
+                                    v-if="!isAddingAnotherChatOllamaModel"
+                                    text
+                                    bg
                                     @click="
-                                        addAnotherChatOllamaModel(
-                                            anotherChatOllamaModel,
-                                        )
+                                        isAddingAnotherChatOllamaModel = true
                                     "
                                 >
-                                    confirm
+                                    {{ $t("botSettings.anotherOllamaModel") }}
                                 </el-button>
-                                <el-button
-                                    @click="
-                                        isAddingAnotherChatOllamaModel = false
-                                    "
-                                    >cancel</el-button
-                                >
+                                <template v-else>
+                                    <el-input
+                                        v-model="anotherChatOllamaModel"
+                                        :placeholder="$t('botSettings.inputModelName')"
+                                        style="margin-bottom: 8px"
+                                    />
+                                    <el-button
+                                        type="primary"
+                                        @click="
+                                            addAnotherChatOllamaModel(
+                                                anotherChatOllamaModel,
+                                            )
+                                        "
+                                    >
+                                        {{ $t("botSettings.confirm") }}
+                                    </el-button>
+                                    <el-button
+                                        @click="
+                                            isAddingAnotherChatOllamaModel = false
+                                        "
+                                        >{{ $t("botSettings.cancelLower") }}</el-button
+                                    >
+                                </template>
                             </template>
-                        </template>
-                    </el-select>
-                </el-form-item>
-                <el-form-item :label="t('botSettings.maxResTokenLen')">
-                    <el-input-number
-                        v-model="settings.chatProvider.maxResponseTokenLength"
-                        :min="10"
-                        :max="100000"
-                        :step="5"
-                    />
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.connTimeout')"
-                    v-show="settings.chatProvider.provider.id != 'HuggingFace'"
-                >
-                    <el-input-number
-                        v-model="settings.chatProvider.connectTimeoutMillis"
-                        :min="100"
-                        :max="65500"
-                        :step="100"
-                    />
-                    {{ t("common.millis") }}
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.readTimeout')"
-                    v-show="settings.chatProvider.provider.id != 'HuggingFace'"
-                >
-                    <el-input-number
-                        v-model="settings.chatProvider.readTimeoutMillis"
-                        :min="200"
-                        :max="65500"
-                        :step="100"
-                    />
-                    {{ t("common.millis") }}
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.proxy')"
-                    v-show="settings.chatProvider.provider.id != 'HuggingFace'"
-                >
-                    <el-checkbox
-                        v-model="chatProviderProxyEnabled"
-                        label="Enable"
-                    />
-                    <el-input
-                        v-model="settings.chatProvider.proxyUrl"
-                        placeholder="http://127.0.0.1:9270"
-                        :disabled="!chatProviderProxyEnabled"
-                    />
-                </el-form-item>
-                <el-form-item
-                    label=""
-                    v-show="showHfIncorrectGenerationModelTip"
-                >
-                    HuggingFace model files were incorrect or missing, please
-                    <el-button
-                        type="primary"
-                        text
-                        @click="
-                            downloadModels(settings.chatProvider.provider.model)
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.maxResTokenLen')">
+                        <el-input-number
+                            v-model="
+                                settings.chatProvider.maxResponseTokenLength
+                            "
+                            :min="10"
+                            :max="100000"
+                            :step="5"
+                        />
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.connTimeout')"
+                        v-show="
+                            settings.chatProvider.provider.id != 'HuggingFace'
                         "
                     >
-                        click here to download model files from Huggingface.co </el-button
-                    >, or you can download manually and put them in
-                    ./data/model/{{ chatModelRepository }}
-                </el-form-item>
-                <el-form-item label="" v-show="showHfChatModelDownloadProgress">
-                    Downloading: {{ downloadingUrl }},
-                    {{ downloadingProgress }}%
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button type="primary" @click="save">
-                        {{ $t("common.save") }}
-                    </el-button>
-                    <el-button @click="goBack()">{{
-                        $t("common.back")
-                    }}</el-button>
-                </el-form-item>
-            </el-form>
-        </el-col>
-        <el-col :span="6" :offset="1">
-            <div>This is used by LLM chat node.</div>
-            <!-- <img src="../../assets/usedBySentenceEmbedding-thumbnail.png" /> -->
-            <el-image
-                :src="chatPicThumbnail"
-                :zoom-rate="1.2"
-                :max-scale="7"
-                :min-scale="0.2"
-                :preview-src-list="usedByLlmChatNodeBig"
-                :initial-index="4"
-                fit="cover"
+                        <el-input-number
+                            v-model="settings.chatProvider.connectTimeoutMillis"
+                            :min="100"
+                            :max="65500"
+                            :step="100"
+                        />
+                        <span class="form-item-suffix">{{
+                            t("common.millis")
+                        }}</span>
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.readTimeout')"
+                        v-show="
+                            settings.chatProvider.provider.id != 'HuggingFace'
+                        "
+                    >
+                        <el-input-number
+                            v-model="settings.chatProvider.readTimeoutMillis"
+                            :min="200"
+                            :max="65500"
+                            :step="100"
+                        />
+                        <span class="form-item-suffix">{{
+                            t("common.millis")
+                        }}</span>
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.proxy')"
+                        v-show="
+                            settings.chatProvider.provider.id != 'HuggingFace'
+                        "
+                    >
+                        <div class="proxy-row">
+                            <el-switch
+                                v-model="chatProviderProxyEnabled"
+                                :active-text="$t('common.enable')"
+                            />
+                            <el-input
+                                v-model="settings.chatProvider.proxyUrl"
+                                placeholder="http://127.0.0.1:9270"
+                                :disabled="!chatProviderProxyEnabled"
+                            />
+                        </div>
+                    </el-form-item>
+                </el-form>
+            </el-col>
+            <el-col :span="7" :offset="1">
+                <div class="usage-note">
+                    {{ $t("botSettings.chatModelUsage") }}
+                </div>
+                <el-image
+                    :src="chatPicThumbnail"
+                    :zoom-rate="1.2"
+                    :max-scale="7"
+                    :min-scale="0.2"
+                    :preview-src-list="usedByLlmChatNodeBig"
+                    :initial-index="4"
+                    fit="cover"
+                />
+            </el-col>
+        </el-row>
+        <el-alert
+            v-if="showHfIncorrectChatModelTip"
+            type="warning"
+            :closable="false"
+            class="hf-alert"
+        >
+            <template #title>
+                {{ $t("botSettings.hfModelMissing") }}
+                <el-button
+                    type="primary"
+                    text
+                    @click="downloadModels(settings.chatProvider.provider.model)"
+                >
+                    {{ $t("botSettings.hfModelDownloadLink") }}
+                </el-button>
+                {{ $t("botSettings.hfModelManual", { repo: chatModelRepository }) }}
+            </template>
+        </el-alert>
+        <div v-if="showHfChatModelDownloadProgress" class="download-progress">
+            <div class="download-progress-url">{{ $t("botSettings.downloading") }}: {{ downloadingUrl }}</div>
+            <el-progress
+                :percentage="Number(downloadingProgress) || 0"
+                :stroke-width="14"
+                striped
+                striped-flow
             />
-        </el-col>
-    </el-row>
-    <div class="section-title">
-        {{ t("botSettings.txtGen") }}
-        <el-tooltip effect="light" placement="right">
-            <template #content>
-                You don’t need to download the large model file unless you want
-                to use the functionalities described below.
-                <br />
-                Currently, its function is merely to provide automatic response
-                capabilities and suggested reply templates for dialogue nodes.
-            </template>
-            <el-button circle>?</el-button>
-        </el-tooltip>
-    </div>
-    <el-row>
-        <el-col :span="11" :offset="1">
-            <el-form
-                :model="settings.textGenerationProvider"
-                :label-width="formLabelWidth"
-                style="max-width: 600px"
-            >
-                <el-form-item :label="t('botSettings.provider')">
-                    <el-radio-group
-                        v-model="settings.textGenerationProvider.provider.id"
-                        size="large"
-                        @change="changeTextGenerationProvider"
-                    >
-                        <el-radio-button
-                            v-for="item in textGenerationProviders"
-                            :id="item.id"
-                            :key="item.id"
-                            :label="item.id"
-                            :value="item.id"
-                        />
-                    </el-radio-group>
-                </el-form-item>
-                <el-form-item :label="t('botSettings.reqAddr')">
-                    <el-input
-                        v-model="settings.textGenerationProvider.apiUrl"
-                        :disabled="
-                            settings.textGenerationProvider.apiUrlDisabled
-                        "
-                    />
-                </el-form-item>
-                <el-form-item
-                    label="OpenAI API key"
-                    v-show="settings.textGenerationProvider.showApiKeyInput"
-                >
-                    <el-input
-                        v-model="settings.textGenerationProvider.apiKey"
-                    />
-                </el-form-item>
-                <el-form-item :label="t('botSettings.model')">
-                    <el-select
-                        ref="textGenerationModelSelector"
-                        v-model="settings.textGenerationProvider.provider.model"
-                        placeholder="Choose a model"
-                    >
-                        <el-option
-                            v-for="item in textGenerationModelOptions"
-                            :id="item.value"
-                            :key="item.value"
-                            :label="item.label"
-                            :value="item.value"
-                        />
-                        <template #footer>
-                            <el-button
-                                :disabled="
-                                    settings.textGenerationProvider.provider
-                                        .id != 'Ollama'
-                                "
-                                v-if="!isAddingAnotherTextGenerationOllamaModel"
-                                text
-                                bg
-                                @click="
-                                    isAddingAnotherTextGenerationOllamaModel = true
-                                "
-                            >
-                                Another ollama model
-                            </el-button>
-                            <template v-else>
-                                <el-input
-                                    v-model="anotherTextGenerationOllamaModel"
-                                    placeholder="input model name"
-                                    style="margin-bottom: 8px"
-                                />
-                                <el-button
-                                    type="primary"
-                                    @click="
-                                        addAnotherTextGenerationOllamaModel(
-                                            anotherTextGenerationOllamaModel,
-                                        )
-                                    "
-                                >
-                                    confirm
-                                </el-button>
-                                <el-button
-                                    @click="
-                                        isAddingAnotherTextGenerationOllamaModel = false
-                                    "
-                                    >cancel</el-button
-                                >
-                            </template>
-                        </template>
-                    </el-select>
-                </el-form-item>
-                <el-form-item :label="t('botSettings.maxResTokenLen')">
-                    <el-input-number
-                        v-model="
-                            settings.textGenerationProvider
-                                .maxResponseTokenLength
-                        "
-                        :min="10"
-                        :max="100000"
-                        :step="5"
-                    />
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.connTimeout')"
-                    v-show="
-                        settings.textGenerationProvider.provider.id !=
-                        'HuggingFace'
-                    "
-                >
-                    <el-input-number
-                        v-model="
-                            settings.textGenerationProvider.connectTimeoutMillis
-                        "
-                        :min="100"
-                        :max="65500"
-                        :step="100"
-                    />
-                    {{ t("common.millis") }}
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.readTimeout')"
-                    v-show="
-                        settings.textGenerationProvider.provider.id !=
-                        'HuggingFace'
-                    "
-                >
-                    <el-input-number
-                        v-model="
-                            settings.textGenerationProvider.readTimeoutMillis
-                        "
-                        :min="1000"
-                        :max="65500"
-                        :step="100"
-                    />
-                    {{ t("common.millis") }}
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.proxy')"
-                    v-show="
-                        settings.textGenerationProvider.provider.id !=
-                        'HuggingFace'
-                    "
-                >
-                    <el-checkbox
-                        v-model="textGenerationProviderProxyEnabled"
-                        label="Enable"
-                    />
-                    <el-input
-                        v-model="settings.textGenerationProvider.proxyUrl"
-                        placeholder="http://127.0.0.1:9270"
-                        :disabled="!textGenerationProviderProxyEnabled"
-                    />
-                </el-form-item>
-                <el-form-item
-                    label=""
-                    v-show="showHfIncorrectGenerationModelTip"
-                >
-                    HuggingFace model files were incorrect or missing, please
-                    <el-button
-                        type="primary"
-                        text
-                        @click="
-                            downloadModels(
-                                settings.textGenerationProvider.provider.model,
-                            )
-                        "
-                    >
-                        click here to download model files from Huggingface.co </el-button
-                    >, or you can download manually and put them in
-                    ./data/model/{{ textGenerationModelRepository }}
-                </el-form-item>
-                <el-form-item
-                    label=""
-                    v-show="showHfGenerationModelDownloadProgress"
-                >
-                    Downloading: {{ downloadingUrl }},
-                    {{ downloadingProgress }}%
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button type="primary" @click="save">
-                        {{ $t("common.save") }}
-                    </el-button>
-                    <el-button @click="goBack()">{{
-                        $t("common.back")
-                    }}</el-button>
-                </el-form-item>
-            </el-form>
-        </el-col>
-        <el-col :span="6" :offset="1">
-            <div>This is used by dialog node.</div>
-            <!-- <img src="../../assets/usedBySentenceEmbedding-thumbnail.png" /> -->
-            <el-image
-                :src="textGenerationPicThumbnail"
-                :zoom-rate="1.2"
-                :max-scale="7"
-                :min-scale="0.2"
-                :preview-src-list="usedByTextGenerationBig"
-                :initial-index="4"
-                fit="cover"
-            />
-        </el-col>
-    </el-row>
-    <div class="section-title">
-        {{ t("botSettings.sentenceEmbedding") }}
-        <el-tooltip effect="light" placement="right">
-            <template #content>
-                Downloading model files is not necessary.<br />
-                Its function is merely to enhance the accuracy of intent
-                recognition for user inputs, and it will not affect the response
-                functionality of the process.<br />
-                User intent can also be recognized through the configuration of
-                keywords and regular expressions without downloading the model.
-            </template>
-            <el-button circle>?</el-button>
-        </el-tooltip>
-    </div>
-    <el-row>
-        <el-col :span="11" :offset="1">
-            <el-form
-                :model="settings.sentenceEmbeddingProvider"
-                :label-width="formLabelWidth"
-                style="max-width: 600px"
-            >
-                <el-form-item :label="t('botSettings.provider')">
-                    <el-radio-group
-                        v-model="settings.sentenceEmbeddingProvider.provider.id"
-                        size="large"
-                        @change="changeSentenceEmbeddingProvider"
-                    >
-                        <el-radio-button
-                            v-for="item in sentenceEmbeddingProviders"
-                            :id="item.id"
-                            :key="item.id"
-                            :label="item.id"
-                            :value="item.id"
-                        />
-                    </el-radio-group>
-                </el-form-item>
-                <el-form-item :label="t('botSettings.reqAddr')">
-                    <el-input
-                        v-model="settings.sentenceEmbeddingProvider.apiUrl"
-                        :disabled="
-                            settings.sentenceEmbeddingProvider.apiUrlDisabled
-                        "
-                    />
-                </el-form-item>
-                <el-form-item
-                    label="OpenAI API key"
-                    v-show="settings.sentenceEmbeddingProvider.showApiKeyInput"
-                >
-                    <el-input
-                        v-model="settings.sentenceEmbeddingProvider.apiKey"
-                    />
-                </el-form-item>
-                <el-form-item :label="t('botSettings.model')">
-                    <el-select
-                        ref="sentenceEmbeddingModelSelector"
-                        v-model="
-                            settings.sentenceEmbeddingProvider.provider.model
-                        "
-                        placeholder="Choose a model"
-                    >
-                        <el-option
-                            v-for="item in sentenceEmbeddingModelOptions"
-                            :id="item.value"
-                            :key="item.value"
-                            :label="item.label"
-                            :value="item.value"
-                        />
-                        <template #footer>
-                            <el-button
-                                :disabled="
-                                    settings.sentenceEmbeddingProvider.provider
-                                        .id != 'Ollama'
-                                "
-                                v-if="
-                                    !isAddingAnotherSentenceEmbeddingOllamaModel
-                                "
-                                text
-                                bg
-                                @click="
-                                    isAddingAnotherSentenceEmbeddingOllamaModel = true
-                                "
-                            >
-                                Another ollama model
-                            </el-button>
-                            <template v-else>
-                                <el-input
-                                    v-model="
-                                        anotherSentenceEmbeddingOllamaModel
-                                    "
-                                    placeholder="input model name"
-                                    style="margin-bottom: 8px"
-                                />
-                                <el-button
-                                    type="primary"
-                                    @click="
-                                        addAnotherSentenceEmbeddingOllamaModel(
-                                            anotherSentenceEmbeddingOllamaModel,
-                                        )
-                                    "
-                                >
-                                    confirm
-                                </el-button>
-                                <el-button
-                                    @click="
-                                        isAddingAnotherSentenceEmbeddingOllamaModel = false
-                                    "
-                                    >cancel</el-button
-                                >
-                            </template>
-                        </template>
-                    </el-select>
-                </el-form-item>
-                <el-form-item :label="t('botSettings.simThres')">
-                    ≥<el-input-number
-                        v-model="similarityThreshold"
-                        :min="1"
-                        :max="99"
-                        :step="1"
-                    />%
-                    <el-tooltip effect="light" placement="right">
-                        <template #content>
-                            An intent is used when the expression matching
-                            similarity exceeds the threshold.
-                        </template>
-                        <el-button circle>?</el-button>
-                    </el-tooltip>
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.connTimeout')"
-                    v-show="
-                        settings.sentenceEmbeddingProvider.provider.id !=
-                        'HuggingFace'
-                    "
-                >
-                    <el-input-number
-                        v-model="
-                            settings.sentenceEmbeddingProvider
-                                .connectTimeoutMillis
-                        "
-                        :min="100"
-                        :max="65500"
-                        :step="100"
-                    />
-                    {{ t("common.millis") }}
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.readTimeout')"
-                    v-show="
-                        settings.sentenceEmbeddingProvider.provider.id !=
-                        'HuggingFace'
-                    "
-                >
-                    <el-input-number
-                        v-model="
-                            settings.sentenceEmbeddingProvider.readTimeoutMillis
-                        "
-                        :min="500"
-                        :max="65500"
-                        :step="100"
-                    />
-                    {{ t("common.millis") }}
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.proxy')"
-                    v-show="
-                        settings.sentenceEmbeddingProvider.provider.id !=
-                        'HuggingFace'
-                    "
-                >
-                    <el-checkbox
-                        v-model="sentenceEmbeddingProviderProxyEnabled"
-                        label="Enable"
-                    />
-                    <el-input
-                        v-model="settings.sentenceEmbeddingProvider.proxyUrl"
-                        placeholder="http://127.0.0.1:9270"
-                        :disabled="!sentenceEmbeddingProviderProxyEnabled"
-                    />
-                </el-form-item>
-                <el-form-item
-                    label=""
-                    v-show="showHfIncorrectEmbeddingModelTip"
-                >
-                    HuggingFace model files were incorrect or missing, please
-                    <el-button
-                        type="primary"
-                        text
-                        @click="
-                            downloadModels(
-                                settings.sentenceEmbeddingProvider.provider
-                                    .model,
-                            )
-                        "
-                    >
-                        click here to download model files from Huggingface.co </el-button
-                    >, or you can download manually and put them in
-                    ./data/model/{{ sentenceEmbeddingModelRepository }}
-                </el-form-item>
-                <el-form-item
-                    label=""
-                    v-show="showHfEmbeddingModelDownloadProgress"
-                >
-                    Downloading: {{ downloadingUrl }},
-                    {{ downloadingProgress }}%
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button type="primary" @click="save">
-                        {{ $t("common.save") }}
-                    </el-button>
-                    <el-button @click="goBack()">{{
-                        $t("common.back")
-                    }}</el-button>
-                </el-form-item>
-            </el-form>
-        </el-col>
-        <el-col :span="6" :offset="1">
-            <div>This is used by intention similar sentences.</div>
-            <!-- <img src="../../assets/usedBySentenceEmbedding-thumbnail.png" /> -->
-            <el-image
-                :src="sentenceEmbeddingPicThumbnail"
-                :zoom-rate="1.2"
-                :max-scale="7"
-                :min-scale="0.2"
-                :preview-src-list="usedBySentenceEmbeddingBig"
-                :initial-index="4"
-                fit="cover"
-            />
-        </el-col>
-    </el-row>
-    <!-- <h3>
-        Document QA
-        <el-tooltip effect="light" placement="right">
-            <template #content>
-                Support file type: Doc, Docx, PPT, PDF, JPG, PNG, Markdown.
-            </template>
-            <el-button circle>?</el-button>
-        </el-tooltip>
-    </h3>
-    <el-row>
-        <el-col :span="11" :offset="1">
-            <h3>Current documents</h3>
-            <el-form :model="settings.ttsProvider" :label-width="formLabelWidth" style="max-width: 600px">
-                <el-form-item label="Upload">
-                    <el-select v-model="value">
-                        <el-option label="Dialog flow API" value="Normal" />
-                        <el-option label="Slack robot" value="Normal" />
-                        <el-option label="TTS Stream" value="Normal" :disabled="robotType == 'TextBot'" />
-                    </el-select>
-                </el-form-item>
-                <el-form-item label="Enable">
-                    <el-switch v-model="settings.ttsProvider.enabled" active-text="Response TTS stream"
-                        inactive-text="Response text" />
-                </el-form-item>
-                <el-form-item label="Provider" v-show="settings.ttsProvider.enabled" @change="changeTtsProvider">
-                    <el-radio-group v-model="settings.ttsProvider.provider.id" size="large">
-                        <el-radio-button v-for="item in ttsProviders" :id="item.id" :key="item.id" :label="item.id"
-                            :value="item.id" />
-                    </el-radio-group>
-                </el-form-item>
-                <el-form-item label="Model" v-show="settings.ttsProvider.enabled">
-                    <el-select ref="ttsModelSelector" v-model="settings.ttsProvider.provider.model"
-                        placeholder="Choose a model">
-                        <el-option v-for="item in ttsModelOptions" :id="item.value" :key="item.value"
-                            :label="item.label" :value="item.value" />
-                    </el-select>
-                </el-form-item>
-                <el-form-item label="" v-show="showHfIncorrectEmbeddingModelTip">
-                    HuggingFace model files were incorrect or missing, please <el-button type="primary" text
-                        @click="downloadModels(settings.sentenceEmbeddingProvider.provider.model)">
-                        click here to download model files from Huggingface.co
-                    </el-button>, or you can download manually and put them in ./data/model/{{
-                        sentenceEmbeddingModelRepository }}
-                </el-form-item>
-                <el-form-item label="" v-show="showHfEmbeddingModelDownloadProgress">
-                    Downloading: {{ downloadingUrl }}, {{ downloadingProgress }}%
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button type="primary" @click="save">
-                        {{ $t('common.save') }}
-                    </el-button>
-                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
-                </el-form-item>
-            </el-form>
-        </el-col>
-    </el-row>
-    <h3>
-        Response adapter
-        <el-tooltip effect="light" placement="right">
-            <template #content>
-                Downloading model files is not necessary.<br />
-                Its function is merely to enhance the accuracy of intent recognition for user inputs, and it will
-                not
-                affect the response functionality of the process.<br />
-                User intent can also be recognized through the configuration of keywords and regular expressions
-                without
-                downloading the model.
-            </template>
-            <el-button circle>?</el-button>
-        </el-tooltip>
-    </h3>
-    <el-row>
-        <el-col :span="11" :offset="1">
-            <el-form :model="settings.ttsProvider" :label-width="formLabelWidth" style="max-width: 600px">
-                <el-form-item label="Adapter">
-                    <el-select v-model="value">
-                        <el-option label="Dialog flow API" value="Normal" />
-                        <el-option label="Slack robot" value="Normal" />
-                        <el-option label="TTS Stream" value="Normal" :disabled="robotType == 'TextBot'" />
-                    </el-select>
-                </el-form-item>
-                <el-form-item label="Enable">
-                    <el-switch v-model="settings.ttsProvider.enabled" active-text="Response TTS stream"
-                        inactive-text="Response text" />
-                </el-form-item>
-                <el-form-item label="Provider" v-show="settings.ttsProvider.enabled" @change="changeTtsProvider">
-                    <el-radio-group v-model="settings.ttsProvider.provider.id" size="large">
-                        <el-radio-button v-for="item in ttsProviders" :id="item.id" :key="item.id" :label="item.id"
-                            :value="item.id" />
-                    </el-radio-group>
-                </el-form-item>
-                <el-form-item label="Model" v-show="settings.ttsProvider.enabled">
-                    <el-select ref="ttsModelSelector" v-model="settings.ttsProvider.provider.model"
-                        placeholder="Choose a model">
-                        <el-option v-for="item in ttsModelOptions" :id="item.value" :key="item.value"
-                            :label="item.label" :value="item.value" />
-                    </el-select>
-                </el-form-item>
-                <el-form-item label="" v-show="showHfIncorrectEmbeddingModelTip">
-                    HuggingFace model files were incorrect or missing, please <el-button type="primary" text
-                        @click="downloadModels(settings.sentenceEmbeddingProvider.provider.model)">
-                        click here to download model files from Huggingface.co
-                    </el-button>, or you can download manually and put them in ./data/model/{{
-                        sentenceEmbeddingModelRepository }}
-                </el-form-item>
-                <el-form-item label="" v-show="showHfEmbeddingModelDownloadProgress">
-                    Downloading: {{ downloadingUrl }}, {{ downloadingProgress }}%
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button type="primary" @click="save">
-                        {{ $t('common.save') }}
-                    </el-button>
-                    <el-button @click="goBack()">{{ $t('common.back') }}</el-button>
-                </el-form-item>
-            </el-form>
-        </el-col>
-    </el-row> -->
-    <div class="section-title">Email settings</div>
-    <el-row>
-        <el-col :span="11" :offset="1">
-            <el-form :model="settings">
-                <el-form-item label="Email SMTP" :label-width="formLabelWidth">
-                </el-form-item>
-                <el-form-item label="Host" :label-width="formLabelWidth">
-                    <el-input v-model="settings.smtpHost" placeholder="" />
-                </el-form-item>
-                <el-form-item label="Username" :label-width="formLabelWidth">
-                    <el-input v-model="settings.smtpUsername" placeholder="" />
-                </el-form-item>
-                <el-form-item label="Password" :label-width="formLabelWidth">
-                    <el-input
-                        v-model="settings.smtpPassword"
-                        placeholder=""
-                        type="password"
-                    />
-                </el-form-item>
-                <el-form-item
-                    :label="t('botSettings.connTimeout')"
+        </div>
+    </el-card>
+
+    <el-card class="settings-card" shadow="never">
+        <template #header>
+            <div class="section-title">
+                {{ $t("botSettings.txtGen") }}
+                <el-tooltip effect="light" placement="right">
+                    <template #content>
+                        <span v-html="$t('botSettings.chatModelTip')"></span>
+                    </template>
+                    <el-button circle>?</el-button>
+                </el-tooltip>
+            </div>
+        </template>
+        <el-row>
+            <el-col :span="16">
+                <el-form
+                    :model="settings.textGenerationProvider"
                     :label-width="formLabelWidth"
                 >
-                    <el-input-number
-                        v-model="settings.smtpTimeoutSec"
-                        :min="1"
-                        :max="600"
-                    />
-                    {{ t("common.sec") }}
-                </el-form-item>
-                <el-form-item
-                    label="Email verification regex"
-                    label-width="200px"
+                    <el-form-item :label="t('botSettings.provider')">
+                        <el-radio-group
+                            v-model="settings.textGenerationProvider.provider.id"
+                            @change="changeTextGenerationProvider"
+                        >
+                            <el-radio-button
+                                v-for="item in textGenerationProviders"
+                                :id="item.id"
+                                :key="item.id"
+                                :label="item.id"
+                                :value="item.id"
+                            />
+                        </el-radio-group>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.reqAddr')">
+                        <el-input
+                            v-model="settings.textGenerationProvider.apiUrl"
+                            :disabled="
+                                settings.textGenerationProvider.apiUrlDisabled
+                            "
+                        />
+                    </el-form-item>
+                    <el-form-item
+                        :label="$t('botSettings.apiKey')"
+                        v-show="settings.textGenerationProvider.showApiKeyInput"
+                    >
+                        <el-input
+                            v-model="settings.textGenerationProvider.apiKey"
+                            show-password
+                        />
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.model')">
+                        <el-select
+                            ref="textGenerationModelSelector"
+                            v-model="
+                                settings.textGenerationProvider.provider.model
+                            "
+                            :placeholder="$t('botSettings.chooseModel')"
+                        >
+                            <el-option
+                                v-for="item in textGenerationModelOptions"
+                                :id="item.value"
+                                :key="item.value"
+                                :label="item.label"
+                                :value="item.value"
+                            />
+                            <template #footer>
+                                <el-button
+                                    :disabled="
+                                        settings.textGenerationProvider
+                                            .provider.id != 'Ollama'
+                                    "
+                                    v-if="
+                                        !isAddingAnotherTextGenerationOllamaModel
+                                    "
+                                    text
+                                    bg
+                                    @click="
+                                        isAddingAnotherTextGenerationOllamaModel = true
+                                    "
+                                >
+                                    {{ $t("botSettings.anotherOllamaModel") }}
+                                </el-button>
+                                <template v-else>
+                                    <el-input
+                                        v-model="
+                                            anotherTextGenerationOllamaModel
+                                        "
+                                        :placeholder="$t('botSettings.inputModelName')"
+                                        style="margin-bottom: 8px"
+                                    />
+                                    <el-button
+                                        type="primary"
+                                        @click="
+                                            addAnotherTextGenerationOllamaModel(
+                                                anotherTextGenerationOllamaModel,
+                                            )
+                                        "
+                                    >
+                                        {{ $t("botSettings.confirm") }}
+                                    </el-button>
+                                    <el-button
+                                        @click="
+                                            isAddingAnotherTextGenerationOllamaModel = false
+                                        "
+                                        >{{ $t("botSettings.cancelLower") }}</el-button
+                                    >
+                                </template>
+                            </template>
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.maxResTokenLen')">
+                        <el-input-number
+                            v-model="
+                                settings.textGenerationProvider
+                                    .maxResponseTokenLength
+                            "
+                            :min="10"
+                            :max="100000"
+                            :step="5"
+                        />
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.connTimeout')"
+                        v-show="
+                            settings.textGenerationProvider.provider.id !=
+                            'HuggingFace'
+                        "
+                    >
+                        <el-input-number
+                            v-model="
+                                settings.textGenerationProvider
+                                    .connectTimeoutMillis
+                            "
+                            :min="100"
+                            :max="65500"
+                            :step="100"
+                        />
+                        <span class="form-item-suffix">{{
+                            t("common.millis")
+                        }}</span>
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.readTimeout')"
+                        v-show="
+                            settings.textGenerationProvider.provider.id !=
+                            'HuggingFace'
+                        "
+                    >
+                        <el-input-number
+                            v-model="
+                                settings.textGenerationProvider
+                                    .readTimeoutMillis
+                            "
+                            :min="1000"
+                            :max="65500"
+                            :step="100"
+                        />
+                        <span class="form-item-suffix">{{
+                            t("common.millis")
+                        }}</span>
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.proxy')"
+                        v-show="
+                            settings.textGenerationProvider.provider.id !=
+                            'HuggingFace'
+                        "
+                    >
+                        <div class="proxy-row">
+                            <el-switch
+                                v-model="textGenerationProviderProxyEnabled"
+                                :active-text="$t('common.enable')"
+                            />
+                            <el-input
+                                v-model="settings.textGenerationProvider.proxyUrl"
+                                placeholder="http://127.0.0.1:9270"
+                                :disabled="!textGenerationProviderProxyEnabled"
+                            />
+                        </div>
+                    </el-form-item>
+                </el-form>
+            </el-col>
+            <el-col :span="7" :offset="1">
+                <div class="usage-note">
+                    {{ $t("botSettings.txtGenUsage") }}
+                </div>
+                <el-image
+                    :src="textGenerationPicThumbnail"
+                    :zoom-rate="1.2"
+                    :max-scale="7"
+                    :min-scale="0.2"
+                    :preview-src-list="usedByTextGenerationBig"
+                    :initial-index="4"
+                    fit="cover"
+                />
+            </el-col>
+        </el-row>
+        <el-alert
+            v-if="showHfIncorrectGenerationModelTip"
+            type="warning"
+            :closable="false"
+            class="hf-alert"
+        >
+            <template #title>
+                {{ $t("botSettings.hfModelMissing") }}
+                <el-button
+                    type="primary"
+                    text
+                    @click="
+                        downloadModels(
+                            settings.textGenerationProvider.provider.model,
+                        )
+                    "
                 >
-                    <el-input
-                        v-model="settings.emailVerificationRegex"
-                        :placeholder="defaultEmailVerificationRegex"
-                    />
-                </el-form-item>
-                <el-form-item label="" label-width="200px">
-                    You can customize the email verification regular expression,
-                    or leave it blank and the system will automatically use the
-                    general verification rules.
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button :loading="loading" type="info" @click="smtpTest">
-                        Test SMTP settings
-                    </el-button>
-                    <el-alert
-                        v-if="smtpPassed"
-                        title="SMTP test passed"
-                        type="success"
-                    />
-                    <el-alert
-                        v-if="smtpFailed"
-                        :title="smtpFailedDetail"
-                        type="error"
-                    />
-                </el-form-item>
-                <el-form-item label="" :label-width="formLabelWidth">
-                    <el-button type="primary" @click="save">
-                        {{ $t("common.save") }}
-                    </el-button>
-                    <el-button @click="goBack()">{{
-                        $t("common.back")
-                    }}</el-button>
-                </el-form-item>
-            </el-form>
-        </el-col>
-    </el-row>
+                    {{ $t("botSettings.hfModelDownloadLink") }}
+                </el-button>
+                {{ $t("botSettings.hfModelManual", { repo: textGenerationModelRepository }) }}
+            </template>
+        </el-alert>
+        <div
+            v-if="showHfGenerationModelDownloadProgress"
+            class="download-progress"
+        >
+            <div class="download-progress-url">{{ $t("botSettings.downloading") }}: {{ downloadingUrl }}</div>
+            <el-progress
+                :percentage="Number(downloadingProgress) || 0"
+                :stroke-width="14"
+                striped
+                striped-flow
+            />
+        </div>
+    </el-card>
+
+    <el-card class="settings-card" shadow="never">
+        <template #header>
+            <div class="section-title">
+                {{ $t("botSettings.sentenceEmbedding") }}
+                <el-tooltip effect="light" placement="right">
+                    <template #content>
+                        <span
+                            v-html="$t('botSettings.sentenceEmbeddingTip')"
+                        ></span>
+                    </template>
+                    <el-button circle>?</el-button>
+                </el-tooltip>
+            </div>
+        </template>
+        <el-row>
+            <el-col :span="16">
+                <el-form
+                    :model="settings.sentenceEmbeddingProvider"
+                    :label-width="formLabelWidth"
+                >
+                    <el-form-item :label="t('botSettings.provider')">
+                        <el-radio-group
+                            v-model="
+                                settings.sentenceEmbeddingProvider.provider.id
+                            "
+                            @change="changeSentenceEmbeddingProvider"
+                        >
+                            <el-radio-button
+                                v-for="item in sentenceEmbeddingProviders"
+                                :id="item.id"
+                                :key="item.id"
+                                :label="item.id"
+                                :value="item.id"
+                            />
+                        </el-radio-group>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.reqAddr')">
+                        <el-input
+                            v-model="settings.sentenceEmbeddingProvider.apiUrl"
+                            :disabled="
+                                settings.sentenceEmbeddingProvider.apiUrlDisabled
+                            "
+                        />
+                    </el-form-item>
+                    <el-form-item
+                        :label="$t('botSettings.apiKey')"
+                        v-show="
+                            settings.sentenceEmbeddingProvider.showApiKeyInput
+                        "
+                    >
+                        <el-input
+                            v-model="settings.sentenceEmbeddingProvider.apiKey"
+                            show-password
+                        />
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.model')">
+                        <el-select
+                            ref="sentenceEmbeddingModelSelector"
+                            v-model="
+                                settings.sentenceEmbeddingProvider.provider.model
+                            "
+                            :placeholder="$t('botSettings.chooseModel')"
+                        >
+                            <el-option
+                                v-for="item in sentenceEmbeddingModelOptions"
+                                :id="item.value"
+                                :key="item.value"
+                                :label="item.label"
+                                :value="item.value"
+                            />
+                            <template #footer>
+                                <el-button
+                                    :disabled="
+                                        settings.sentenceEmbeddingProvider
+                                            .provider.id != 'Ollama'
+                                    "
+                                    v-if="
+                                        !isAddingAnotherSentenceEmbeddingOllamaModel
+                                    "
+                                    text
+                                    bg
+                                    @click="
+                                        isAddingAnotherSentenceEmbeddingOllamaModel = true
+                                    "
+                                >
+                                    {{ $t("botSettings.anotherOllamaModel") }}
+                                </el-button>
+                                <template v-else>
+                                    <el-input
+                                        v-model="
+                                            anotherSentenceEmbeddingOllamaModel
+                                        "
+                                        :placeholder="$t('botSettings.inputModelName')"
+                                        style="margin-bottom: 8px"
+                                    />
+                                    <el-button
+                                        type="primary"
+                                        @click="
+                                            addAnotherSentenceEmbeddingOllamaModel(
+                                                anotherSentenceEmbeddingOllamaModel,
+                                            )
+                                        "
+                                    >
+                                        {{ $t("botSettings.confirm") }}
+                                    </el-button>
+                                    <el-button
+                                        @click="
+                                            isAddingAnotherSentenceEmbeddingOllamaModel = false
+                                        "
+                                        >{{ $t("botSettings.cancelLower") }}</el-button
+                                    >
+                                </template>
+                            </template>
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.simThres')">
+                        <div class="threshold-row">
+                            ≥
+                            <el-input-number
+                                v-model="similarityThreshold"
+                                :min="1"
+                                :max="99"
+                                :step="1"
+                            />
+                            %
+                            <el-tooltip effect="light" placement="right">
+                                <template #content>
+                                    {{ $t("botSettings.simThresTip") }}
+                                </template>
+                                <el-button circle>?</el-button>
+                            </el-tooltip>
+                        </div>
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.connTimeout')"
+                        v-show="
+                            settings.sentenceEmbeddingProvider.provider.id !=
+                            'HuggingFace'
+                        "
+                    >
+                        <el-input-number
+                            v-model="
+                                settings.sentenceEmbeddingProvider
+                                    .connectTimeoutMillis
+                            "
+                            :min="100"
+                            :max="65500"
+                            :step="100"
+                        />
+                        <span class="form-item-suffix">{{
+                            t("common.millis")
+                        }}</span>
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.readTimeout')"
+                        v-show="
+                            settings.sentenceEmbeddingProvider.provider.id !=
+                            'HuggingFace'
+                        "
+                    >
+                        <el-input-number
+                            v-model="
+                                settings.sentenceEmbeddingProvider
+                                    .readTimeoutMillis
+                            "
+                            :min="500"
+                            :max="65500"
+                            :step="100"
+                        />
+                        <span class="form-item-suffix">{{
+                            t("common.millis")
+                        }}</span>
+                    </el-form-item>
+                    <el-form-item
+                        :label="t('botSettings.proxy')"
+                        v-show="
+                            settings.sentenceEmbeddingProvider.provider.id !=
+                            'HuggingFace'
+                        "
+                    >
+                        <div class="proxy-row">
+                            <el-switch
+                                v-model="sentenceEmbeddingProviderProxyEnabled"
+                                :active-text="$t('common.enable')"
+                            />
+                            <el-input
+                                v-model="settings.sentenceEmbeddingProvider.proxyUrl"
+                                placeholder="http://127.0.0.1:9270"
+                                :disabled="!sentenceEmbeddingProviderProxyEnabled"
+                            />
+                        </div>
+                    </el-form-item>
+                </el-form>
+            </el-col>
+            <el-col :span="7" :offset="1">
+                <div class="usage-note">
+                    {{ $t("botSettings.sentenceEmbeddingUsage") }}
+                </div>
+                <el-image
+                    :src="sentenceEmbeddingPicThumbnail"
+                    :zoom-rate="1.2"
+                    :max-scale="7"
+                    :min-scale="0.2"
+                    :preview-src-list="usedBySentenceEmbeddingBig"
+                    :initial-index="4"
+                    fit="cover"
+                />
+            </el-col>
+        </el-row>
+        <el-alert
+            v-if="showHfIncorrectEmbeddingModelTip"
+            type="warning"
+            :closable="false"
+            class="hf-alert"
+        >
+            <template #title>
+                {{ $t("botSettings.hfModelMissing") }}
+                <el-button
+                    type="primary"
+                    text
+                    @click="
+                        downloadModels(
+                            settings.sentenceEmbeddingProvider.provider.model,
+                        )
+                    "
+                >
+                    {{ $t("botSettings.hfModelDownloadLink") }}
+                </el-button>
+                {{ $t("botSettings.hfModelManual", { repo: sentenceEmbeddingModelRepository }) }}
+            </template>
+        </el-alert>
+        <div
+            v-if="showHfEmbeddingModelDownloadProgress"
+            class="download-progress"
+        >
+            <div class="download-progress-url">{{ $t("botSettings.downloading") }}: {{ downloadingUrl }}</div>
+            <el-progress
+                :percentage="Number(downloadingProgress) || 0"
+                :stroke-width="14"
+                striped
+                striped-flow
+            />
+        </div>
+    </el-card>
+
+    <el-card class="settings-card" shadow="never">
+        <template #header>
+            <div class="section-title">
+                {{ $t("botSettings.smtp.title") }}
+            </div>
+        </template>
+        <el-form :model="settings" :label-width="formLabelWidth">
+            <el-form-item :label="$t('botSettings.smtp.host')">
+                <el-input v-model="settings.smtpHost" />
+            </el-form-item>
+            <el-form-item :label="$t('botSettings.smtp.username')">
+                <el-input v-model="settings.smtpUsername" />
+            </el-form-item>
+            <el-form-item :label="$t('botSettings.smtp.password')">
+                <el-input
+                    v-model="settings.smtpPassword"
+                    type="password"
+                    show-password
+                />
+            </el-form-item>
+            <el-form-item :label="t('botSettings.connTimeout')">
+                <el-input-number
+                    v-model="settings.smtpTimeoutSec"
+                    :min="1"
+                    :max="600"
+                />
+                <span class="form-item-suffix">{{ t("common.sec") }}</span>
+            </el-form-item>
+            <el-form-item
+                :label="$t('botSettings.smtp.emailRegex')"
+                label-width="200px"
+            >
+                <el-input
+                    v-model="settings.emailVerificationRegex"
+                    :placeholder="defaultEmailVerificationRegex"
+                />
+                <div class="form-item-help">
+                    {{ $t("botSettings.smtp.emailRegexHelp") }}
+                </div>
+            </el-form-item>
+            <el-form-item label="">
+                <el-button :loading="loading" type="info" @click="smtpTest">
+                    {{ $t("botSettings.smtp.test") }}
+                </el-button>
+                <el-alert
+                    v-if="smtpPassed"
+                    :title="$t('botSettings.smtp.testPassed')"
+                    type="success"
+                    class="smtp-alert"
+                />
+                <el-alert
+                    v-if="smtpFailed"
+                    :title="smtpFailedDetail"
+                    type="error"
+                    class="smtp-alert"
+                />
+            </el-form-item>
+        </el-form>
+    </el-card>
+
+    <div class="settings-footer">
+        <el-button type="primary" @click="save">
+            {{ $t("common.save") }}
+        </el-button>
+        <el-button @click="goBack()">{{ $t("common.back") }}</el-button>
+    </div>
 </template>
+<style scoped>
+.settings-card {
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
+
+.settings-card :deep(.el-card__header) {
+    padding: 14px 20px 0;
+    border-bottom: none;
+}
+
+.settings-card .section-title {
+    margin: 0;
+}
+
+.usage-note {
+    color: var(--el-text-color-secondary, #909399);
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.form-item-suffix {
+    margin-left: 8px;
+    color: var(--el-text-color-secondary, #909399);
+}
+
+.form-item-help {
+    width: 100%;
+    color: var(--el-text-color-secondary, #909399);
+    font-size: 12px;
+    line-height: 1.5;
+    margin-top: 4px;
+}
+
+.proxy-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.threshold-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.hf-alert {
+    margin-top: 8px;
+}
+
+.hf-alert :deep(.el-button) {
+    padding: 0;
+}
+
+.download-progress {
+    margin-top: 12px;
+}
+
+.download-progress-url {
+    font-size: 12px;
+    color: var(--el-text-color-secondary, #909399);
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+.smtp-alert {
+    margin-left: 12px;
+    flex: 1;
+}
+
+.settings-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    gap: 4px;
+    padding: 12px 20px;
+    margin: 0 -20px;
+    background: var(--el-bg-color, #fff);
+    border-top: 1px solid var(--el-border-color-light, #e4e7ed);
+}
+</style>

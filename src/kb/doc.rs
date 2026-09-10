@@ -512,6 +512,7 @@ pub(crate) async fn search_doc(
         if let Err(e) = crate::ai::chat::chat(
             robot_id,
             Some(prompts),
+            None,
             Some(connect_timeout),
             Some(read_timeout),
             crate::ai::chat::ResultSender::StrBuf(&mut s),
