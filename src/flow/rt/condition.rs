@@ -1,374 +1,409 @@
-use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::str::FromStr;
 
-// use crossbeam_channel::Sender;
-use futures_util::StreamExt;
+use bigdecimal::BigDecimal;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
-use tokio::sync::mpsc::Sender;
 
-use super::chat::{ResultSender, SenderWrapper};
-use crate::ai::huggingface::{HuggingFaceModel, LoadedHuggingFaceModel};
-use crate::man::settings;
-use crate::result::{Error, Result};
+use crate::flow::rt::context::Context;
+use crate::flow::rt::dto::{Request, UserInputResult};
+use crate::variable::crud as variable;
+use crate::variable::dto::VariableType;
 
-pub(crate) const TEMPERATURE: f64 = 0.7;
-pub(crate) const REPEAT_PENALTY: f32 = 1.1;
-pub(crate) const REPEAT_LAST_N: usize = 64;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "id", content = "model")]
-pub(crate) enum TextGenerationProvider {
-    HuggingFace(HuggingFaceModel),
-    OpenAI(String),
-    Ollama(String),
+#[derive(
+    Clone, Copy, Deserialize, Serialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,
+)]
+#[rkyv(compare(PartialEq))]
+pub(crate) enum ConditionType {
+    UserInput,
+    UserIntent,
+    FlowVariable,
+    CustomJavascript,
+    CustomRegex,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-pub(crate) struct Prompt {
-    pub(crate) role: String,
-    pub(crate) content: String,
+#[derive(
+    Clone, Copy, Deserialize, Serialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,
+)]
+#[rkyv(compare(PartialEq))]
+pub(crate) enum CompareType {
+    HasValue,
+    DoesNotHaveValue,
+    EmptyString,
+    Eq,
+    NotEq,
+    Contains,
+    NotContains,
+    NGT,
+    NGTE,
+    NLT,
+    NLTE,
+    Timeout,
 }
 
-static LOADED_MODELS: LazyLock<Mutex<HashMap<String, LoadedHuggingFaceModel>>> =
-    LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
-
-// pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
-//     let info = m.get_info();
-//     match info.model_type {
-//         HuggingFaceModelType::Llama => super::llama::replace_model_cache(robot_id, &info),
-//         HuggingFaceModelType::Gemma => super::gemma::replace_model_cache(robot_id, &info),
-//         HuggingFaceModelType::Phi3 => super::phi3::replace_model_cache(robot_id, &info),
-//         HuggingFaceModelType::Bert => Err(Error::ErrorWithMessage(format!(
-//             "Unsuported model type {:?}.",
-//             &info.model_type
-//         ))),
-//     }
-// }
-
-pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
-    let m = LoadedHuggingFaceModel::load(m)?;
-    let mut r = LOADED_MODELS.lock()?;
-    r.insert(String::from(robot_id), m);
-    Ok(())
+#[derive(
+    Copy, Clone, Debug, Deserialize, Serialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize,
+)]
+#[rkyv(compare(PartialEq))]
+pub(crate) enum TargetDataVariant {
+    Const,
+    Variable,
+    ZeroShotTextClassification,
 }
 
-pub(crate) async fn completion(
-    robot_id: &str,
-    prompt: &str,
-    sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
-) -> Result<()> {
-    if let Some(settings) = settings::get_settings(robot_id)? {
-        log::info!("{:?}", &settings.text_generation_provider.provider);
-        match settings.text_generation_provider.provider {
-            TextGenerationProvider::HuggingFace(m) => {
-                huggingface(
-                    robot_id,
-                    &m,
-                    prompt,
-                    settings.text_generation_provider.max_response_token_length as usize,
-                    sender,
-                )
-                .await?;
-                Ok(())
+// #[macro_export]
+macro_rules! compare_numbers {
+    ($req: expr, $ctx: expr, $ref_data: expr, $comparsion: tt, $self: ident) => ({
+        let r = variable::get(&$req.robot_id, $ref_data);
+        if r.is_err() {
+            log::error!("err");
+            return false;
+        }
+        let v = r.unwrap();
+        if v.is_none() {
+            return false;
+        }
+        let v = v.unwrap();
+        if v.var_type == VariableType::Str {
+            return false;
+        }
+        let val = v.get_value2($req, $ctx).await;
+        if val.is_none() {
+            return false;
+        }
+        let val = val.unwrap();
+        let n1 = match BigDecimal::from_str(&val.val_to_string()) {
+            Ok(n) => n,
+            Err(e) => {
+                log::warn!("{:?}",&e);
+                return false;
             }
-            TextGenerationProvider::OpenAI(m) => {
-                open_ai(
-                    &m,
-                    prompt,
-                    settings.text_generation_provider.connect_timeout_millis,
-                    settings.text_generation_provider.read_timeout_millis,
-                    &settings.text_generation_provider.proxy_url,
-                    sender,
-                )
-                .await?;
-                Ok(())
+        };
+        let n2 = match BigDecimal::from_str(&$self.get_target_data($req, $ctx).await) {
+            Ok(n) => n,
+            Err(e) => {
+                log::warn!("{:?}",&e);
+                return false;
             }
-            TextGenerationProvider::Ollama(m) => {
-                ollama(
-                    &settings.text_generation_provider.api_url,
-                    &m,
-                    prompt,
-                    settings.text_generation_provider.connect_timeout_millis,
-                    settings.text_generation_provider.read_timeout_millis,
-                    &settings.text_generation_provider.proxy_url,
-                    settings.text_generation_provider.max_response_token_length,
-                    sender,
-                )
-                .await?;
-                Ok(())
+        };
+        n1 $comparsion n2
+    });
+}
+
+#[derive(Clone, Deserialize, Serialize, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)]
+#[rkyv(compare(PartialEq))]
+pub(crate) struct ConditionData {
+    pub(crate) condition_type: ConditionType,
+    pub(crate) compare_type: CompareType,
+    pub(crate) ref_data: String,
+    pub(crate) target_data: String,
+    pub(crate) target_data_variant: TargetDataVariant,
+    pub(crate) case_sensitive_comparison: bool,
+}
+
+impl ConditionData {
+    async fn get_target_data(&self, req: &Request, ctx: &mut Context) -> String {
+        match self.target_data_variant {
+            TargetDataVariant::Const => self.target_data.clone(),
+            TargetDataVariant::Variable => variable::get_value(&self.target_data, req, ctx).await,
+            TargetDataVariant::ZeroShotTextClassification => {
+                //todo
+                //do text zero shot classification of user input
+                //and try matching label (from self.ref_data) and get a score
+                String::new()
             }
         }
-    } else {
-        Err(Error::WithMessage(format!(
-            "Can NOT retrieve settings from robot_id: {robot_id}"
-        )))
     }
-}
-
-#[macro_export]
-macro_rules! sse_send (
-    ($sender: expr, $message: expr) => ({
-        // println!("sse_send0");
-        if !$sender.is_closed() {
-            // println!("sse_send1");
-            let sender = $sender.clone();
-            // tokio::spawn(async move {
-            //     log::info!("sse_send {}",&$message);
-            //     if let Err(e) = sender.send($message).await {
-            //         log::warn!("Failed sending LLM result, err: {:?}", &e);
-            //     }
-            // });
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = sender.blocking_send($message) {
-                    log::warn!("Failed sending LLM result, err: {:?}", &e);
-                }
-            });
-        }
-    });
-);
-
-// pub(in crate::ai) fn send(sender: &Sender<String>, message: String) -> Result<()> {
-//     let sender = sender.clone();
-//     if let Err(e) = sender.try_send(message) {
-//         match e {
-//             tokio::sync::mpsc::error::TrySendError::Full(m) => Ok(sender.blocking_send(m)?),
-//             tokio::sync::mpsc::error::TrySendError::Closed(_) => Err(e.into()),
-//         }
-//     } else {
-//         Ok(())
-//     }
-// }
-
-// async fn huggingface(
-//     robot_id: &str,
-//     m: &HuggingFaceModel,
-//     prompt: &str,
-//     sample_len: usize,
-//     sender: &Sender<String>,
-// ) -> Result<()> {
-//     let info = m.get_info();
-//     // log::info!("model_type={:?}", &info.model_type);
-//     let new_prompt = info.convert_prompt(prompt)?;
-//     match info.model_type {
-//         HuggingFaceModelType::Gemma => {
-//             super::gemma::gen_text(robot_id, &info, prompt, sample_len, Some(0.5), sender)
-//         }
-//         HuggingFaceModelType::Llama => super::llama::gen_text(
-//             robot_id,
-//             &info,
-//             &new_prompt,
-//             sample_len,
-//             Some(25),
-//             Some(0.5),
-//             sender,
-//         ),
-//         HuggingFaceModelType::Phi3 => {
-//             super::phi3::gen_text(robot_id, &info, prompt, sample_len, Some(0.5), sender)
-//         }
-//         HuggingFaceModelType::Bert => Err(Error::ErrorWithMessage(format!(
-//             "Unsuported model type {:?}.",
-//             &info.model_type
-//         ))),
-//     }
-//     // Ok(())
-// }
-
-async fn huggingface(
-    robot_id: &str,
-    m: &HuggingFaceModel,
-    prompt: &str,
-    sample_len: usize,
-    sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
-) -> Result<()> {
-    let info = m.get_info();
-    // log::info!("model_type={:?}", &info.model_type);
-    let new_prompt = info.convert_prompt(prompt, None)?;
-    let mut model = LOADED_MODELS.lock().unwrap_or_else(|e| {
-        log::warn!("{:#?}", &e);
-        e.into_inner()
-    });
-    if !model.contains_key(robot_id) {
-        let r = LoadedHuggingFaceModel::load(m)?;
-        model.insert(String::from(robot_id), r);
-    };
-    let loaded_model = model.get_mut(robot_id).unwrap();
-    let mut result_sender = ResultSender::ChannelSender(SenderWrapper {
-        sender,
-        content_seq: 0,
-    });
-    match loaded_model {
-        LoadedHuggingFaceModel::Gemma(m) => super::gemma::gen_text(
-            &m.0,
-            &m.1,
-            &m.2,
-            prompt,
-            sample_len,
-            Some(0.5),
-            &mut result_sender,
-        ),
-        LoadedHuggingFaceModel::Llama(m) => super::llama::gen_text(
-            &m.0,
-            &m.1,
-            &m.2,
-            &m.3,
-            &m.4,
-            &new_prompt,
-            sample_len,
-            Some(25),
-            Some(0.5),
-            &mut result_sender,
-        ),
-        LoadedHuggingFaceModel::Phi3(m) => super::phi3::gen_text(
-            &m.0,
-            &m.1,
-            &m.2,
-            prompt,
-            sample_len,
-            Some(0.5),
-            &mut result_sender,
-        ),
-        LoadedHuggingFaceModel::Moondream((device, model, tokenizer)) => {
-            super::moondream::gen_text(
-                device,
-                model,
-                tokenizer,
-                super::moondream::MoondreamInput {
-                    prompt,
-                    images_base64: &[],
-                },
-                sample_len,
-                Some(0.5),
-                &mut result_sender,
-            )
-        }
-        LoadedHuggingFaceModel::Bert(_m) => Err(Error::WithMessage(format!(
-            "Unsuported model type {:?}.",
-            &info.model_type
-        ))),
-    }
-    // Ok(())
-}
-
-async fn open_ai(
-    m: &str,
-    s: &str,
-    connect_timeout_millis: u32,
-    read_timeout_millis: u32,
-    proxy_url: &str,
-    sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
-) -> Result<()> {
-    let client = crate::external::http::get_client(
-        connect_timeout_millis.into(),
-        read_timeout_millis.into(),
-        proxy_url,
-    )?;
-    let mut message0 = Map::new();
-    message0.insert(String::from("role"), Value::from("system"));
-    message0.insert(String::from("content"), Value::from("system_hint"));
-    let mut message1 = Map::new();
-    message1.insert(String::from("role"), Value::from("user"));
-    message1.insert(String::from("content"), Value::from(s));
-    let messages = Value::Array(vec![message0.into(), message1.into()]);
-    let mut map = Map::new();
-    map.insert(String::from("model"), Value::from(m));
-    map.insert(String::from("messages"), messages);
-    map.insert(String::from("stream"), Value::Bool(true));
-    let obj = Value::Object(map);
-    let req = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Content-Type", "application/json")
-        .header("Authorization", "Bearer ")
-        .body(serde_json::to_string(&obj)?);
-    let mut stream = req.send().await?.bytes_stream();
-    let sender_wrapper = SenderWrapper {
-        sender,
-        content_seq: 0,
-    };
-    while let Some(item) = stream.next().await {
-        let chunk = item?;
-        let v: Value = serde_json::from_slice(chunk.as_ref())?;
-        if let Some(choices) = v.get("choices")
-            && choices.is_array()
-        {
-            if let Some(choices) = choices.as_array()
-                && !choices.is_empty()
-            {
-                if let Some(item) = choices.first() {
-                    if let Some(delta) = item.get("delta") {
-                        if let Some(content) = delta.get("content")
-                            && content.is_string()
-                        {
-                            if let Some(s) = content.as_str() {
-                                let m = String::from(s);
-                                log::info!("OpenAI push {}", &m);
-                                sender_wrapper.send(m);
-                            }
-                        }
+    pub(in crate::flow::rt) async fn compare(&self, req: &Request, ctx: &mut Context) -> bool {
+        // let target_data = match self.target_data_variant {
+        //     TargetDataVariant::Const => self.target_data.clone(),
+        //     TargetDataVariant::Variable => variable::get_value(&self.target_data, req, ctx),
+        // };
+        // println!("{} {}", &target_data, &req.user_input);
+        match self.condition_type {
+            ConditionType::UserInput => match self.compare_type {
+                CompareType::Eq => {
+                    if self.case_sensitive_comparison {
+                        // log::info!(
+                        //     "{} {} {}",
+                        //     self.get_target_data(req, ctx).await,
+                        //     &req.user_input,
+                        //     self.get_target_data(req, ctx).await.eq(&req.user_input)
+                        // );
+                        self.get_target_data(req, ctx).await.eq(&req.user_input)
+                    } else {
+                        unicase::eq(&self.get_target_data(req, ctx).await, &req.user_input)
                     }
                 }
+                CompareType::Contains => {
+                    if self.case_sensitive_comparison {
+                        req.user_input
+                            .contains(&self.get_target_data(req, ctx).await)
+                    } else {
+                        let mut s = self.get_target_data(req, ctx).await;
+                        s.make_ascii_lowercase();
+                        s.contains(&req.user_input.to_lowercase())
+                    }
+                }
+                CompareType::Timeout => UserInputResult::Timeout == req.user_input_result,
+                CompareType::EmptyString => req.user_input.is_empty(),
+                _ => false,
+            },
+            ConditionType::UserIntent => {
+                // println!("{} {}", &target_data, req.user_input_intent.is_some());
+                match ctx.get_user_input_intent(req).await {
+                    Ok(crate::flow::rt::context::UserInputIntent::Detected(intent)) => {
+                        let i = String::from(intent);
+                        return self.get_target_data(req, ctx).await.eq(&i);
+                    }
+                    _ => false,
+                }
+                // req.user_input_intent.is_some()
+                //     && self
+                //         .get_target_data(req, ctx)
+                //         .await
+                //         .eq(req.user_input_intent.as_ref().unwrap())
+            }
+            ConditionType::FlowVariable => match self.compare_type {
+                CompareType::HasValue => {
+                    if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
+                        v.get_value2(req, ctx).await.is_some()
+                    } else {
+                        false
+                    }
+                }
+                CompareType::DoesNotHaveValue => {
+                    if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
+                        v.get_value2(req, ctx).await.is_none()
+                    } else {
+                        true
+                    }
+                }
+                CompareType::EmptyString => {
+                    if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
+                        if v.var_type == VariableType::Num {
+                            false
+                        } else {
+                            let val = v.get_value2(req, ctx).await;
+                            val.is_none() || val.as_ref().unwrap().val_to_string().is_empty()
+                        }
+                    } else {
+                        false
+                    }
+                }
+                CompareType::Eq => {
+                    if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
+                        if let Some(val) = v.get_value2(req, ctx).await {
+                            if self.case_sensitive_comparison {
+                                val.val_to_string()
+                                    .eq(&self.get_target_data(req, ctx).await)
+                            } else {
+                                unicase::eq(
+                                    &val.val_to_string(),
+                                    &self.get_target_data(req, ctx).await,
+                                )
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                CompareType::NotEq => {
+                    if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
+                        if let Some(val) = v.get_value2(req, ctx).await {
+                            if self.case_sensitive_comparison {
+                                !val.val_to_string()
+                                    .eq(&self.get_target_data(req, ctx).await)
+                            } else {
+                                !unicase::eq(
+                                    &val.val_to_string(),
+                                    &self.get_target_data(req, ctx).await,
+                                )
+                            }
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                }
+                CompareType::Contains => {
+                    if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
+                        if v.var_type == VariableType::Num {
+                            false
+                        } else if let Some(val) = v.get_value2(req, ctx).await {
+                            if self.case_sensitive_comparison {
+                                val.val_to_string()
+                                    .contains(&self.get_target_data(req, ctx).await)
+                            } else {
+                                let mut s = val.val_to_string();
+                                s.make_ascii_lowercase();
+                                s.contains(&self.get_target_data(req, ctx).await.to_lowercase())
+                            }
+                            // val.val_to_string()
+                            //     .find(&self.get_target_data(req, ctx))
+                            //     .is_some()
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                }
+                CompareType::NotContains => {
+                    if let Ok(Some(v)) = variable::get(&req.robot_id, &self.ref_data) {
+                        if v.var_type == VariableType::Num {
+                            false
+                        } else if let Some(val) = v.get_value2(req, ctx).await {
+                            !val.val_to_string()
+                                .contains(&self.get_target_data(req, ctx).await)
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
+                }
+                CompareType::NGT => {
+                    compare_numbers!(req, ctx, &self.ref_data, >, self)
+                    // if let Ok(op) = variable::get(&req.robot_id, &self.ref_data) {
+                    //     if let Some(v) = op {
+                    //         if v.var_type == VariableType::Str {
+                    //             false
+                    //         } else {
+                    //             if let Some(val) = v.get_value(req, ctx) {
+                    //                 if let Ok(n1) = BigDecimal::from_str(&val.val_to_string()) {
+                    //                     // println!("get_target_data {} {:?} |{}|", self.target_data, self.target_data_variant, self.get_target_data(req, ctx));
+                    //                     if let Ok(n2) =
+                    //                         BigDecimal::from_str(&self.get_target_data(req, ctx))
+                    //                     {
+                    //                         // println!("{} {}", n1, n2);
+                    //                         n1 > n2
+                    //                     } else {
+                    //                         false
+                    //                     }
+                    //                 } else {
+                    //                     false
+                    //                 }
+                    //             } else {
+                    //                 false
+                    //             }
+                    //         }
+                    //     } else {
+                    //         false
+                    //     }
+                    // } else {
+                    //     false
+                    // }
+                }
+                CompareType::NGTE => {
+                    compare_numbers!(req, ctx, &self.ref_data, >=, self)
+                    // if let Ok(op) = variable::get(&req.robot_id, &self.ref_data) {
+                    //     if let Some(v) = op {
+                    //         if v.var_type == VariableType::Str {
+                    //             false
+                    //         } else {
+                    //             if let Some(val) = v.get_value(req, ctx) {
+                    //                 if let Ok(n1) = BigDecimal::from_str(&val.val_to_string()) {
+                    //                     if let Ok(n2) =
+                    //                         BigDecimal::from_str(&self.get_target_data(req, ctx))
+                    //                     {
+                    //                         n1 >= n2
+                    //                     } else {
+                    //                         false
+                    //                     }
+                    //                 } else {
+                    //                     false
+                    //                 }
+                    //             } else {
+                    //                 false
+                    //             }
+                    //         }
+                    //     } else {
+                    //         false
+                    //     }
+                    // } else {
+                    //     false
+                    // }
+                }
+                CompareType::NLT => {
+                    compare_numbers!(req, ctx, &self.ref_data, <, self)
+                    // if let Ok(op) = variable::get(&req.robot_id, &self.ref_data) {
+                    //     if let Some(v) = op {
+                    //         if v.var_type == VariableType::Str {
+                    //             false
+                    //         } else {
+                    //             if let Some(val) = v.get_value(req, ctx) {
+                    //                 if let Ok(n1) = BigDecimal::from_str(&val.val_to_string()) {
+                    //                     if let Ok(n2) =
+                    //                         BigDecimal::from_str(&self.get_target_data(req, ctx))
+                    //                     {
+                    //                         n1 < n2
+                    //                     } else {
+                    //                         false
+                    //                     }
+                    //                 } else {
+                    //                     false
+                    //                 }
+                    //             } else {
+                    //                 false
+                    //             }
+                    //         }
+                    //     } else {
+                    //         false
+                    //     }
+                    // } else {
+                    //     false
+                    // }
+                }
+                CompareType::NLTE => {
+                    compare_numbers!(req, ctx, &self.ref_data, <=, self)
+                    // if let Ok(op) = variable::get(&req.robot_id, &self.ref_data) {
+                    //     if let Some(v) = op {
+                    //         if v.var_type == VariableType::Str {
+                    //             false
+                    //         } else {
+                    //             if let Some(val) = v.get_value(req, ctx) {
+                    //                 if let Ok(n1) = BigDecimal::from_str(&val.val_to_string()) {
+                    //                     if let Ok(n2) =
+                    //                         BigDecimal::from_str(&self.get_target_data(req, ctx))
+                    //                     {
+                    //                         n1 <= n2
+                    //                     } else {
+                    //                         false
+                    //                     }
+                    //                 } else {
+                    //                     false
+                    //                 }
+                    //             } else {
+                    //                 false
+                    //             }
+                    //         }
+                    //     } else {
+                    //         false
+                    //     }
+                    // } else {
+                    //     false
+                    // }
+                }
+                // let mut n = false;
+                // if let Ok(r) = variable::get(&self.ref_data) {
+                //     if let Some(ref_v) = r {
+                //         if let Some(val) = ref_v.get_value(req, ctx) {
+                //             n = val.val_to_string().eq(&target_data);
+                //         }
+                //     }
+                // }
+                _ => false,
+            },
+            ConditionType::CustomJavascript => todo!(),
+            ConditionType::CustomRegex => {
+                if let Ok(re) = Regex::new(&self.get_target_data(req, ctx).await) {
+                    return re.is_match(&req.user_input);
+                }
+                false
             }
         }
     }
-    Ok(())
-}
-
-async fn ollama(
-    u: &str,
-    m: &str,
-    s: &str,
-    connect_timeout_millis: u32,
-    read_timeout_millis: u32,
-    proxy_url: &str,
-    sample_len: u32,
-    sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
-) -> Result<()> {
-    let prompts: Vec<Prompt> = serde_json::from_str(s)?;
-    let mut prompt = String::with_capacity(32);
-    for p in prompts.iter() {
-        if p.role.eq("user") {
-            prompt.push_str(&p.content);
-            break;
-        }
-    }
-    if prompt.is_empty() {
-        return Ok(());
-    }
-    let client = crate::external::http::get_client(
-        connect_timeout_millis.into(),
-        read_timeout_millis.into(),
-        proxy_url,
-    )?;
-    let mut map = Map::new();
-    map.insert(String::from("prompt"), Value::String(prompt));
-    map.insert(String::from("model"), Value::String(String::from(m)));
-    map.insert(String::from("stream"), Value::Bool(true));
-
-    let mut num_predict = Map::new();
-    num_predict.insert(String::from("num_predict"), Value::from(sample_len));
-
-    map.insert(String::from("options"), Value::from(num_predict));
-    let obj = Value::Object(map);
-    let body = serde_json::to_string(&obj)?;
-    // log::info!("Request Ollama body {} to {}", &body, u);
-    let req = client.post(u).body(body);
-    let mut stream = req.send().await?.bytes_stream();
-    let sender_wrapper = SenderWrapper {
-        sender,
-        content_seq: 0,
-    };
-    while let Some(item) = stream.next().await {
-        let chunk = item?;
-        let v: Value = serde_json::from_slice(chunk.as_ref())?;
-        if let Some(res) = v.get("response")
-            && res.is_string()
-        {
-            if let Some(s) = res.as_str() {
-                let m = String::from(s);
-                log::info!("Ollama push {}", &m);
-                sender_wrapper.send(m);
-            }
-        }
-    }
-    Ok(())
 }

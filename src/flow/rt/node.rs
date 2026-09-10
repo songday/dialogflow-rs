@@ -1,4 +1,5 @@
 use core::time::Duration;
+use std::collections::HashMap;
 // use std::ops::DerefMut;
 
 // use enum_dispatch::enum_dispatch;
@@ -90,17 +91,24 @@ pub(crate) trait RuntimeNode {
 }
 
 async fn replace_vars(text: &str, req: &Request, ctx: &mut Context) -> Result<String> {
-    super::var_replace::replace_vars_with(text, |name| async {
-        let var = variable::get(&req.robot_id, name)?;
-        Ok(match var {
+    // Values may need an await (variable sources such as API calls), so resolve
+    // every referenced name first and then substitute from the resolved map.
+    let names = super::var_replace::collect_var_names(text);
+    let mut values: HashMap<String, Option<String>> = HashMap::with_capacity(names.len());
+    for name in names {
+        if values.contains_key(&name) {
+            continue;
+        }
+        let value = match variable::get(&req.robot_id, &name)? {
             Some(v) => v
                 .get_value2(req, ctx)
                 .await
                 .map(|value| value.val_to_string()),
             None => None,
-        })
-    })
-    .await
+        };
+        values.insert(name, value);
+    }
+    super::var_replace::replace_vars_with(text, |name| Ok(values.get(name).cloned().flatten()))
 }
 
 #[inline]

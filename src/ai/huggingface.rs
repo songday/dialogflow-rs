@@ -10,7 +10,7 @@ use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 use candle_transformers::models::gemma::{Config as GemmaConfig, Model as GemmaModel};
 use candle_transformers::models::llama::{Cache as LlamaCache, Llama, LlamaConfig, LlamaEosToks};
-use candle_transformers::models::moondream::Model as MoondreamModel;
+use candle_transformers::models::moondream::{Config as MoondreamConfig, Model as MoondreamModel};
 use candle_transformers::models::parler_tts::{Config as ParlerTtsConfig, Model as ParlerTtsModel};
 use candle_transformers::models::phi3::{Config as Phi3Config, Model as Phi3};
 use futures_util::StreamExt;
@@ -208,7 +208,8 @@ impl HuggingFaceModelInfo {
                 p.push_str(&user);
                 p.push_str("<|end|>\n<|assistant|>");
                 Ok(p)
-            }
+            },
+            HuggingFaceModelType::Moondream => todo!()
         }
     }
 }

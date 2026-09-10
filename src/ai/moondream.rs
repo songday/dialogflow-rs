@@ -55,7 +55,7 @@ pub(super) fn gen_text(
     result_sender: &mut ResultSender<'_, StreamingResponseData>,
 ) -> Result<()> {
     let prompt = format!("\n\nQuestion: {0}\n\nAnswer:", input.prompt);
-    let mut tokens = match tokenizer.encode(&prompt, true) {
+    let mut tokens = match tokenizer.encode(prompt.as_str(), true) {
         Ok(t) => t.get_ids().to_vec(),
         Err(e) => return Err(Error::WithMessage(format!("{}", &e))),
     };

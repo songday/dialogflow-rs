@@ -4,10 +4,11 @@ use std::sync::{LazyLock, Mutex};
 use axum::Json;
 use axum::extract::Multipart;
 use axum::response::IntoResponse;
+use base64::Engine;
 
 use tokio::sync::mpsc::Sender;
 
-use super::dto::Request;
+use super::dto::{Request, ResponseData};
 use super::executor;
 use crate::ai::dto::Attachment;
 use crate::result::Result;
@@ -47,12 +48,13 @@ pub(crate) async fn answer_multipart(mut multipart: Multipart) -> impl IntoRespo
                         Err(e) => break Err(e.into()),
                     }
                 } else if field.name().is_some_and(|n| n.eq("images")) {
+                    // `bytes()` consumes the field, so take the content type first.
+                    let mime_type = field
+                        .content_type()
+                        .map(|t| t.to_string())
+                        .unwrap_or(String::from("image/jpeg"));
                     match field.bytes().await {
                         Ok(b) => {
-                            let mime_type = field
-                                .content_type()
-                                .map(|t| t.essence_str().to_string())
-                                .unwrap_or(String::from("image/jpeg"));
                             let data =
                                 base64::engine::general_purpose::STANDARD.encode(b.as_ref());
                             attachments.push(Attachment { mime_type, data });
@@ -65,17 +67,17 @@ pub(crate) async fn answer_multipart(mut multipart: Multipart) -> impl IntoRespo
             Err(e) => break Err(e.into()),
         }
     };
-    let res = match (r, op_req) {
-        (Ok(Some(mut req)), _) => {
+    let res = match r {
+        Ok(Some(mut req)) => {
             if !attachments.is_empty() {
                 req.attachments.extend(attachments);
             }
             to_res2(executor::process(&mut req).await)
         }
-        (Ok(None), _) => to_res2(Err(crate::result::Error::WithMessage(String::from(
-            "Field `request` is missing.",
-        )))),
-        (Err(e), _) => to_res2(Err(e)),
+        Ok(None) => to_res2::<ResponseData>(Err(crate::result::Error::WithMessage(
+            String::from("Field `request` is missing."),
+        ))),
+        Err(e) => to_res2::<ResponseData>(Err(e)),
     };
     log::info!("Response used time:{:?}", now.elapsed());
     res

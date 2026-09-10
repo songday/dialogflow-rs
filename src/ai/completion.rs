@@ -232,6 +232,7 @@ async fn huggingface(
             "Unsuported model type {:?}.",
             &info.model_type
         ))),
+        &LoadedHuggingFaceModel::Moondream(_) => todo!(),
     }
     // Ok(())
 }

@@ -148,6 +148,23 @@ where
     Ok(out)
 }
 
+/// Collect the names of every variable referenced in `text` (both notations),
+/// in order of first appearance. The text itself is not resolved, so callers
+/// that need asynchronous lookups can resolve these names up front and then
+/// feed the values back to [`replace_vars_with`].
+pub(crate) fn collect_var_names(text: &str) -> Vec<String> {
+    let names = std::cell::RefCell::new(Vec::new());
+    // `Ok(None)` keeps every reference verbatim; only the side effect matters.
+    let _ = replace_vars_with(text, |name| {
+        let mut names = names.borrow_mut();
+        if !names.iter().any(|n| n == name) {
+            names.push(name.to_string());
+        }
+        Ok(None)
+    });
+    names.into_inner()
+}
+
 /// Strip rich-text markup from a dialog text, leaving plain display text.
 ///
 /// - `<var>` inline nodes collapse to their inner label;
@@ -157,7 +174,7 @@ where
 pub(crate) fn text_to_plain(html: &str) -> String {
     let no_wrapped = replace_wrapped_markers(html);
     let mut out = String::with_capacity(no_wrapped.len());
-    let mut rest = no_wrapped;
+    let mut rest: &str = &no_wrapped;
     while let Some(pos) = rest.find('<') {
         out.push_str(&rest[..pos]);
         rest = &rest[pos..];
