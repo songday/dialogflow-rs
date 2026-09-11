@@ -56,7 +56,9 @@ pub(in crate::flow::rt) async fn process(
         let import_variables = Option::take(&mut req.import_variables);
         let mut import_variables = import_variables.unwrap();
         for v in import_variables.iter_mut() {
-            let k = std::mem::take(&mut v.var_name);
+            // Canonicalized for the same reason as in `CollectNode`, so callers
+            // passing an older spelling still hit the variable.
+            let k = crate::variable::crud::sanitize_var_name(&v.var_name);
             let v = crate::variable::dto::VariableValue::new(&v.var_val, &v.var_type);
             ctx.vars.insert(k, v);
         }

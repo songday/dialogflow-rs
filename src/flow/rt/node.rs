@@ -393,9 +393,12 @@ impl RuntimeNode for CollectNode {
         if let Some(r) = collector::collect(&req.user_input, &self.collect_type) {
             // println!("{} {}", &self.var_name, r);
             let v = VariableValue::new(r, &VariableType::Str);
-            ctx.vars.insert(self.var_name.clone(), v);
+            // Same canonical form the variable table uses, so a flow configured
+            // with an older spelling still finds the collected value.
+            let var_name = variable::sanitize_var_name(&self.var_name);
+            ctx.vars.insert(var_name.clone(), v);
             let collect_data = CollectData {
-                var_name: self.var_name.clone(),
+                var_name,
                 value: String::from(r),
             };
             response.collect_data.push(collect_data);
