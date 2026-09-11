@@ -190,6 +190,104 @@ const formLabelWidth = '120px'
     color: #98a2b3;
     line-height: 1.5;
 }
+
+/* ---- QA detail drawer ---- */
+.qa-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding-bottom: 16px;
+}
+
+.qa-detail__section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.qa-detail__label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: #98a2b3;
+}
+
+.qa-detail__card {
+    padding: 12px 14px;
+    border: 1px solid #eef0f4;
+    border-radius: 10px;
+    background: #f7f8fa;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #1f2d3d;
+    word-break: break-word;
+}
+
+.qa-detail__card--primary {
+    border-color: #dfe4ff;
+    border-left: 3px solid #6366f1;
+    background: #eef2ff;
+    font-weight: 600;
+}
+
+/* Answer may contain newlines — keep the author's line breaks */
+.qa-detail__card--answer {
+    min-height: 72px;
+    white-space: pre-wrap;
+    color: #4e5969;
+}
+
+.qa-detail__similar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.qa-detail__similar-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #eef0f4;
+    border-radius: 10px;
+    background: #f7f8fa;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #4e5969;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.qa-detail__similar-item:hover {
+    border-color: #dfe4ff;
+    background: #eef2ff;
+}
+
+.qa-detail__similar-idx {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+    border: 1px solid #dfe4ff;
+    border-radius: 50%;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6366f1;
+}
+
+.qa-detail__similar-text {
+    flex: 1;
+    word-break: break-word;
+}
 </style>
 <template>
     <div class="page-header">
@@ -232,7 +330,7 @@ const formLabelWidth = '120px'
             </el-table-column>
         </el-table>
     </div>
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="720px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="70%" destroy-on-close>
         <el-form ref="formRef" :model="qaData" :rules="rules">
             <el-form-item :label="$t('kb.qa.form.question')" prop="question.question" :label-width="formLabelWidth">
                 <el-input v-model="qaData.question.question" :placeholder="$t('kb.qa.form.questionPH')" maxlength="200" />
@@ -269,21 +367,29 @@ const formLabelWidth = '120px'
             </div>
         </template>
     </el-dialog>
-    <el-drawer v-model="qaDetailVisible" :title="$t('kb.qa.detail')" direction="rtl" size="480px">
-        <el-form>
-            <el-form-item :label="$t('kb.qa.form.question')" :label-width="formLabelWidth">
-                {{ qaData.question.question }}
-            </el-form-item>
-            <el-form-item :label="$t('kb.qa.form.similar')" :label-width="formLabelWidth"
-                v-show="qaData.similarQuestions.length > 0">
-                <div v-for="(item, idx) in qaData.similarQuestions" :key="idx">
-                    {{ item.question }}
+    <el-drawer v-model="qaDetailVisible" :title="$t('kb.qa.detail')" direction="rtl" size="60%">
+        <div class="qa-detail">
+            <section class="qa-detail__section">
+                <div class="qa-detail__label">{{ $t('kb.qa.form.question') }}</div>
+                <div class="qa-detail__card qa-detail__card--primary">{{ qaData.question.question }}</div>
+            </section>
+            <section class="qa-detail__section" v-if="qaData.similarQuestions.length > 0">
+                <div class="qa-detail__label">
+                    {{ $t('kb.qa.form.similar') }}
+                    <span class="similar-count">{{ qaData.similarQuestions.length }}</span>
                 </div>
-            </el-form-item>
-            <el-form-item :label="$t('kb.qa.form.answer')" :label-width="formLabelWidth">
-                {{ qaData.answer }}
-            </el-form-item>
-        </el-form>
+                <ul class="qa-detail__similar">
+                    <li v-for="(item, idx) in qaData.similarQuestions" :key="idx" class="qa-detail__similar-item">
+                        <span class="qa-detail__similar-idx">{{ idx + 1 }}</span>
+                        <span class="qa-detail__similar-text">{{ item.question }}</span>
+                    </li>
+                </ul>
+            </section>
+            <section class="qa-detail__section">
+                <div class="qa-detail__label">{{ $t('kb.qa.form.answer') }}</div>
+                <div class="qa-detail__card qa-detail__card--answer">{{ qaData.answer }}</div>
+            </section>
+        </div>
         <div class="demo-drawer__footer">
             <el-button type="primary" @click="qaDetailVisible = false; editQa(qaDetailIdx)">{{ $t('common.edit') }}
             </el-button>
