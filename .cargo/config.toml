@@ -18,3 +18,6 @@ linker = "./musl-zcxx"
 # rustflags = ["-Clinker=rust-lld"]
 # rustflags = ["-C", "linker-flavor=ld.lld"]
 rustflags = ["-C", "linker-flavor=gcc", "-C", "link-self-contained=no"]
+
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

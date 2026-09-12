@@ -1710,6 +1710,16 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
     width: 100%;
 }
 
+/* 开关不参与收缩，"启用" 等文案保持单行显示 */
+.proxy-row :deep(.el-switch) {
+    flex-shrink: 0;
+}
+
+.proxy-row :deep(.el-switch__label),
+.proxy-row :deep(.el-switch__label *) {
+    white-space: nowrap;
+}
+
 .threshold-row {
     display: flex;
     align-items: center;

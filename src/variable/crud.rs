@@ -5,6 +5,8 @@ use std::vec::Vec;
 use axum::Json;
 use axum::extract::Query;
 use axum::response::IntoResponse;
+use unicode_casefold::UnicodeCaseFold;
+use unicode_normalization::UnicodeNormalization;
 
 use super::dto::Variable;
 use super::dto::{VariableObtainValueExpressionType, VariableType, VariableValueSource};
@@ -35,7 +37,9 @@ pub(crate) const TABLE_SUFFIX: &str = "vars";
 
 pub(crate) fn init(robot_id: &str, is_en: bool) -> Result<()> {
     let v = Variable {
-        var_name: String::from(if is_en {
+        // Kept in canonical form so the seeded variable is reachable by the
+        // same name the flow text has to use.
+        var_name: sanitize_var_name(if is_en {
             "CollectionVar"
         } else {
             "采集变量"
@@ -68,9 +72,26 @@ pub(crate) async fn list(Query(q): Query<HashMap<String, String>>) -> impl IntoR
     }
 }
 
+/// Canonical form of a variable name, used for both the redb key and every
+/// lookup, so a name means the same thing wherever it appears.
+///
+/// - NFKC first, so decomposed input (`n` + U+0303) and compatibility forms
+///   (full-width `１２３`, half-width kana) collapse to their canonical composed
+///   form and survive the filter below instead of being lost;
+/// - case folded (full, non-Turkic) rather than merely lower-cased, so case is
+///   ignored *and* `ß`/`ss` cannot both exist as separate variables;
+/// - everything that is not a letter, digit or `_` is dropped: spaces,
+///   `~!@#`, punctuation, and joiners such as ZWNJ/ZWJ.
+pub(crate) fn sanitize_var_name(name: &str) -> String {
+    name.nfkc()
+        .flat_map(char::case_fold)
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect()
+}
+
 pub(crate) async fn add(
     Query(q): Query<HashMap<String, String>>,
-    Json(v): Json<Variable>,
+    Json(mut v): Json<Variable>,
 ) -> impl IntoResponse {
     /*
     let r: Result<Option<Vec<Variable>>> = db::query(TABLE, VARIABLE_LIST_KEY);
@@ -97,6 +118,13 @@ pub(crate) async fn add(
     to_res(r)
     */
     // to_res(db::write(TABLE, &v.var_name, &v))
+    v.var_name = sanitize_var_name(&v.var_name);
+    if v.var_name.is_empty() {
+        return to_res::<()>(Err(Error::WithMessage(String::from(
+            "Parameter: varName is invalid.",
+        ))));
+    }
+
     if let Some(robot_id) = q.get("robotId") {
         to_res(db_executor!(
             db::write,
@@ -142,12 +170,13 @@ pub(crate) async fn delete(
     to_res(r)
     */
     // to_res(db::remove(TABLE, v.var_name.as_str()))
+    let name = sanitize_var_name(&v.var_name);
     if let Some(robot_id) = q.get("robotId") {
         to_res(db_executor!(
             db::remove,
             robot_id,
             TABLE_SUFFIX,
-            v.var_name.as_str()
+            name.as_str()
         ))
     } else {
         to_res(Err(Error::WithMessage(String::from(
@@ -170,7 +199,8 @@ pub(crate) fn get(robot_id: &str, name: &str) -> Result<Option<Variable>> {
     })
     */
     // db::query(TABLE, name)
-    db_executor!(db::query, robot_id, TABLE_SUFFIX, name)
+    let name = sanitize_var_name(name);
+    db_executor!(db::query, robot_id, TABLE_SUFFIX, name.as_str())
 }
 
 pub(crate) async fn get_value(name: &str, req: &Request, ctx: &mut Context) -> String {
@@ -180,4 +210,75 @@ pub(crate) async fn get_value(name: &str, req: &Request, ctx: &mut Context) -> S
         }
     }
     String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_var_name;
+
+    #[test]
+    fn strips_spaces_and_symbols() {
+        assert_eq!(sanitize_var_name(" my var~!@# "), "myvar");
+        assert_eq!(sanitize_var_name("my-var.2"), "myvar2");
+        assert_eq!(sanitize_var_name("my_var"), "my_var");
+    }
+
+    #[test]
+    fn keeps_non_latin_scripts() {
+        assert_eq!(sanitize_var_name("采集 变量"), "采集变量");
+        assert_eq!(sanitize_var_name("año_niño"), "año_niño");
+        assert_eq!(sanitize_var_name("محمد"), "محمد");
+        assert_eq!(sanitize_var_name("変換する"), "変換する");
+        assert_eq!(sanitize_var_name("안녕하세요"), "안녕하세요");
+    }
+
+    #[test]
+    fn folds_decomposed_and_compatibility_forms() {
+        // `n` + COMBINING TILDE and `か` + COMBINING DAKUTEN survive as `ñ` / `が`.
+        assert_eq!(sanitize_var_name("an\u{0303}o"), "año");
+        assert_eq!(sanitize_var_name("\u{304b}\u{3099}"), "が");
+        // Full-width digits and letters fold to ASCII, so they cannot collide
+        // with a visually identical ASCII name as a separate record.
+        assert_eq!(sanitize_var_name("１２３"), "123");
+        assert_eq!(sanitize_var_name("ＡＢＣ"), "abc");
+    }
+
+    #[test]
+    fn drops_joiners() {
+        // ZWNJ is a default-ignorable, stripped like any other symbol.
+        assert_eq!(sanitize_var_name("می\u{200c}رود"), "میرود");
+    }
+
+    #[test]
+    fn case_is_ignored() {
+        assert_eq!(sanitize_var_name("Name"), "name");
+        assert_eq!(sanitize_var_name("NAME"), "name");
+        assert_eq!(sanitize_var_name("MyVar"), sanitize_var_name("myvar"));
+        // Dotted capital I lower-cases to `i` + COMBINING DOT ABOVE, which the
+        // filter then drops, so it lands on plain `i`.
+        assert_eq!(sanitize_var_name("\u{130}stanbul"), "istanbul");
+        // Full case folding, so `ß` expands to `ss` and the two German
+        // spellings are one variable rather than two.
+        assert_eq!(sanitize_var_name("straße"), "strasse");
+        assert_eq!(sanitize_var_name("Straße"), sanitize_var_name("STRASSE"));
+    }
+
+    #[test]
+    fn empty_when_nothing_remains() {
+        assert_eq!(sanitize_var_name("~!@# "), "");
+    }
+
+    /// Documents what NFKC does *not* fold, so the behaviour is not a surprise.
+    #[test]
+    fn known_limitations() {
+        // Arabic tatweel is a letter (Lm), so it survives and a name can be
+        // visually confused with the plain spelling.
+        assert_eq!(sanitize_var_name("متـــغير"), "متـــغير");
+        assert_ne!(
+            sanitize_var_name("متـــغير"),
+            sanitize_var_name("متغير")
+        );
+        // Simplified and traditional forms are intentionally not merged.
+        assert_ne!(sanitize_var_name("变量"), sanitize_var_name("變量"));
+    }
 }

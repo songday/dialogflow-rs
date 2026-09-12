@@ -75,6 +75,7 @@ log = "0.4.34"
 env_logger = "0.11.11"
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "tokio1", "smtp-transport", "tokio1-native-tls", "pool"]}
 unicase = "2.9.0"
+unicode-normalization = "0.1.25"
 # sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }
 lopdf = "0.44.0"
 # docx-rs = "0.4.17"
@@ -92,6 +93,7 @@ quick-xml = "0.42.0"
 text-splitter = "0.32"
 # num_cpus = "1.17.0"
 turso = "0.7.2"
+unicode-casefold = "0.2.0"
 # sqlite-vec = { path = "/mnt/d/work/sqlite-vec/bindings/rust/" }
 
 [build-dependencies]
