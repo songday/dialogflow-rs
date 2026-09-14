@@ -58,7 +58,7 @@ pub(crate) async fn completion(
     prompt: &str,
     sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
 ) -> Result<()> {
-    if let Some(settings) = settings::get_settings(robot_id)? {
+    if let Some(settings) = settings::get_settings(robot_id).await? {
         log::info!("{:?}", &settings.text_generation_provider.provider);
         match settings.text_generation_provider.provider {
             TextGenerationProvider::HuggingFace(m) => {

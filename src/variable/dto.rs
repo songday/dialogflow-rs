@@ -171,7 +171,7 @@ impl Variable {
                     return self.get_data_from_res(ctx, c);
                 }
                 if let Ok(Some(api)) =
-                    crate::external::http::crud::get_detail(&req.robot_id, &self.var_associate_data)
+                    crate::external::http::crud::get_detail(&req.robot_id, &self.var_associate_data).await
                 {
                     return tokio::task::block_in_place(
                         /*move*/
@@ -259,7 +259,7 @@ impl Variable {
                     return self.get_data_from_res(ctx, c);
                 }
                 if let Ok(Some(api)) =
-                    crate::external::http::crud::get_detail(&req.robot_id, &self.var_associate_data)
+                    crate::external::http::crud::get_detail(&req.robot_id, &self.var_associate_data).await
                 {
                     return match crate::external::http::client::req(
                         api,
