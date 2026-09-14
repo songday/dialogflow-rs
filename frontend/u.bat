@@ -1,3 +1,3 @@
-npm i -g npm-check-updates
+pnpm i -g npm-check-updates
 ncu -u
-npm install
+pnpm i
