@@ -41,7 +41,11 @@ function gotoDemo(id, name) {
 // console.log("parentPage=" + props.parentPage);
 </script>
 <template>
-    <div class="demo-links">
+    <!-- Stop propagation so clicks on the demo links don't also trigger a
+         click handler on a clickable ancestor card (e.g. RobotDetail's
+         dialog-flows card, which pushes to `mainflows` and would override
+         the `subflow` navigation pushed by gotoDemo). -->
+    <div class="demo-links" @click.stop>
         <strong>{{ $t("home.demo") }}</strong
         >:
         <template v-if="props.parentPage == 'home'">
