@@ -35,7 +35,7 @@ pub(crate) const TABLE_SUFFIX: &str = "vars";
 //     format!("{}vars", robot_id)
 // }
 
-pub(crate) fn init(robot_id: &str, is_en: bool) -> Result<()> {
+pub(crate) async fn init(robot_id: &str, is_en: bool) -> Result<()> {
     let v = Variable {
         // Kept in canonical form so the seeded variable is reachable by the
         // same name the flow text has to use.
@@ -64,7 +64,11 @@ pub(crate) async fn list(Query(q): Query<HashMap<String, String>>) -> impl IntoR
     // let result:Result<Vec<Variable>> = db_executor!(db::get_all, "robot_id",);
     // to_res::<Vec<Variable>>(db::get_all(TABLE))
     if let Some(robot_id) = q.get("robotId") {
-        to_res::<Vec<Variable>>(db_executor!(db::get_all, robot_id, TABLE_SUFFIX,))
+        let r: Result<Vec<Variable>> = async {
+            db_executor!(db::get_all, robot_id, TABLE_SUFFIX,)
+        }
+        .await;
+        to_res(r)
     } else {
         to_res(Err(Error::WithMessage(String::from(
             "Parameter: robotId is missing.",
@@ -126,13 +130,17 @@ pub(crate) async fn add(
     }
 
     if let Some(robot_id) = q.get("robotId") {
-        to_res(db_executor!(
-            db::write,
-            robot_id,
-            TABLE_SUFFIX,
-            &v.var_name,
-            &v
-        ))
+        let r: Result<()> = async {
+            db_executor!(
+                db::write,
+                robot_id,
+                TABLE_SUFFIX,
+                &v.var_name,
+                &v
+            )
+        }
+        .await;
+        to_res(r)
     } else {
         to_res(Err(Error::WithMessage(String::from(
             "Parameter: robotId is missing.",
@@ -172,12 +180,16 @@ pub(crate) async fn delete(
     // to_res(db::remove(TABLE, v.var_name.as_str()))
     let name = sanitize_var_name(&v.var_name);
     if let Some(robot_id) = q.get("robotId") {
-        to_res(db_executor!(
-            db::remove,
-            robot_id,
-            TABLE_SUFFIX,
-            name.as_str()
-        ))
+        let r: Result<()> = async {
+            db_executor!(
+                db::remove,
+                robot_id,
+                TABLE_SUFFIX,
+                name.as_str()
+            )
+        }
+        .await;
+        to_res(r)
     } else {
         to_res(Err(Error::WithMessage(String::from(
             "Parameter: robotId is missing.",
@@ -185,7 +197,7 @@ pub(crate) async fn delete(
     }
 }
 
-pub(crate) fn get(robot_id: &str, name: &str) -> Result<Option<Variable>> {
+pub(crate) async fn get(robot_id: &str, name: &str) -> Result<Option<Variable>> {
     /*
     db::query(TABLE, VARIABLE_LIST_KEY).and_then(|op: Option<Vec<Variable>>| {
         if let Some(d) = op {
@@ -204,7 +216,7 @@ pub(crate) fn get(robot_id: &str, name: &str) -> Result<Option<Variable>> {
 }
 
 pub(crate) async fn get_value(name: &str, req: &Request, ctx: &mut Context) -> String {
-    if let Ok(Some(v)) = get(&req.robot_id, name) {
+    if let Ok(Some(v)) = get(&req.robot_id, name).await {
         if let Some(val) = v.get_value2(req, ctx).await {
             return val.val_to_string();
         }

@@ -71,7 +71,7 @@ pub(crate) async fn chat(
     read_timeout: Option<u32>,
     result_sender: ResultSender<'_, StreamingResponseData>,
 ) -> Result<()> {
-    if let Some(settings) = settings::get_settings(robot_id)? {
+    if let Some(settings) = settings::get_settings(robot_id).await? {
         // log::info!("{:?}", &settings.chat_provider.provider);
         match settings.chat_provider.provider {
             ChatProvider::HuggingFace(m) => {

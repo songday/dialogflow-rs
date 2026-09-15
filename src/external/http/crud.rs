@@ -14,7 +14,7 @@ use crate::web::server::to_res;
 //     redb::TableDefinition::new("externalHttpApis");
 pub(crate) const TABLE_SUFFIX: &str = "externalHttpApis";
 
-pub(crate) fn init(robot_id: &str) -> Result<()> {
+pub(crate) async fn init(robot_id: &str) -> Result<()> {
     // db::init_table(TABLE)
     db_executor!(db::init_table, robot_id, TABLE_SUFFIX,)
 }
@@ -22,7 +22,10 @@ pub(crate) fn init(robot_id: &str) -> Result<()> {
 pub(crate) async fn list(Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
     // let r: Result<Vec<HttpReqInfo>> = db::get_all(TABLE);
     if let Some(robot_id) = q.get("robotId") {
-        let r: Result<Vec<HttpReqInfo>> = db_executor!(db::get_all, &robot_id, TABLE_SUFFIX,);
+        let r: Result<Vec<HttpReqInfo>> = async {
+            db_executor!(db::get_all, &robot_id, TABLE_SUFFIX,)
+        }
+        .await;
         to_res(r)
     } else {
         to_res(Err(Error::WithMessage(String::from(
@@ -31,7 +34,7 @@ pub(crate) async fn list(Query(q): Query<HashMap<String, String>>) -> impl IntoR
     }
 }
 
-pub(crate) fn get_detail(robot_id: &str, id: &str) -> Result<Option<HttpReqInfo>> {
+pub(crate) async fn get_detail(robot_id: &str, id: &str) -> Result<Option<HttpReqInfo>> {
     // db::query(TABLE, id)
     db_executor!(db::query, robot_id, TABLE_SUFFIX, id)
 }
@@ -41,7 +44,7 @@ pub(crate) async fn detail(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if let Some(robot_id) = q.get("robotId") {
-        let r: Result<Option<HttpReqInfo>> = get_detail(robot_id, id.as_str());
+        let r: Result<Option<HttpReqInfo>> = get_detail(robot_id, id.as_str()).await;
         to_res(r)
     } else {
         to_res(Err(Error::WithMessage(String::from(
@@ -58,7 +61,10 @@ pub(crate) async fn save(
         if params.id.is_empty() || params.id.eq("new") {
             params.id = scru128::new_string();
         }
-        let r = db_executor!(db::write, robot_id, TABLE_SUFFIX, &params.id, &params);
+        let r: Result<()> = async {
+            db_executor!(db::write, robot_id, TABLE_SUFFIX, &params.id, &params)
+        }
+        .await;
         to_res(r)
     } else {
         to_res(Err(Error::WithMessage(String::from(
@@ -72,7 +78,10 @@ pub(crate) async fn remove(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     if let Some(robot_id) = q.get("robotId") {
-        let r = db_executor!(db::remove, &robot_id, TABLE_SUFFIX, id.as_str());
+        let r: Result<()> = async {
+            db_executor!(db::remove, &robot_id, TABLE_SUFFIX, id.as_str())
+        }
+        .await;
         to_res(r)
     } else {
         to_res(Err(Error::WithMessage(String::from(

@@ -19,12 +19,29 @@ use text_splitter::TextSplitter;
 use super::dto::DocData;
 use crate::ai::embedding;
 use crate::result::{Error, Result};
+use crate::retry_on_busy;
 
 // type SqliteConnPool = sqlx::Pool<Sqlite>;
 
 // static DATA_SOURCE: OnceCell<SqliteConnPool> = OnceCell::new();
 static DATA_SOURCE: OnceLock<turso::Database> = OnceLock::new();
 // static DATA_SOURCES: OnceLock<Mutex<HashMap<String, SqliteConnPool>>> = OnceLock::new();
+
+/// 写锁争用的总等待时长。
+///
+/// turso 的忙等是基于 yield 的、不阻塞线程（见 turso_core 的 busy.rs），所以
+/// 它既能把并发写串行化成"排队等待"，又不会占住 tokio worker。
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// 所有连接都必须走这里。
+///
+/// 连接是每次调用新建、从不复用的，`busy_timeout` 又是连接级设置，所以散在
+/// 各调用点设置必然漏 —— 集中在这一个 helper 里。
+fn conn() -> Result<turso::Connection> {
+    let c = DATA_SOURCE.get().unwrap().connect()?;
+    c.busy_timeout(BUSY_TIMEOUT)?;
+    Ok(c)
+}
 
 pub(crate) async fn init_datasource() -> Result<()> {
     let p = std::path::Path::new(".").join("data");
@@ -49,7 +66,7 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
     // println!("Init database");
     // let ddl = include_str!("./embedding_ddl.sql");
     let sql = format!(
-        "CREATE TABLE {robot_id} (
+        "CREATE TABLE IF NOT EXISTS {robot_id} (
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
             file_name TEXT NOT NULL,
             file_size INTEGER NOT NULL,
@@ -57,8 +74,6 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
             created_at INTEGER NOT NULL
         );"
     );
-    let conn = DATA_SOURCE.get().unwrap().connect()?;
-    conn.execute(sql, ()).await?;
     // // log::info!("sql = {}", &sql);
     // let mut stream = sqlx::raw_sql(&sql).execute_many(DATA_SOURCE.get().unwrap());
     // while let Some(res) = stream.next().await {
@@ -71,7 +86,11 @@ pub(crate) async fn init_tables(robot_id: &str) -> Result<()> {
     // // if let Err(e) = sqlx::query(dml).execute(&pool).await {
     // //     panic!("{:?}", e);
     // // }
-    Ok(())
+    retry_on_busy!(async {
+        let conn = conn()?;
+        conn.execute(sql.as_str(), ()).await?;
+        Ok(())
+    })
 }
 
 // crate::sqlite_trans! {
@@ -97,7 +116,7 @@ pub(super) async fn list(robot_id: &str) -> Result<Vec<DocData>> {
     let sql = format!(
         "SELECT id, file_name, file_size, doc_content FROM {robot_id} ORDER BY created_at DESC"
     );
-    let conn = DATA_SOURCE.get().unwrap().connect()?;
+    let conn = conn()?;
     let mut rows = conn.query(sql, ()).await?;
     let mut results = Vec::with_capacity(10);
     while let Some(row) = rows.next().await? {
@@ -117,52 +136,89 @@ pub(super) async fn save(
     file_size: usize,
     doc_content: &str,
 ) -> Result<()> {
-    let sql = format!(
-        "INSERT INTO {robot_id}(file_name, file_size, doc_content, created_at)VALUES(?1, ?2, ?3, unixepoch())"
-    );
-    let mut conn = DATA_SOURCE.get().unwrap().connect()?;
-    conn.execute(
-        sql,
-        (
-            String::from(file_name),
-            turso::Value::Integer(file_size as i64),
-            String::from(doc_content),
-        ),
-    )
-    .await?;
-    let doc_id = conn.last_insert_rowid();
-    // log::info!("doc_id={}", doc_id);
-    let tx = conn.transaction().await?;
-    save_doc_embedding(&tx, robot_id, doc_id, doc_content).await?;
-    tx.commit().await?;
-    Ok(())
+    // 重试安全性：INSERT 必须和向量写入在同一个事务里。原来的写法是自动提交的
+    // INSERT + 另一个独立事务，重试会再插一条文档记录；而且那个事务一旦失败，
+    // 留下的是一条没有向量的孤儿文档。
+    //
+    // 阶段 2：分块和推理提到事务外（见 `doc_embeddings`），事务里只剩纯 SQL。
+    let (chunks, embeddings, vec_size) = doc_embeddings(robot_id, doc_content).await?;
+    retry_on_busy!(async {
+        let mut conn = conn()?;
+        let tx = conn.transaction().await?;
+        let sql = format!(
+            "INSERT INTO {robot_id}(file_name, file_size, doc_content, created_at)VALUES(?1, ?2, ?3, unixepoch())"
+        );
+        tx.execute(
+            sql.as_str(),
+            (
+                String::from(file_name),
+                turso::Value::Integer(file_size as i64),
+                String::from(doc_content),
+            ),
+        )
+        .await?;
+        let doc_id = tx.last_insert_rowid();
+        // log::info!("doc_id={}", doc_id);
+        save_doc_embedding(&tx, robot_id, doc_id, &chunks, &embeddings, vec_size).await?;
+        tx.commit().await?;
+        Ok(())
+    })
 }
 
 pub(super) async fn update(robot_id: &str, doc_id: i64, doc_content: &str) -> Result<()> {
-    let mut conn = DATA_SOURCE.get().unwrap().connect()?;
-    let tx = conn.transaction().await?;
-    let sql = format!("UPDATE {robot_id} SET doc_content = ?1 WHERE id = ?2");
-    let r = tx.execute(sql, (String::from(doc_content), doc_id)).await?;
-    if r > 0 {
-        let sql = format!("DELETE FROM {robot_id}_vec WHERE doc_id = ?1");
-        tx.execute(sql, [doc_id]).await?;
-        save_doc_embedding(&tx, robot_id, doc_id, doc_content).await?;
-        tx.commit().await?;
-    } else {
-        tx.rollback().await?;
-    }
-    Ok(())
+    // 整个改动都在一个事务里，失败重跑不会留下半提交状态。
+    //
+    // 阶段 2：同 `save`，推理提到事务外。
+    let (chunks, embeddings, vec_size) = doc_embeddings(robot_id, doc_content).await?;
+    retry_on_busy!(async {
+        let mut conn = conn()?;
+        let tx = conn.transaction().await?;
+        let sql = format!("UPDATE {robot_id} SET doc_content = ?1 WHERE id = ?2");
+        let r = tx
+            .execute(sql.as_str(), (String::from(doc_content), doc_id))
+            .await?;
+        if r > 0 {
+            let sql = format!("DELETE FROM {robot_id}_vec WHERE doc_id = ?1");
+            tx.execute(sql.as_str(), [doc_id]).await?;
+            save_doc_embedding(&tx, robot_id, doc_id, &chunks, &embeddings, vec_size).await?;
+            tx.commit().await?;
+        } else {
+            tx.rollback().await?;
+        }
+        Ok(())
+    })
+}
+
+/// 删掉该机器人在 `doc.dat` 里的两张表（`robot::purge` 用）。
+///
+/// 两张表都是懒创建的（`init_tables` 只建文档表，向量表要第一次上传才建），
+/// 所以必须 `IF EXISTS`。
+pub(crate) async fn remove_tables(robot_id: &str) -> Result<()> {
+    let sql = format!(
+        "DROP TABLE IF EXISTS {robot_id};
+         DROP TABLE IF EXISTS {robot_id}_vec;"
+    );
+    retry_on_busy!(async {
+        let conn = conn()?;
+        // 多语句必须走 `execute_batch`：`execute` 走 `prepare_single`，只执行第一条
+        // （见 `kb::qa::init_tables` 的同款注释），否则 `_vec` 表会被漏掉。
+        conn.execute_batch(sql.as_str()).await?;
+        Ok(())
+    })
 }
 
 pub(crate) async fn delete(robot_id: &str, doc_id: i64) -> Result<()> {
-    let mut conn = DATA_SOURCE.get().unwrap().connect()?;
-    let tx = conn.transaction().await?;
-    let sql = format!("DELETE FROM {robot_id}_vec WHERE doc_id = ?1");
-    let _r = tx.execute(sql, [doc_id]).await?;
-    let sql = format!("DELETE FROM {robot_id} WHERE id = ?1");
-    let _r = tx.execute(sql, [doc_id]).await?;
-    tx.commit().await?;
-    Ok(())
+    // 事务内幂等删除，重跑无残留。
+    retry_on_busy!(async {
+        let mut conn = conn()?;
+        let tx = conn.transaction().await?;
+        let sql = format!("DELETE FROM {robot_id}_vec WHERE doc_id = ?1");
+        let _r = tx.execute(sql.as_str(), [doc_id]).await?;
+        let sql = format!("DELETE FROM {robot_id} WHERE id = ?1");
+        let _r = tx.execute(sql.as_str(), [doc_id]).await?;
+        tx.commit().await?;
+        Ok(())
+    })
 }
 
 // chunk_size and overlap are counted in characters, so this works for both
@@ -232,17 +288,24 @@ fn chunk_text_semantic(text: &str, chunk_size: usize, overlap: usize) -> Result<
     Ok(splitter.chunks(text).map(String::from).collect())
 }
 
-async fn save_doc_embedding(
-    tx: &turso::transaction::Transaction<'_>,
+/// 分块 + 推理 + 打包，**不开事务**。
+///
+/// 阶段 2 把这段从事务里提出来：一份长文档在本地 HF 模型上要跑几百个 chunk 的
+/// 推理，放在事务里就是握着 turso 的写锁跑模型，其他写者的 `busy_timeout` 会被
+/// 白白耗光。返回值原样交给 [`save_doc_embedding`] 落库。
+///
+/// 返回 `(chunks, 每块向量的绑定值, 向量维度)`。三者都算好放在这里，是因为
+/// 建表语句里的 `F32_BLOB(N)` 需要维度，而维度只有推理之后才知道。
+async fn doc_embeddings(
     robot_id: &str,
-    doc_id: i64,
     doc_content: &str,
-) -> Result<()> {
+) -> Result<(Vec<String>, Vec<turso::Value>, usize)> {
     // Local HuggingFace BERT models are capped at 512 tokens, so keep chunks
     // small. Long-context remote models (OpenAI / Ollama) can afford much
     // larger semantic chunks.
     let long_context = !matches!(
-        crate::man::settings::get_settings(robot_id)?
+        crate::man::settings::get_settings(robot_id)
+            .await?
             .map(|s| s.sentence_embedding_provider.provider.clone()),
         Some(embedding::SentenceEmbeddingProvider::HuggingFace(_))
     );
@@ -252,7 +315,7 @@ async fn save_doc_embedding(
         chunk_text(doc_content, 500, 70)
     };
     if chunks.is_empty() {
-        return Ok(());
+        return Ok((chunks, Vec::new(), 0));
     }
     // Embed all chunks up front with bounded concurrency, so the table can be
     // created once with the right vector size and inserts reuse a prepared
@@ -272,6 +335,25 @@ async fn save_doc_embedding(
         .first()
         .map(|(v, _)| v.len())
         .ok_or_else(|| Error::WithMessage(String::from("Embedding data is empty.")))?;
+    let vecs: Vec<turso::Value> = embeddings
+        .iter()
+        .map(|(v, _)| embedding::vec_to_db(v))
+        .collect();
+    Ok((chunks, vecs, vec_size))
+}
+
+/// 把 [`doc_embeddings`] 算好的向量写进库。纯 SQL，**必须在调用方的事务里**。
+async fn save_doc_embedding(
+    tx: &turso::transaction::Transaction<'_>,
+    robot_id: &str,
+    doc_id: i64,
+    chunks: &[String],
+    embeddings: &[turso::Value],
+    vec_size: usize,
+) -> Result<()> {
+    if chunks.is_empty() {
+        return Ok(());
+    }
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {robot_id}_vec (
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -285,11 +367,11 @@ async fn save_doc_embedding(
         "INSERT INTO {robot_id}_vec(doc_id, chunk_text, chunk_vec) VALUES(?1, ?2, vector32(?3));"
     );
     let mut stmt = tx.prepare(&sql).await?;
-    for (chunk, (v, _)) in chunks.iter().zip(embeddings.iter()) {
+    for (chunk, v) in chunks.iter().zip(embeddings.iter()) {
         stmt.execute((
             doc_id,
             turso::Value::Text(String::from(chunk)),
-            embedding::vec_to_db(v),
+            v.clone(),
         ))
         .await?;
         // log::info!("Embedding id={}", conn.last_insert_rowid());
@@ -463,7 +545,7 @@ pub(crate) async fn search_doc(
     let sql = format!(
         "SELECT id, chunk_text, vector_distance_cos(chunk_vec, vector32(?1)) AS distance FROM {robot_id}_vec WHERE distance < ?2 ORDER BY distance ASC LIMIT 8"
     );
-    let conn = DATA_SOURCE.get().unwrap().connect()?;
+    let conn = conn()?;
     let mut rows = conn
         .query(
             sql,

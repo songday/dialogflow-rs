@@ -83,7 +83,11 @@ pub async fn start_app() {
         for argument in std::env::args() {
             if argument.eq("-rs") {
                 s = settings::GlobalSettings::default();
-                settings::save_global_settings(&s).expect("Reset settings failed");
+                match crate::db::global_store().await {
+                    Ok(store) => settings::save_global_settings(store, &s).await,
+                    Err(e) => Err(e),
+                }
+                .expect("Reset settings failed");
                 break;
             }
         }

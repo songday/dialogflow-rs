@@ -32,10 +32,7 @@ pub(crate) async fn upload_doc(
 async fn save_doc(robot_id: &str, mut multipart: Multipart) -> Result<String> {
     let p = Path::new(".")
         .join("data")
-        .join(robot_id)
-        .join("kb")
-        .join("docs")
-        .join("upload");
+        .join("uploads");
     if !p.exists() {
         std::fs::create_dir_all(&p)?;
     }

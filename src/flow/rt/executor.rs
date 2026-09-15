@@ -24,7 +24,7 @@ pub(in crate::flow::rt) async fn process(
     if req.session_id.is_none() || req.session_id.as_ref().unwrap().is_empty() {
         req.session_id = Some(scru128::new_string());
     }
-    let mut ctx = Context::get(&req.robot_id, req.session_id.as_ref().unwrap());
+    let mut ctx = Context::get(&req.robot_id, req.session_id.as_ref().unwrap()).await?;
     if !req.attachments.is_empty() {
         match crate::ai::dto::UserMediaData::from_attachments(&req.attachments) {
             Ok(m) => {
@@ -83,7 +83,7 @@ pub(in crate::flow::rt) async fn process(
     }
     // println!("exec {:?}", now.elapsed());
     // let now = std::time::Instant::now();
-    ctx.save()?;
+    ctx.save().await?;
     // log::info!("ctx save time {:?}", now.elapsed());
     r
 }
@@ -103,7 +103,7 @@ pub(in crate::flow::rt) async fn exec(
     };
     for _i in 0..100 {
         // let now = std::time::Instant::now();
-        if let Some(mut n) = ctx.pop_node() {
+        if let Some(mut n) = ctx.pop_node().await {
             // println!("pop node {:?}", now.elapsed());
             let ret = n.exec(req, ctx, &mut response, &mut sender_wapper).await;
             // println!("node exec {:?}", now.elapsed());

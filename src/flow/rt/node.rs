@@ -99,7 +99,7 @@ async fn replace_vars(text: &str, req: &Request, ctx: &mut Context) -> Result<St
         if values.contains_key(&name) {
             continue;
         }
-        let value = match variable::get(&req.robot_id, &name)? {
+        let value = match variable::get(&req.robot_id, &name).await? {
             Some(v) => v
                 .get_value2(req, ctx)
                 .await
@@ -488,7 +488,7 @@ impl RuntimeNode for ExternalHttpCallNode {
         // println!("Into ExternalHttpCallNode");
         let mut goto_node_id = &self.next_node_id;
         if let Ok(Some(api)) =
-            crate::external::http::crud::get_detail(&req.robot_id, self.http_api_id.as_str())
+            crate::external::http::crud::get_detail(&req.robot_id, self.http_api_id.as_str()).await
         {
             if self.async_req {
                 tokio::spawn(http::status_code(
@@ -615,7 +615,7 @@ impl RuntimeNode for SendEmailNode {
         _channel_sender: &mut ResponseChannelWrapper,
     ) -> bool {
         // println!("Into SendEmailNode");
-        if let Ok(Some(settings)) = get_settings(&req.robot_id) {
+        if let Ok(Some(settings)) = get_settings(&req.robot_id).await {
             if !settings.smtp_host.is_empty() {
                 match self.send_email(&settings) {
                     Ok(_) => add_next_node(ctx, &self.successful_node_id),

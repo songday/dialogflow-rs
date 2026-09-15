@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 //     pub(super) qa_data: QuestionAnswerPair,
 // }
 
-#[derive(Deserialize, Serialize)]
+// Clone 是 qa::save 需要的：它要在一份副本上做就地修改、提交成功后才落回入参，
+// 这样重试才是安全的（见 result::retry_on_busy 的文档）。
+#[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct QuestionAnswerPair {
     pub(super) id: Option<i64>,
     pub(super) question: QuestionData,
@@ -18,7 +20,7 @@ pub(crate) struct QuestionAnswerPair {
     pub(crate) answer: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct QuestionData {
     pub(super) question: String,
     pub(super) vec_row_id: Option<u64>,

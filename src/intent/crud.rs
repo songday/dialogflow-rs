@@ -16,7 +16,7 @@ use crate::web::server::to_res;
 //     redb::TableDefinition::new(INTENT_LIST_KEY);
 pub(crate) const TABLE_SUFFIX: &str = "intents";
 
-pub(crate) fn init(robot_id: &str, is_en: bool) -> Result<()> {
+pub(crate) async fn init(robot_id: &str, is_en: bool) -> Result<()> {
     // Positive
     let keywords = if is_en {
         vec![
@@ -144,7 +144,10 @@ pub(crate) fn init(robot_id: &str, is_en: bool) -> Result<()> {
 pub(crate) async fn list(Query(q): Query<HashMap<String, String>>) -> impl IntoResponse {
     // let r: Result<Option<Vec<Intent>>> = db::query(TABLE, INTENT_LIST_KEY);
     if let Some(robot_id) = q.get("robotId") {
-        let r: Result<Vec<IntentDetail>> = db_executor!(db::get_all, robot_id, TABLE_SUFFIX,);
+        let r: Result<Vec<IntentDetail>> = async {
+            db_executor!(db::get_all, robot_id, TABLE_SUFFIX,)
+        }
+        .await;
         to_res(r)
     } else {
         to_res(Err(Error::WithMessage(String::from(
@@ -154,11 +157,11 @@ pub(crate) async fn list(Query(q): Query<HashMap<String, String>>) -> impl IntoR
 }
 
 pub(crate) async fn add(Json(params): Json<IntentFormData>) -> impl IntoResponse {
-    let r = add_intent(&params.robot_id, params.data.as_str());
+    let r = add_intent(&params.robot_id, params.data.as_str()).await;
     to_res(r)
 }
 
-fn add_intent(robot_id: &str, intent_name: &str) -> Result<()> {
+async fn add_intent(robot_id: &str, intent_name: &str) -> Result<()> {
     // let d: Option<Vec<Intent>> = db::query(TABLE, INTENT_LIST_KEY)?;
     let intent_detail = IntentDetail::new(intent_name);
     // db::write(TABLE, intent.id.as_str(), &intent_detail)?;
@@ -173,28 +176,20 @@ fn add_intent(robot_id: &str, intent_name: &str) -> Result<()> {
 }
 
 pub(crate) async fn remove(Json(params): Json<IntentFormData>) -> impl IntoResponse {
-    let r = super::phrase::remove_by_intent_id(&params.robot_id, params.id.as_str())
-        .await
-        .and_then(|_| {
-            db_executor!(
-                db::remove,
-                &params.robot_id,
-                TABLE_SUFFIX,
-                params.id.as_str()
-            )
-            // let r = db::remove(TABLE, params.id.as_str());
-            // if let Ok(idx) = params.data.parse() {
-            //     let mut intents: Vec<Intent> = db::query(TABLE, INTENT_LIST_KEY).unwrap().unwrap();
-            //     intents.remove(idx);
-            //     if let Err(e) = db::write(TABLE, INTENT_LIST_KEY, &intents) {
-            //         log::error!("Update intents list failed: {:?}", &e);
-            //     }
-            // }
-        });
+    let r: Result<()> = async {
+        super::phrase::remove_by_intent_id(&params.robot_id, params.id.as_str()).await?;
+        db_executor!(
+            db::remove,
+            &params.robot_id,
+            TABLE_SUFFIX,
+            params.id.as_str()
+        )
+    }
+    .await;
     to_res(r)
 }
 
-pub(in crate::intent) fn get_detail_by_id(
+pub(in crate::intent) async fn get_detail_by_id(
     robot_id: &str,
     intent_id: &str,
 ) -> Result<Option<IntentDetail>> {
@@ -209,89 +204,76 @@ pub(crate) async fn detail(Query(params): Query<IntentFormData>) -> impl IntoRes
     // }).map(|_| od);
     // to_res(r)
     // let r: Result<Option<IntentDetail>> = db::query(TABLE, params.id.as_str());
-    let r = get_detail_by_id(&params.robot_id, params.id.as_str());
+    let r = get_detail_by_id(&params.robot_id, params.id.as_str()).await;
     to_res(r)
 }
 
 pub(crate) async fn add_keyword(Json(params): Json<IntentFormData>) -> impl IntoResponse {
     let key = params.id.as_str();
-    // let r: Result<Option<IntentDetail>> = db::query(TABLE, key);
-    let r: Result<Option<IntentDetail>> =
-        db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key);
-    let r = r.and_then(|op| {
+    let r: Result<()> = async {
+        let op: Option<IntentDetail> =
+            db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key)?;
         if let Some(mut d) = op {
             d.keywords.push(String::from(params.data.as_str()));
-            db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)
-        } else {
-            Ok(())
+            db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)?;
         }
-    });
+        Ok(())
+    }
+    .await;
     to_res(r)
 }
 
 pub(crate) async fn remove_keyword(Json(params): Json<IntentFormData>) -> impl IntoResponse {
-    let r = params
-        .data
-        .parse::<usize>()
-        .map_err(|e| {
+    let r: Result<()> = async {
+        let idx = params.data.parse::<usize>().map_err(|e| {
             log::error!("{e:?}");
             Error::WithMessage(String::from("Invalid parameter"))
-        })
-        .and_then(|idx| {
-            let key = params.id.as_str();
-            let result: Result<Option<IntentDetail>> =
-                db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key);
-            result.and_then(|mut op| {
-                if op.is_some() {
-                    let d = op.as_mut().unwrap();
-                    d.keywords.remove(idx);
-                    db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)
-                } else {
-                    Ok(())
-                }
-            })
-        });
+        })?;
+        let key = params.id.as_str();
+        let op: Option<IntentDetail> =
+            db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key)?;
+        if let Some(mut d) = op {
+            d.keywords.remove(idx);
+            db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)?;
+        }
+        Ok(())
+    }
+    .await;
     to_res(r)
 }
 
 pub(crate) async fn add_regex(Json(params): Json<IntentFormData>) -> impl IntoResponse {
     let key = params.id.as_str();
-    let r: Result<Option<IntentDetail>> =
-        db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key);
-    let r = r.and_then(|op| {
+    let r: Result<()> = async {
+        let op: Option<IntentDetail> =
+            db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key)?;
         if let Some(mut d) = op {
             let _ = regex::Regex::new(params.data.as_str())?;
             d.regexes.push(String::from(params.data.as_str()));
-            db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)
-        } else {
-            Ok(())
+            db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)?;
         }
-    });
+        Ok(())
+    }
+    .await;
     to_res(r)
 }
 
 pub(crate) async fn remove_regex(Json(params): Json<IntentFormData>) -> impl IntoResponse {
-    let r = params
-        .data
-        .parse::<usize>()
-        .map_err(|e| {
+    let r: Result<()> = async {
+        let idx = params.data.parse::<usize>().map_err(|e| {
             log::error!("{e:?}");
             Error::WithMessage(String::from("Invalid parameter"))
-        })
-        .and_then(|idx| {
-            let key = params.id.as_str();
-            let result: Result<Option<IntentDetail>> =
-                db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key);
-            result.and_then(|mut op| {
-                if op.is_some() {
-                    let d = op.as_mut().unwrap();
-                    d.regexes.remove(idx);
-                    db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)
-                } else {
-                    Ok(())
-                }
-            })
-        });
+        })?;
+        let key = params.id.as_str();
+        let op: Option<IntentDetail> =
+            db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key)?;
+        if let Some(mut d) = op {
+            d.regexes.remove(idx);
+            db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)?;
+        }
+        Ok(())
+    }
+    .await;
     to_res(r)
 }
 
@@ -300,34 +282,34 @@ pub(crate) async fn add_phrase(
     // Query(query): Query<IntentFormData>,
     Json(params): Json<IntentFormData>,
 ) -> impl IntoResponse {
-    let intent_id = params.id.as_str();
-    let phrase = &params.data;
-    let r: Result<Option<IntentDetail>> =
-        db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, intent_id);
-    if r.is_err() {
-        return to_res(r.map(|_| ()));
-    }
-    let r = r.unwrap();
-    if r.is_none() {
-        return to_res(Err(Error::WithMessage(String::from(
-            "Can NOT find intention detail",
-        ))));
-    }
-    let mut d = r.unwrap();
-    let r = super::phrase::add(&params.robot_id, None, intent_id, &d.intent_name, phrase)
-        .await
-        .map_err(|e| {
-            log::error!("{:#?}", &e);
-            Error::WithMessage(String::from("Invalid idx parameter."))
-        })
-        .and_then(|vec_row_id| {
-            d.phrases.push(IntentPhraseData {
-                id: vec_row_id,
-                phrase: String::from(params.data.as_str()),
-            });
-            // log::info!("intent detail {} {}", intent_id, serde_json::to_string(&d).unwrap());
-            db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, intent_id, &d)
+    let r: Result<()> = async {
+        let intent_id = params.id.as_str();
+        let phrase = &params.data;
+        let d: Option<IntentDetail> =
+            db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, intent_id)?;
+        let mut d = match d {
+            Some(d) => d,
+            None => {
+                return Err(Error::WithMessage(String::from(
+                    "Can NOT find intention detail",
+                )));
+            }
+        };
+        let vec_row_id =
+            super::phrase::add(&params.robot_id, None, intent_id, &d.intent_name, phrase)
+                .await
+                .map_err(|e| {
+                    log::error!("{:#?}", &e);
+                    Error::WithMessage(String::from("Invalid idx parameter."))
+                })?;
+        d.phrases.push(IntentPhraseData {
+            id: vec_row_id,
+            phrase: String::from(params.data.as_str()),
         });
+        // log::info!("intent detail {} {}", intent_id, serde_json::to_string(&d).unwrap());
+        db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, intent_id, &d)
+    }
+    .await;
     to_res(r)
 }
 
@@ -385,18 +367,18 @@ pub(crate) async fn remove_phrase(Json(params): Json<IntentFormData>) -> impl In
         }
     };
     let key = params.id.as_str();
-    let r: Result<Option<IntentDetail>> =
-        db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key);
-    if let Ok(Some(mut d)) = r {
-        let phrase = d.phrases.remove(phrase_idx);
-        let r = super::phrase::remove(&params.robot_id, phrase.id).await;
-        if let Err(e) = r {
-            return to_res(Err(e));
+    let r: Result<()> = async {
+        let op: Option<IntentDetail> =
+            db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key)?;
+        if let Some(mut d) = op {
+            let phrase = d.phrases.remove(phrase_idx);
+            super::phrase::remove(&params.robot_id, phrase.id).await?;
+            db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d)?;
         }
-        let result = db_executor!(db::write, &params.robot_id, TABLE_SUFFIX, key, &d);
-        return to_res(result);
+        Ok(())
     }
-    to_res(Ok(()))
+    .await;
+    to_res(r)
     // let r = params
     //     .data
     //     .parse::<usize>()
@@ -434,20 +416,20 @@ pub(crate) async fn regenerate_embeddings(
     Query(params): Query<IntentFormData>,
 ) -> impl IntoResponse {
     let key = params.id.as_str();
-    let r: Result<Option<IntentDetail>> =
-        db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key);
-    if r.is_err() {
-        return to_res(r.map(|_| ()));
+    let r: Result<()> = async {
+        let op: Option<IntentDetail> =
+            db_executor!(db::query, &params.robot_id, TABLE_SUFFIX, key)?;
+        let d = match op {
+            Some(d) => d,
+            None => {
+                return Err(Error::WithMessage(String::from(
+                    "Can NOT find intention detail",
+                )));
+            }
+        };
+        // let array: Vec<&str> = d.phrases.iter().map(|v| v.phrase.as_ref()).collect();
+        super::phrase::batch_add(&params.robot_id, &params.data, &d.intent_name, &d.phrases).await
     }
-    let r = r.unwrap();
-    if r.is_none() {
-        return to_res(Err(Error::WithMessage(String::from(
-            "Can NOT find intention detail",
-        ))));
-    }
-    let d = r.unwrap();
-    // let array: Vec<&str> = d.phrases.iter().map(|v| v.phrase.as_ref()).collect();
-    let r =
-        super::phrase::batch_add(&params.robot_id, &params.data, &d.intent_name, &d.phrases).await;
+    .await;
     to_res(r)
 }

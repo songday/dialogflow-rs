@@ -14,7 +14,7 @@ use crate::flow::subflow::crud::TABLE_SUFFIX;
 use crate::flow::subflow::dto::{BranchType, CanvasCells, NextActionType, Node, SubFlowDetail};
 use crate::result::{Error, Result};
 
-pub(crate) fn convert_flow(is_en: bool, robot_id: &str, mainflow_id: &str) -> Result<()> {
+pub(crate) async fn convert_flow(is_en: bool, robot_id: &str, mainflow_id: &str) -> Result<()> {
     let flows: Vec<SubFlowDetail> = if let Some(t) = demo::get_demo(is_en, mainflow_id) {
         serde_json::from_str(t)?
     } else {
@@ -33,7 +33,7 @@ pub(crate) fn convert_flow(is_en: bool, robot_id: &str, mainflow_id: &str) -> Re
         //         f.name
         //     )));
         // }
-        convert_subflow(mainflow_id, idx, f)?;
+        convert_subflow(robot_id, mainflow_id, idx, f).await?;
         // idx += 1;
     }
     Ok(())
@@ -91,7 +91,12 @@ fn check_first_node(
     }
 }
 
-fn convert_subflow(mainflow_id: &str, flow_idx: usize, f: &SubFlowDetail) -> Result<()> {
+async fn convert_subflow(
+    robot_id: &str,
+    mainflow_id: &str,
+    flow_idx: usize,
+    f: &SubFlowDetail,
+) -> Result<()> {
     // println!("{}", &f.nodes);
     let mut cells: CanvasCells = serde_json::from_str(&f.canvas)?;
     let mut branches_link: HashMap<String, String> = HashMap::with_capacity(32);
@@ -146,12 +151,14 @@ fn convert_subflow(mainflow_id: &str, flow_idx: usize, f: &SubFlowDetail) -> Res
     validate_nodes(f, &nodes)?;
     check_first_node(mainflow_id, flow_idx, f, &mut nodes)?;
     for node in nodes {
-        convert_node(mainflow_id, node)?;
+        convert_node(robot_id, mainflow_id, node).await?;
     }
     Ok(())
 }
 
-fn convert_node(main_flow_id: &str, node: &mut Node) -> Result<()> {
+// `robot_id` 只是为了定位运行时节点表所属的 store（表按机器人分），
+// 表名本身仍然只由 `main_flow_id` 拼出。
+async fn convert_node(robot_id: &str, main_flow_id: &str, node: &mut Node) -> Result<()> {
     let mut nodes: Vec<(String, rkyv::util::AlignedVec)> = Vec::with_capacity(32);
     match node {
         Node::DialogNode(n) => {
@@ -393,7 +400,8 @@ fn convert_node(main_flow_id: &str, node: &mut Node) -> Result<()> {
     // println!("saved {}", &n.0);
     // }
 
-    super::crud::save_runtime_nodes(main_flow_id, nodes)
+    let store = db::store(db::StoreKey::Robot(robot_id)).await?;
+    super::crud::save_runtime_nodes(store, main_flow_id, nodes).await
 }
 
 /*

@@ -14,11 +14,21 @@ use serde_json::{Map, Value};
 use crate::ai::huggingface::HuggingFaceModel;
 use crate::ai::{asr, chat, completion, embedding, huggingface, tts};
 use crate::db;
+use crate::db_executor;
 use crate::result::{Error, Result};
 use crate::robot::dto::RobotQuery;
 use crate::web::server::{self, to_res};
 
+/// 全局设置表 —— **跨机器人**，只有它和机器人注册表是全局的。
+///
+/// 名字保持 `settings`：全局的那几个键（[`SETTINGS_KEY`] / `db_init_time` /
+/// `version`）原来就住在这里。
 pub(crate) const TABLE: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("settings");
+/// 每机器人设置表的后缀，表名是 `{robot_id}settings`。
+///
+/// 原来每机器人的设置以 `robot_id` 为键混在上面的全局表里，是仓库里唯一一张
+/// GLOBAL 与 PER-ROBOT 混住的表；拆开以后机器人导出/删除都只碰自己那张。
+pub(crate) const TABLE_SUFFIX: &str = "settings";
 pub(crate) const SETTINGS_KEY: &str = "global-settings";
 
 static SETTINGS_CACHE: LazyLock<Mutex<HashMap<String, Settings>>> =
@@ -277,79 +287,93 @@ impl Default for Settings {
     }
 }
 
-pub(crate) fn init_table() -> Result<()> {
-    db::init_table(TABLE)
+pub(crate) async fn init_table(store: &db::RedbStore) -> Result<()> {
+    db::init_table(store, TABLE).await
 }
 
-pub(crate) fn exists() -> Result<bool> {
-    let cnt = db::count(TABLE)?;
+pub(crate) async fn exists(store: &db::RedbStore) -> Result<bool> {
+    let cnt = db::count(store, TABLE).await?;
     Ok(cnt > 0)
 }
 
-pub(crate) fn init_global() -> Result<GlobalSettings> {
+pub(crate) async fn init_global(store: &db::RedbStore) -> Result<GlobalSettings> {
     let settings = GlobalSettings::default();
-    db::write(TABLE, SETTINGS_KEY, &settings)?;
+    db::write(store, TABLE, SETTINGS_KEY, &settings).await?;
     let format = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]]")
         .expect("Invalid format description");
     let t = time::OffsetDateTime::now_utc();
     let t_str = t
         .format(&format)
         .map_err(|e| Error::TimeFormat(Box::new(e)))?;
-    db::write(TABLE, "db_init_time", &t_str)?;
-    db::write(TABLE, "version", &String::from(server::VERSION))?;
+    db::write(store, TABLE, "db_init_time", &t_str).await?;
+    db::write(store, TABLE, "version", &String::from(server::VERSION)).await?;
     Ok(settings)
 }
 
-pub(crate) fn init(robot_id: &str) -> Result<Settings> {
+/// 新机器人的默认设置，写在**它自己**那张表里。
+pub(crate) async fn init(robot_id: &str) -> Result<Settings> {
     let settings = Settings::default();
-    db::write(TABLE, robot_id, &settings)?;
+    db_executor!(db::write, robot_id, TABLE_SUFFIX, robot_id, &settings)?;
     Ok(settings)
 }
 
-pub(crate) fn get_global_settings() -> Result<Option<GlobalSettings>> {
-    db::query(TABLE, SETTINGS_KEY)
+pub(crate) async fn get_global_settings(store: &db::RedbStore) -> Result<Option<GlobalSettings>> {
+    db::query(store, TABLE, SETTINGS_KEY).await
 }
 
 pub(crate) async fn rest_get_global_settings() -> impl IntoResponse {
-    to_res(get_global_settings())
+    let r = match db::store(db::StoreKey::Global).await {
+        Ok(store) => get_global_settings(store).await,
+        Err(e) => Err(e),
+    };
+    to_res(r)
 }
 
-pub(crate) fn get_settings(robot_id: &str) -> Result<Option<Settings>> {
-    let l = SETTINGS_CACHE.lock()?;
-    let op = l.get(robot_id);
-    if let Some(s) = op {
-        return Ok(Some(s.clone()));
+pub(crate) async fn get_settings(robot_id: &str) -> Result<Option<Settings>> {
+    // 缓存锁必须在 await 之前放开：std 的 MutexGuard 不是 Send。
+    {
+        let l = SETTINGS_CACHE.lock()?;
+        if let Some(s) = l.get(robot_id) {
+            return Ok(Some(s.clone()));
+        }
     }
-    db::query(TABLE, robot_id)
+    db_executor!(db::query, robot_id, TABLE_SUFFIX, robot_id)
 }
 
 pub(crate) async fn get(Query(q): Query<RobotQuery>) -> impl IntoResponse {
-    to_res::<Option<Settings>>(get_settings(&q.robot_id))
+    to_res::<Option<Settings>>(get_settings(&q.robot_id).await)
 }
 
 pub(crate) async fn save(
     Query(q): Query<RobotQuery>,
     Json(data): Json<Settings>,
 ) -> impl IntoResponse {
-    to_res(save_settings(&q.robot_id, data))
+    to_res(save_settings(&q.robot_id, data).await)
 }
 
-pub(crate) fn save_global_settings(data: &GlobalSettings) -> Result<()> {
+pub(crate) async fn save_global_settings(
+    store: &db::RedbStore,
+    data: &GlobalSettings,
+) -> Result<()> {
     let addr = format!("{}:{}", data.ip, data.port);
     let _: SocketAddr = addr.parse().map_err(|_| {
         log::error!("Saving invalid listen IP: {}", &addr);
         Error::WithMessage(String::from("lang.settings.invalidIp"))
     })?;
-    db::write(TABLE, SETTINGS_KEY, &data)
+    db::write(store, TABLE, SETTINGS_KEY, data).await
 }
 
 pub(crate) async fn rest_save_global_settings(
     Json(data): Json<GlobalSettings>,
 ) -> impl IntoResponse {
-    to_res(save_global_settings(&data))
+    let r = match db::store(db::StoreKey::Global).await {
+        Ok(store) => save_global_settings(store, &data).await,
+        Err(e) => Err(e),
+    };
+    to_res(r)
 }
 
-pub(crate) fn save_settings(robot_id: &str, data: Settings) -> Result<()> {
+pub(crate) async fn save_settings(robot_id: &str, data: Settings) -> Result<()> {
     if let completion::TextGenerationProvider::HuggingFace(m) =
         &data.text_generation_provider.provider
     {
@@ -385,7 +409,7 @@ pub(crate) fn save_settings(robot_id: &str, data: Settings) -> Result<()> {
             }
         }
     }
-    db::write(TABLE, robot_id, &data)?;
+    db_executor!(db::write, robot_id, TABLE_SUFFIX, robot_id, &data)?;
     let mut l = SETTINGS_CACHE.lock()?;
     l.insert(String::from(robot_id), data);
     Ok(())
@@ -414,7 +438,11 @@ pub(crate) fn check_smtp_settings(settings: &Settings) -> Result<bool> {
 }
 
 pub(crate) async fn download_model_files(Json(m): Json<HuggingFaceModel>) -> impl IntoResponse {
-    let global_settings = get_global_settings();
+    let store = match db::store(db::StoreKey::Global).await {
+        Ok(store) => store,
+        Err(e) => return to_res(Err(e)),
+    };
+    let global_settings = get_global_settings(store).await;
     if global_settings.is_err() {
         return to_res(Err(Error::WithMessage(String::from(
             "Load global settings failed.",
@@ -482,7 +510,7 @@ pub(crate) async fn check_model_files(bytes: Bytes) -> impl IntoResponse {
 }
 
 pub(crate) async fn check_embedding_model(Query(q): Query<RobotQuery>) -> impl IntoResponse {
-    let r = if let Ok(r) = get_settings(&q.robot_id) {
+    let r = if let Ok(r) = get_settings(&q.robot_id).await {
         if let Some(settings) = r {
             match settings.sentence_embedding_provider.provider {
                 embedding::SentenceEmbeddingProvider::HuggingFace(m) => {

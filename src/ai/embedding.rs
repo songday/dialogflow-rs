@@ -22,7 +22,7 @@ pub(crate) enum SentenceEmbeddingProvider {
 }
 
 pub(crate) async fn embedding(robot_id: &str, s: &str) -> Result<(Vec<f32>, f32)> {
-    if let Some(settings) = settings::get_settings(robot_id)? {
+    if let Some(settings) = settings::get_settings(robot_id).await? {
         let v = match settings.sentence_embedding_provider.provider {
             SentenceEmbeddingProvider::HuggingFace(m) => hugging_face(robot_id, &m.get_info(), s),
             SentenceEmbeddingProvider::OpenAI(m) => {
