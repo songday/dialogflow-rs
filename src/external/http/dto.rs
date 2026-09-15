@@ -17,7 +17,7 @@ pub(crate) enum Method {
 #[derive(Clone, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) enum PostContentType {
     UrlEncoded,
-    JSON,
+    Raw,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -53,6 +53,11 @@ pub(crate) struct HttpReqInfo {
     pub(crate) form_data: Vec<HttpReqParam>,
     #[serde(rename = "requestBody")]
     pub(crate) request_body: String,
+    /// The `Content-Type` to send with `request_body`. Empty means "derive it
+    /// from `post_content_type`", which is what every record written before
+    /// this field existed did.
+    #[serde(rename = "contentType", default)]
+    pub(crate) content_type: String,
     #[serde(rename = "userAgent")]
     pub(crate) user_agent: String,
     // #[serde(rename = "asyncReq")]
@@ -63,4 +68,44 @@ pub(crate) enum ResponseData {
     Str(String),
     Bin(Vec<u8>),
     None,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A record as it was written before `contentType` existed and while the
+    /// raw variant was still called `JSON`.
+    const LEGACY_RECORD: &str = r#"{
+        "id": "abc",
+        "name": "legacy",
+        "description": "",
+        "protocol": "HTTPS",
+        "method": "POST",
+        "address": "api.example.com/v1",
+        "postContentType": "JSON",
+        "headers": [],
+        "queryParams": [],
+        "formData": [],
+        "requestBody": "{}",
+        "userAgent": "ua"
+    }"#;
+
+    #[test]
+    fn legacy_record_still_reads() {
+        let info: HttpReqInfo = serde_json::from_str(LEGACY_RECORD).unwrap();
+        assert!(matches!(info.post_content_type, PostContentType::Raw));
+        // Missing `contentType` falls back to the empty string, which the
+        // request builder sends as application/json.
+        assert_eq!(info.content_type, "");
+    }
+
+    #[test]
+    fn record_is_written_with_the_new_names() {
+        let mut info: HttpReqInfo = serde_json::from_str(LEGACY_RECORD).unwrap();
+        info.content_type = String::from("text/plain");
+        let s = serde_json::to_string(&info).unwrap();
+        assert!(s.contains(r#""postContentType":"Raw""#), "{s}");
+        assert!(s.contains(r#""contentType":"text/plain""#), "{s}");
+    }
 }

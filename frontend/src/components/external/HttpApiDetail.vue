@@ -5,11 +5,14 @@
 // enctype: application/x-www-form-urlencoded
 
 // enctype to multipart/form-data
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 // import { ElMessage } from 'element-plus'
 import { cloneObj, copyProperties, httpReq } from '../../assets/tools.js'
 import { useI18n } from 'vue-i18n'
+import { Editor, EditorContent } from '@tiptap/vue-3';
+import StarterKit from '@tiptap/starter-kit';
+import { Variable } from '../flow/nodes/variableExtension.js';
 import SolarRouting2Linear from '~icons/solar/routing-2-linear'
 import EpPlus from '~icons/ep/plus'
 const { t, tm, rt } = useI18n();
@@ -29,6 +32,9 @@ const httpApiData = reactive({
   queryParams: [],
   formData: [],
   requestBody: '',
+  // Records saved before this field existed keep this value; the backend
+  // treats an empty one as application/json too.
+  contentType: 'application/json',
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/123.0',
   // asyncReq: false,
 })
@@ -37,6 +43,15 @@ const param = reactive({
   value: '',
   valueSource: '',
 })
+// Presets for the Content-Type of a raw body. The select is filterable with
+// allow-create, so any other type can be typed in.
+const contentTypes = [
+  'application/json',
+  'application/xml',
+  'text/xml',
+  'text/plain',
+  'application/x-www-form-urlencoded',
+]
 const setFormVisible = ref(false)
 const varDialogVisible = ref(false)
 const dynamicTitle = ref('')
@@ -44,8 +59,25 @@ const activeName = ref('h')
 const editIdx = ref(0)
 const vars = reactive([])
 const selectedVar = ref('')
-const requestBodyRef = ref()
+const requestBodyEditor = ref(null)
 const apiId = route.params.id;
+
+// The request body is stored as rich text (variables are atomic chips), but
+// bodies written before the rich-text editor existed are plain JSON. Escape
+// those so tiptap keeps the line breaks and does not read `<` as markup.
+const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const bodyToHtml = (s) => {
+  if (!s) return ''
+  // Same test the backend uses to tell the two formats apart.
+  if (s.includes('<var ') || (s.startsWith('<') && s.endsWith('>'))) return s
+  return s.split(/\r?\n/).map((line) => '<p>' + escapeHtml(line) + '</p>').join('')
+}
+// An empty document serialises to `<p></p>`; store it as no body at all.
+const syncRequestBody = () => {
+  const editor = requestBodyEditor.value
+  if (editor) httpApiData.requestBody = editor.isEmpty ? '' : editor.getHTML()
+}
+
 onMounted(async () => {
   if (apiId && apiId != 'new') {
     const t = await httpReq('GET', 'external/http/' + apiId, { robotId: robotId }, null, null);
@@ -62,6 +94,25 @@ onMounted(async () => {
       }
     }
   }
+  // Created after the fetch above, the content comes from the loaded API.
+  requestBodyEditor.value = new Editor({
+    extensions: [StarterKit, Variable],
+    content: bodyToHtml(httpApiData.requestBody),
+    editorProps: {
+      // https://github.com/ueberdosis/tiptap/issues/943
+      transformPastedText(text) {
+        return text.replace(/​/g, '').replace(/[ 　]/g, ' ');
+      },
+      transformPastedHTML(html) {
+        return html.replace(/​/g, '').replace(/[ 　]/g, ' ');
+      },
+    },
+    onUpdate: syncRequestBody,
+  });
+})
+onBeforeUnmount(() => {
+  if (requestBodyEditor.value) requestBodyEditor.value.destroy();
+  requestBodyEditor.value = null;
 })
 const tabCounts = () => {
   if (activeName.value == 'h')
@@ -150,7 +201,14 @@ const save = async () => {
   }
 }
 const insertVar = () => {
-  httpApiData.requestBody += '`' + selectedVar.value + '`'
+  if (!selectedVar.value) return
+  const editor = requestBodyEditor.value
+  if (editor) {
+    // Rich-text editor: insert an atomic variable chip at the cursor.
+    const item = vars.find((v) => v.varName === selectedVar.value)
+    editor.chain().focus().insertVariable(selectedVar.value, item?.varType).run()
+    syncRequestBody()
+  }
   varDialogVisible.value = false
 }
 const goBack = () => {
@@ -223,6 +281,10 @@ const changeTab = (v) => {
   font-size: 13px;
 }
 
+.content-type-input {
+  width: 360px;
+}
+
 .value-row {
   display: flex;
   align-items: center;
@@ -241,6 +303,64 @@ const changeTab = (v) => {
 
 .var-tag {
   margin-left: 6px;
+}
+
+/* Request body editor. Styled here rather than reusing the flow editor's
+   global rules: those live in DialogNode.vue and are only injected once that
+   component is loaded. */
+.editorWrap {
+  width: 100%;
+}
+
+.editorWrap :deep(.ProseMirror) {
+  min-height: 160px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--app-text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.editorWrap :deep(.ProseMirror:hover) {
+  border-color: #c7cbf7;
+}
+
+.editorWrap :deep(.ProseMirror:focus) {
+  border-color: var(--app-primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
+
+.editorWrap :deep(.ProseMirror p) {
+  margin: 0.2em 0;
+  line-height: 1.7;
+}
+
+/* Variable chip rendered by the shared `variable` inline node. */
+.editorWrap :deep(var.var-chip) {
+  display: inline-block;
+  font-style: normal;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+  line-height: 1.6;
+  padding: 0 0.5em;
+  margin: 0 0.15em;
+  border-radius: 0.45em;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #4f46e5;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.editorWrap :deep(var.var-chip.ProseMirror-selectednode) {
+  background: #e0e7ff;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35);
 }
 
 .my-header {
@@ -357,7 +477,7 @@ const changeTab = (v) => {
                 {{ t('eApi.detail.bodyType') }}:
                 <el-radio-group v-model="httpApiData.postContentType">
                   <el-radio-button value="UrlEncoded">x-www-form-urlencoded</el-radio-button>
-                  <el-radio-button value="JSON">JSON</el-radio-button>
+                  <el-radio-button value="Raw">raw</el-radio-button>
                 </el-radio-group>
               </div>
               <el-table v-if="httpApiData.postContentType == 'UrlEncoded'" :data="httpApiData.formData" stripe
@@ -389,9 +509,15 @@ const changeTab = (v) => {
                 @click="newParam">
                 <el-icon style="margin-right: 6px"><EpPlus /></el-icon>{{ t('eApi.detail.addFormData') }}
               </el-button>
-              <template v-if="httpApiData.postContentType == 'JSON'">
-                <el-input ref="requestBodyRef" v-model="httpApiData.requestBody" maxlength="10240" placeholder="JSON"
-                  show-word-limit type="textarea" :rows="8" />
+              <template v-if="httpApiData.postContentType == 'Raw'">
+                <div class="body-type-row">
+                  Content-Type:
+                  <el-select v-model="httpApiData.contentType" class="content-type-input" filterable allow-create
+                    placeholder="application/json">
+                    <el-option v-for="item in contentTypes" :key="item" :label="item" :value="item" />
+                  </el-select>
+                </div>
+                <editor-content class="editorWrap" :editor="requestBodyEditor" v-if="requestBodyEditor" />
                 <el-button type="primary" plain class="add-param-btn" @click="varDialogVisible = true">
                   <el-icon style="margin-right: 6px"><EpPlus /></el-icon>{{ t('eApi.detail.insertVar') }}
                 </el-button>
@@ -417,13 +543,14 @@ const changeTab = (v) => {
         </el-form-item>
         <el-form-item :label="t('eApi.detail.pValue')">
           <div class="value-row">
-            <el-select v-model="param.valueSource" placeholder="" class="source-select">
+            <el-select v-model="param.valueSource" placeholder="" class="source-select"
+              @change="param.value = ''">
               <el-option :label="t('eApi.detail.constValue')" value="Val" />
               <el-option :label="t('eApi.detail.fromVar')" value="Var" />
             </el-select>
             <el-input v-if="param.valueSource == 'Val'" v-model="param.value" autocomplete="off"
               class="value-input" />
-            <el-select v-if="param.valueSource == 'Var'" v-model="selectedVar"
+            <el-select v-if="param.valueSource == 'Var'" v-model="param.value"
               :placeholder="t('eApi.detail.selectVar')" class="value-input">
               <el-option v-for="item in vars" :key="item.varName" :label="item.varName" :value="item.varName" />
             </el-select>
