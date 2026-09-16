@@ -468,8 +468,10 @@ pub(crate) struct ExternalHttpNode {
     pub(crate) node_name: String,
     #[serde(rename = "httpApiId")]
     pub(crate) http_api_id: String,
-    #[serde(rename = "timeoutMilliseconds")]
-    pub(crate) timeout_milliseconds: u64,
+    #[serde(rename = "connectTimeoutMilliseconds")]
+    pub(crate) connect_timeout_milliseconds: u64,
+    #[serde(rename = "readTimeoutMilliseconds")]
+    pub(crate) read_timeout_milliseconds: u64,
     #[serde(rename = "asyncReq")]
     pub(crate) async_req: bool,
     pub(crate) branches: Vec<Branch>,

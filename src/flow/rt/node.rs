@@ -473,7 +473,8 @@ pub(crate) struct ExternalHttpCallNode {
     pub(super) successful_node_id: String,
     pub(super) next_node_id: String,
     pub(super) http_api_id: String,
-    pub(super) timeout_milliseconds: u64,
+    pub(super) connect_timeout_milliseconds: u64,
+    pub(super) read_timeout_milliseconds: u64,
     pub(super) async_req: bool,
 }
 
@@ -493,11 +494,19 @@ impl RuntimeNode for ExternalHttpCallNode {
             if self.async_req {
                 tokio::spawn(http::status_code(
                     api,
-                    self.timeout_milliseconds,
+                    self.connect_timeout_milliseconds,
+                    self.read_timeout_milliseconds,
                     ctx.vars.clone(),
                 ));
             } else {
-                match http::status_code(api, self.timeout_milliseconds, ctx.vars.clone()).await {
+                match http::status_code(
+                    api,
+                    self.connect_timeout_milliseconds,
+                    self.read_timeout_milliseconds,
+                    ctx.vars.clone(),
+                )
+                .await
+                {
                     Ok(r) => {
                         if r == 200u16 {
                             goto_node_id = &self.successful_node_id;

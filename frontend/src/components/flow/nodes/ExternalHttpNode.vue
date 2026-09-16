@@ -15,7 +15,7 @@ const getNode = inject("getNode");
 const { robotId } = inject("robotId");
 const allNodeNameSet = inject("allNodeNameSet");
 const node = getNode();
-const formLabelWidth = "100px";
+const formLabelWidth = "130px";
 const apis = reactive([]);
 const nodeName = ref();
 const apisRef = ref();
@@ -24,7 +24,8 @@ const nodeData = reactive({
     nodeName: "ExternalHttpNode",
     httpApiName: "",
     httpApiId: "",
-    timeoutMilliseconds: 1500,
+    connectTimeoutMilliseconds: 1000,
+    readTimeoutMilliseconds: 1500,
     asyncReq: false,
     valid: false,
     invalidMessages: [],
@@ -284,12 +285,23 @@ onMounted(async () => {
                     />
                 </el-form-item>
                 <el-form-item
-                    label="Timeout"
+                    label="Connect timeout"
                     :label-width="formLabelWidth"
                     v-show="!nodeData.asyncReq"
                 >
                     <el-input-number
-                        v-model="nodeData.timeoutMilliseconds"
+                        v-model="nodeData.connectTimeoutMilliseconds"
+                        :min="100"
+                        :max="600000"
+                    />
+                    milliseconds
+                </el-form-item>
+                <el-form-item
+                    label="Read timeout"
+                    :label-width="formLabelWidth"
+                >
+                    <el-input-number
+                        v-model="nodeData.readTimeoutMilliseconds"
                         :min="200"
                         :max="600000"
                     />

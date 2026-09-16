@@ -300,7 +300,8 @@ async fn convert_node(robot_id: &str, main_flow_id: &str, node: &mut Node) -> Re
                 successful_node_id,
                 next_node_id,
                 http_api_id: n.http_api_id.clone(),
-                timeout_milliseconds: n.timeout_milliseconds,
+                connect_timeout_milliseconds: n.connect_timeout_milliseconds,
+                read_timeout_milliseconds: n.read_timeout_milliseconds,
                 async_req: n.async_req,
             };
             let r = RuntimeNodeEnum::ExternalHttpCallNode(node);
