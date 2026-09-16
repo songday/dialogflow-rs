@@ -33,8 +33,10 @@ pub(crate) struct Variable {
     pub(crate) obtain_value_expression_type: VariableObtainValueExpressionType,
     #[serde(rename = "obtainValueExpression")]
     pub(crate) obtain_value_expression: String,
-    #[serde(rename = "timeoutMilliseconds")]
-    pub(crate) timeout_milliseconds: u64,
+    #[serde(rename = "connectTimeoutMilliseconds")]
+    pub(crate) connect_timeout_milliseconds: u64,
+    #[serde(rename = "readTimeoutMilliseconds")]
+    pub(crate) read_timeout_milliseconds: u64,
     #[serde(rename = "cacheEnabled")]
     pub(crate) cache_enabled: bool,
 }
@@ -263,7 +265,8 @@ impl Variable {
                 {
                     return match crate::external::http::client::req(
                         api,
-                        self.timeout_milliseconds,
+                        self.connect_timeout_milliseconds,
+                        self.read_timeout_milliseconds,
                         &ctx.vars,
                     )
                     .await

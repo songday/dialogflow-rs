@@ -50,7 +50,8 @@ pub(crate) async fn init(robot_id: &str, is_en: bool) -> Result<()> {
         var_associate_data: String::new(),
         obtain_value_expression_type: VariableObtainValueExpressionType::None,
         obtain_value_expression: String::new(),
-        timeout_milliseconds: 1500u64,
+        connect_timeout_milliseconds: 1000u64,
+        read_timeout_milliseconds: 1500u64,
         cache_enabled: true,
     };
     // let result = db_executor!(db::write, robot_id, &v.var_name, &v);

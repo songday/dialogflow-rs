@@ -35,7 +35,7 @@ const httpApiData = reactive({
   // Records saved before this field existed keep this value; the backend
   // treats an empty one as application/json too.
   contentType: 'application/json',
-  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/123.0',
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0',
   // asyncReq: false,
 })
 const param = reactive({
