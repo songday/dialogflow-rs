@@ -13,11 +13,6 @@ use super::dto::{
 use crate::result::Result;
 use crate::variable::dto::VariableValue;
 
-/// The connect timeout HTTP API calls and variables have always used, for
-/// both the request and the client they are sent through. Only the read
-/// timeout is configurable per node.
-const CONNECT_TIMEOUT_MILLIS: u64 = 1_000;
-
 /// How many idle connections a host may keep for reuse. This caps finished
 /// connections, not concurrent requests.
 const POOL_MAX_IDLE_PER_HOST: usize = 8;
@@ -226,20 +221,27 @@ pub(crate) fn get_client(
 
 pub(crate) async fn status_code(
     info: HttpReqInfo,
-    timeout_milliseconds: u64,
+    connect_timeout_milliseconds: u64,
+    read_timeout_milliseconds: u64,
     vars: HashMap<String, VariableValue>,
 ) -> Result<u16> {
-    let req = build_req(&info, timeout_milliseconds, &vars)?;
+    let req = build_req(
+        &info,
+        connect_timeout_milliseconds,
+        read_timeout_milliseconds,
+        &vars,
+    )?;
     let res = req.send().await?;
     Ok(res.status().as_u16())
 }
 
 pub(crate) async fn req(
     info: HttpReqInfo,
-    timeout_milliseconds: u64,
+    connect_timeout_milliseconds: u64,
+    read_timeout_milliseconds: u64,
     vars: &HashMap<String, VariableValue>,
 ) -> reqwest::Result<ResponseData> {
-    let req = build_req(&info, timeout_milliseconds, vars)?;
+    let req = build_req(&info, connect_timeout_milliseconds, read_timeout_milliseconds, vars)?;
     let res = req.send().await?;
     // println!("http status code {}", res.status().as_str());
     if res.status() != reqwest::StatusCode::OK {
@@ -334,15 +336,15 @@ fn header_map(
 
 fn build_req(
     info: &HttpReqInfo,
+    connect_timeout_milliseconds: u64,
     timeout_milliseconds: u64,
     vars: &HashMap<String, VariableValue>,
 ) -> reqwest::Result<RequestBuilder> {
-    // The same configuration as before — a one second connect timeout and
-    // the caller's read timeout — but now a shared client, so its pool is
-    // reused between requests. In reqwest's default proxy mode, i.e. the
+    // The caller's connect and read timeouts, on a shared client, so its pool
+    // is reused between requests. In reqwest's default proxy mode, i.e. the
     // environment decides, which is what this path has always done.
     let client = HTTP_CLIENTS.get(&ClientKey::environment(
-        CONNECT_TIMEOUT_MILLIS,
+        connect_timeout_milliseconds,
         timeout_milliseconds,
     ))?;
     let mut url = String::with_capacity(512);
@@ -402,6 +404,8 @@ mod tests {
     use super::*;
     use crate::variable::dto::VariableType;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const CONNECT_TIMEOUT_MILLIS: u64 = 1_000;
 
     fn vars() -> HashMap<String, VariableValue> {
         let mut vars = HashMap::new();

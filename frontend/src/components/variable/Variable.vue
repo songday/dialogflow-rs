@@ -18,7 +18,8 @@ const varData = reactive({
     varAssociateData: '',
     obtainValueExpressionType: 'None',
     obtainValueExpression: '',
-    timeoutMilliseconds: 1500,
+    connectTimeoutMilliseconds: 100,
+    readTimeoutMilliseconds: 1500,
     cacheEnabled: true,
 });
 const varTypes = [
@@ -256,8 +257,11 @@ async function saveForm() {
                 <el-input v-model="varData.obtainValueExpression" autocomplete="on"
                     :placeholder="varData.obtainValueExpressionType == 'JsonPointer' ? '/data/book/name' : 'CSS selector syntax like: h1.foo div#bar'" />
             </el-form-item>
-            <el-form-item v-if="varData.varValueSource == 'ExternalHttp'" label="Timeout" :label-width="formLabelWidth">
-                <el-input-number v-model="varData.timeoutMilliseconds" :min="200" :max="600000" /> milliseconds
+            <el-form-item v-if="varData.varValueSource == 'ExternalHttp'" label="Connect timeout" :label-width="formLabelWidth">
+                <el-input-number v-model="varData.connectTimeoutMilliseconds" :min="100" :max="600000" /> milliseconds
+            </el-form-item>
+            <el-form-item v-if="varData.varValueSource == 'ExternalHttp'" label="Read timeout" :label-width="formLabelWidth">
+                <el-input-number v-model="varData.readTimeoutMilliseconds" :min="100" :max="600000" /> milliseconds
             </el-form-item>
             <el-form-item v-if="varData.varValueSource == 'ExternalHttp'" label="Cache value"
                 :label-width="formLabelWidth">
