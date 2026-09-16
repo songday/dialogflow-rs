@@ -83,7 +83,7 @@ mod tests {
         "protocol": "HTTPS",
         "method": "POST",
         "address": "api.example.com/v1",
-        "postContentType": "JSON",
+        "postContentType": "Raw",
         "headers": [],
         "queryParams": [],
         "formData": [],
