@@ -391,7 +391,7 @@ function removeConditionGroup(groupIdx) {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+    background: linear-gradient(135deg, #a3e635, #65a30d);
     color: #fff;
     font-weight: 600;
     font-size: 0.9rem;
@@ -432,9 +432,9 @@ function removeConditionGroup(groupIdx) {
 
 .cond-hint {
     font-size: 12px;
-    color: #8b5cf6;
-    background: #f5f3ff;
-    border: 1px solid #ddd6fe;
+    color: #4d7c0f;
+    background: #f7fee7;
+    border: 1px solid #ecfccb;
     border-radius: 8px;
     padding: 6px 12px;
     margin-bottom: 12px;
@@ -468,7 +468,7 @@ function removeConditionGroup(groupIdx) {
     display: flex;
     align-items: center;
     gap: 10px;
-    color: #8b5cf6;
+    color: #65a30d;
     font-size: 12px;
     font-weight: 600;
     margin: 2px 0;
@@ -479,8 +479,8 @@ function removeConditionGroup(groupIdx) {
     content: "";
     flex: 1;
     height: 1px;
-    background: dashed #ddd6fe;
-    background-image: linear-gradient(to right, #ddd6fe 60%, transparent 40%);
+    background: dashed #ecfccb;
+    background-image: linear-gradient(to right, #ecfccb 60%, transparent 40%);
     background-size: 8px 1px;
     background-repeat: repeat-x;
 }
@@ -494,12 +494,12 @@ function removeConditionGroup(groupIdx) {
 .cond-or-badge {
     padding: 2px 14px;
     border-radius: 999px;
-    background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+    background: linear-gradient(135deg, #a3e635, #65a30d);
     color: #fff;
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 1px;
-    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.35);
+    box-shadow: 0 2px 6px rgba(101, 163, 13, 0.35);
 }
 
 .cond-or-divider::before,
