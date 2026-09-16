@@ -1222,7 +1222,7 @@ const popupRundryWindow = async () => {
 }
 
 .ConditionNode {
-    border-left-color: #8b5cf6;
+    border-left-color: #65a30d;
 }
 
 .CollectNode {
