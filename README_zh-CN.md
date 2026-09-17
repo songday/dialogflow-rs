@@ -26,6 +26,23 @@
 
 > 默认情况下, 应用会监听: `127.0.0.1:12715`, 你可以使用 `-ip` 参数和 `-port` 参数, 来指定新的监听地址和端口, 例如: `dialogflow -ip 0.0.0.0 -port 8888`
 
+### 流式回答
+
+`POST /flow/answer` 默认把回答放在一个 JSON 文档里返回；请求体里带上 `"stream": true`
+才会按帧推送。此时响应是 `application/x-ndjson`，每行一个 JSON：`{"contentSeq": 0,
+"content": "..."}` 是答案的一段，按 `contentSeq` 拼接即得到该答案全文；**最后一行必定是
+终帧**（`contentSeq: null`），它的 `content` 是完整的 `{status, data, err}` 响应，
+所以最终的 `nextAction`、`collectData` 都随它一起到达。
+
+```bash
+curl -N -H 'Content-Type: application/json' \
+  -d '{"robotId":"...","mainFlowId":"...","userInput":"你好","stream":true}' \
+  http://127.0.0.1:12715/flow/answer
+```
+
+不发 `stream` 的客户端拿到的，与 1.23 之前逐字节一致。完整协议、Java/JavaScript
+客户端的约定以及已知限制见 [doc/streaming.md](doc/streaming.md)。
+
 <!-- # Releases and source code
 * 💾 If you're looking for **binary releases**, please check [here](https://github.com/dialogflowai/dialogflow/releases)
 * 🎈 The **back end** of this application is [here](https://github.com/dialogflowchatbot/dialogflow-backend)

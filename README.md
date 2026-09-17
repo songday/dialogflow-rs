@@ -24,6 +24,25 @@
 
 > By default application will listen to `127.0.0.1:12715`, you can use `-ip` and `-port` specify new value, e.g.: `dialogflow -ip 0.0.0.0 -port 8888`
 
+### Streaming answers
+
+`POST /flow/answer` returns the answer in one document unless the request body asks
+for `"stream": true`. Then the response is `application/x-ndjson`: one JSON frame per
+line, each carrying a piece of an answer (`{"contentSeq": 0, "content": "..."}`), and
+the last line is always a terminal frame (`contentSeq: null`) whose `content` is the
+whole `{status, data, err}` response, so the final `nextAction` and `collectData`
+arrive with it.
+
+```bash
+curl -N -H 'Content-Type: application/json' \
+  -d '{"robotId":"...","mainFlowId":"...","userInput":"hi","stream":true}' \
+  http://127.0.0.1:12715/flow/answer
+```
+
+A client that does not send `stream` gets exactly the JSON it got before 1.23. See
+[doc/streaming.md](doc/streaming.md) for the full protocol, the Java/JavaScript client
+contracts and the known limitations.
+
 <!-- # Releases and source code
 * 💾 If you're looking for **binary releases**, please check [here](https://github.com/dialogflowai/dialogflow/releases)
 * 🎈 The **back end** of this application is [here](https://github.com/dialogflowchatbot/dialogflow-backend)
