@@ -119,33 +119,18 @@ pub(super) fn gen_text(
             break;
         }
         if let Some(t) = tokenizer_stream.next_token(next_token)? {
-            match result_sender {
-                ResultSender::ChannelSender(sender_wrapper) => {
-                    if let Err(e) = sender_wrapper.try_send(t) {
-                        log::warn!(
-                            "Sent failed, maybe receiver dropped or queue was full, err: {:?}",
-                            &e
-                        );
-                        break;
-                    }
-                }
-                ResultSender::StrBuf(sb) => {
-                    sb.push_str(&t);
-                }
+            // Stops only when the client is gone: the old `try_send` also
+            // aborted on a full queue.
+            if !result_sender.push_delta(t) {
+                log::info!("Moondream receiver is gone, stopping generation.");
+                break;
             }
         }
     }
     let dt = start_gen.elapsed();
     log::info!("Moondream generated {generated_tokens} tokens in {dt:?}");
     if let Some(rest) = tokenizer_stream.decode_rest()? {
-        match result_sender {
-            ResultSender::ChannelSender(sender_wrapper) => {
-                sender_wrapper.try_send(rest)?;
-            }
-            ResultSender::StrBuf(sb) => {
-                sb.push_str(&rest);
-            }
-        }
+        result_sender.push_delta(rest);
     }
     Ok(())
 }

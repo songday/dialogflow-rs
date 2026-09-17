@@ -5,9 +5,10 @@ use std::sync::{LazyLock, Mutex};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::UnboundedSender;
 
 use super::chat::{ResultSender, SenderWrapper};
+use super::stream::{DeltaFormat, DeltaStream};
 use crate::ai::huggingface::{HuggingFaceModel, LoadedHuggingFaceModel};
 use crate::man::settings;
 use crate::result::{Error, Result};
@@ -56,7 +57,7 @@ pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Resul
 pub(crate) async fn completion(
     robot_id: &str,
     prompt: &str,
-    sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
+    sender: UnboundedSender<crate::flow::rt::dto::StreamingResponseData>,
 ) -> Result<()> {
     if let Some(settings) = settings::get_settings(robot_id).await? {
         log::info!("{:?}", &settings.text_generation_provider.provider);
@@ -105,28 +106,6 @@ pub(crate) async fn completion(
         )))
     }
 }
-
-#[macro_export]
-macro_rules! sse_send (
-    ($sender: expr, $message: expr) => ({
-        // println!("sse_send0");
-        if !$sender.is_closed() {
-            // println!("sse_send1");
-            let sender = $sender.clone();
-            // tokio::spawn(async move {
-            //     log::info!("sse_send {}",&$message);
-            //     if let Err(e) = sender.send($message).await {
-            //         log::warn!("Failed sending LLM result, err: {:?}", &e);
-            //     }
-            // });
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = sender.blocking_send($message) {
-                    log::warn!("Failed sending LLM result, err: {:?}", &e);
-                }
-            });
-        }
-    });
-);
 
 // pub(in crate::ai) fn send(sender: &Sender<String>, message: String) -> Result<()> {
 //     let sender = sender.clone();
@@ -179,7 +158,7 @@ async fn huggingface(
     m: &HuggingFaceModel,
     prompt: &str,
     sample_len: usize,
-    sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
+    sender: UnboundedSender<crate::flow::rt::dto::StreamingResponseData>,
 ) -> Result<()> {
     let info = m.get_info();
     // log::info!("model_type={:?}", &info.model_type);
@@ -193,10 +172,12 @@ async fn huggingface(
         model.insert(String::from(robot_id), r);
     };
     let loaded_model = model.get(robot_id).unwrap();
-    let mut result_sender = ResultSender::ChannelSender(SenderWrapper {
-        sender,
-        content_seq: 0,
-    });
+    // This endpoint streams everything it generates, so the accumulated answer
+    // is never needed; `push_delta` just keeps it for the sake of the shared
+    // interface.
+    let mut collected = String::new();
+    let mut result_sender =
+        ResultSender::ChannelSender(SenderWrapper::new(sender, 0), &mut collected);
     match loaded_model {
         LoadedHuggingFaceModel::Gemma(m) => super::gemma::gen_text(
             &m.0,
@@ -243,7 +224,7 @@ async fn open_ai(
     connect_timeout_millis: u32,
     read_timeout_millis: u32,
     proxy_url: &str,
-    sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
+    sender: UnboundedSender<crate::flow::rt::dto::StreamingResponseData>,
 ) -> Result<()> {
     let client = crate::external::http::get_client(
         connect_timeout_millis.into(),
@@ -267,34 +248,31 @@ async fn open_ai(
         .header("Content-Type", "application/json")
         .header("Authorization", "Bearer ")
         .body(serde_json::to_string(&obj)?);
-    let mut stream = req.send().await?.bytes_stream();
-    let sender_wrapper = SenderWrapper {
-        sender,
-        content_seq: 0,
-    };
+    let res = req.send().await?;
+    let status = res.status();
+    if !status.is_success() {
+        let body = res.text().await.unwrap_or_default();
+        return Err(Error::WithMessage(format!(
+            "OpenAI-compatible endpoint returned {status}: {body}"
+        )));
+    }
+    let sender_wrapper = SenderWrapper::new(sender, 0);
+    let mut deltas = DeltaStream::new(DeltaFormat::OpenAi);
+    let mut stream = res.bytes_stream();
     while let Some(item) = stream.next().await {
-        let chunk = item?;
-        let v: Value = serde_json::from_slice(chunk.as_ref())?;
-        if let Some(choices) = v.get("choices")
-            && choices.is_array()
-        {
-            if let Some(choices) = choices.as_array()
-                && !choices.is_empty()
-            {
-                if let Some(item) = choices.first() {
-                    if let Some(delta) = item.get("delta") {
-                        if let Some(content) = delta.get("content")
-                            && content.is_string()
-                        {
-                            if let Some(s) = content.as_str() {
-                                let m = String::from(s);
-                                log::info!("OpenAI push {}", &m);
-                                sender_wrapper.send(m);
-                            }
-                        }
-                    }
-                }
+        for delta in deltas.push(item?.as_ref())? {
+            if !sender_wrapper.send(delta) {
+                log::warn!("OpenAI stream receiver is gone, stopping generation.");
+                return Ok(());
             }
+        }
+        if deltas.is_done() {
+            break;
+        }
+    }
+    for delta in deltas.finish()? {
+        if !sender_wrapper.send(delta) {
+            return Ok(());
         }
     }
     Ok(())
@@ -308,7 +286,7 @@ async fn ollama(
     read_timeout_millis: u32,
     proxy_url: &str,
     sample_len: u32,
-    sender: Sender<crate::flow::rt::dto::StreamingResponseData>,
+    sender: UnboundedSender<crate::flow::rt::dto::StreamingResponseData>,
 ) -> Result<()> {
     let prompts: Vec<Prompt> = serde_json::from_str(s)?;
     let mut prompt = String::with_capacity(32);
@@ -339,22 +317,31 @@ async fn ollama(
     let body = serde_json::to_string(&obj)?;
     // log::info!("Request Ollama body {} to {}", &body, u);
     let req = client.post(u).body(body);
-    let mut stream = req.send().await?.bytes_stream();
-    let sender_wrapper = SenderWrapper {
-        sender,
-        content_seq: 0,
-    };
+    let res = req.send().await?;
+    let status = res.status();
+    if !status.is_success() {
+        let body = res.text().await.unwrap_or_default();
+        return Err(Error::WithMessage(format!(
+            "Ollama endpoint returned {status}: {body}"
+        )));
+    }
+    let sender_wrapper = SenderWrapper::new(sender, 0);
+    let mut deltas = DeltaStream::new(DeltaFormat::OllamaGenerate);
+    let mut stream = res.bytes_stream();
     while let Some(item) = stream.next().await {
-        let chunk = item?;
-        let v: Value = serde_json::from_slice(chunk.as_ref())?;
-        if let Some(res) = v.get("response")
-            && res.is_string()
-        {
-            if let Some(s) = res.as_str() {
-                let m = String::from(s);
-                log::info!("Ollama push {}", &m);
-                sender_wrapper.send(m);
+        for delta in deltas.push(item?.as_ref())? {
+            if !sender_wrapper.send(delta) {
+                log::warn!("Ollama stream receiver is gone, stopping generation.");
+                return Ok(());
             }
+        }
+        if deltas.is_done() {
+            break;
+        }
+    }
+    for delta in deltas.finish()? {
+        if !sender_wrapper.send(delta) {
+            return Ok(());
         }
     }
     Ok(())

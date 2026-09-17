@@ -1,29 +1,40 @@
-use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
-
 use axum::Json;
 use axum::extract::Multipart;
 use axum::response::IntoResponse;
 use base64::Engine;
 
-use tokio::sync::mpsc::Sender;
-
-use super::dto::{Request, ResponseData};
+use super::dto::{Request, ResponseChannelWrapper, ResponseData};
 use super::executor;
 use crate::ai::dto::Attachment;
-use crate::result::Result;
-use crate::web::server::to_res2;
-
-static ANSWER_SSE_SESSIONS: LazyLock<Mutex<HashMap<String, Sender<String>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::with_capacity(128)));
+use crate::result::Error;
+use crate::web::server::{to_ndjson, to_res2};
 
 pub(crate) async fn answer(Json(mut req): Json<Request>) -> impl IntoResponse {
     let now = std::time::Instant::now();
-    let r = executor::process(&mut req).await;
+    let res = if req.stream {
+        stream(req)
+    } else {
+        to_res2(executor::process(&mut req).await)
+    };
     // println!("exec used time:{:?}", now.elapsed());
-    let res = to_res2(r);
     log::info!("Response used time:{:?}", now.elapsed());
     res
+}
+
+/// Starts the flow on its own task and returns the body immediately.
+///
+/// The channel has to be created here, not inside the flow, because this is the
+/// last moment before the response body starts being polled. Opening it any
+/// later would mean nothing drains the frames while the flow runs, and every
+/// answer would arrive in one burst at the end — which is not streaming.
+fn stream(mut req: Request) -> axum::response::Response {
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let channel = ResponseChannelWrapper::new(sender);
+    tokio::spawn(async move {
+        executor::process_streaming(&mut req, channel).await;
+    });
+    // The flow task holds the only sender, so the body ends when it finishes.
+    to_ndjson(receiver)
 }
 
 /// Like `answer` but accepts image attachments via multipart/form-data.
@@ -72,31 +83,17 @@ pub(crate) async fn answer_multipart(mut multipart: Multipart) -> impl IntoRespo
             if !attachments.is_empty() {
                 req.attachments.extend(attachments);
             }
-            to_res2(executor::process(&mut req).await)
+            if req.stream {
+                stream(req)
+            } else {
+                to_res2(executor::process(&mut req).await)
+            }
         }
-        Ok(None) => to_res2::<ResponseData>(Err(crate::result::Error::WithMessage(
-            String::from("Field `request` is missing."),
-        ))),
+        Ok(None) => to_res2::<ResponseData>(Err(Error::WithMessage(String::from(
+            "Field `request` is missing.",
+        )))),
         Err(e) => to_res2::<ResponseData>(Err(e)),
     };
     log::info!("Response used time:{:?}", now.elapsed());
     res
-}
-
-pub(crate) async fn answer_sse(Json(req): Json<Request>) -> impl IntoResponse {
-    let now = std::time::Instant::now();
-    let (s, r) = tokio::sync::mpsc::channel::<String>(1);
-    let mut l = ANSWER_SSE_SESSIONS.lock().unwrap();
-    l.insert(String::new(), s);
-    log::info!("Response used time:{:?}", now.elapsed());
-    ""
-}
-
-pub(super) fn get_sender(session_id: &str) -> Result<Option<Sender<String>>> {
-    let l = ANSWER_SSE_SESSIONS.lock()?;
-    if l.contains_key(session_id) {
-        let s = l.get(session_id).unwrap();
-        return Ok(Some(s.clone()));
-    }
-    Ok(None)
 }

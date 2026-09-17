@@ -306,7 +306,6 @@ fn gen_router() -> Router {
         .route("/management/settings/smtp/test", post(settings::smtp_test))
         .route("/flow/answer", post(rt::answer))
         .route("/flow/answer/multipart", post(rt::answer_multipart))
-        .route("/flow/answer/sse", post(rt::answer_sse))
         .route("/ai/text/generation", post(ai::gen_text))
         .route("/version.json", get(version))
         .route("/check-new-version.json", get(check_new_version))
@@ -447,66 +446,65 @@ struct ResponseData<D> {
     pub(crate) err: Option<Error>,
 }
 
-pub(crate) fn to_res2<D>(
-    r: Result<
-        (
-            D,
-            Option<tokio::sync::mpsc::Receiver<crate::flow::rt::dto::StreamingResponseData>>,
-        ),
-        Error,
-    >,
-) -> axum::response::Response
+/// Serializes one result as `{status, data, err}`.
+///
+/// Both transports use this: the single-document response is exactly this text,
+/// and the terminal frame of a streamed response carries the same text in its
+/// `content`, so a client reads a result the same way either way. The status is
+/// inside the document rather than on the HTTP response, which is why a failure
+/// is a 200 at the HTTP level.
+pub(crate) fn envelope_json<D>(r: Result<D, Error>) -> String
+where
+    D: serde::Serialize,
+{
+    let res: ResponseData<D> = match r {
+        Ok(d) => ResponseData {
+            status: StatusCode::OK.as_u16(),
+            data: Some(d),
+            err: None,
+        },
+        Err(e) => ResponseData {
+            status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            data: None,
+            err: Some(e),
+        },
+    };
+    serde_json::to_string(&res).unwrap()
+}
+
+pub(crate) fn to_res2<D>(r: Result<D, Error>) -> axum::response::Response
 where
     D: serde::Serialize + 'static + std::marker::Send,
 {
-    match r {
-        Ok((d, receiver)) => {
-            let builder = Response::builder().status(200);
-            if receiver.is_none() {
-                let res = ResponseData {
-                    status: StatusCode::OK.as_u16(),
-                    data: Some(d),
-                    err: None,
-                };
-                let body = axum::body::Body::from(serde_json::to_string(&res).unwrap());
-                builder
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .unwrap()
-            } else {
-                // log::info!("Response is chunked");
-                let s = tokio_stream::wrappers::ReceiverStream::new(receiver.unwrap());
-                let body = axum::body::Body::from_stream(s.map(|d| {
-                    // let r = crate::flow::rt::dto::ResponseData::new_with_plain_text_answer(d);
-                    // let res = ResponseData {
-                    //     status: StatusCode::OK.as_u16(),
-                    //     data: Some(r),
-                    //     err: None,
-                    // };
-                    let body = serde_json::to_string(&d).unwrap();
-                    Ok::<_, std::convert::Infallible>(body)
-                }));
-                builder
-                    .header(header::TRANSFER_ENCODING, "chunked")
-                    .header(header::CONTENT_TYPE, "application/x-ndjson")
-                    .body(body)
-                    .unwrap()
-            }
-        }
-        Err(e) => {
-            let builder = Response::builder().status(200);
-            let res: ResponseData<D> = ResponseData {
-                status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
-                data: None,
-                err: Some(e),
-            };
-            let body = axum::body::Body::from(serde_json::to_string(&res).unwrap());
-            builder
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(body)
-                .unwrap()
-        }
-    }
+    let body = axum::body::Body::from(envelope_json(r));
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .unwrap()
+}
+
+/// Streams frames as newline-delimited JSON: one JSON value per line, so a
+/// client can split on `\n` and parse each line on its own.
+///
+/// `X-Accel-Buffering` is not decoration — nginx buffers proxied chunked
+/// responses by default, which would hold every frame until the end and defeat
+/// the whole point of streaming in the most common deployment.
+pub(crate) fn to_ndjson(
+    receiver: tokio::sync::mpsc::UnboundedReceiver<crate::flow::rt::dto::StreamingResponseData>,
+) -> axum::response::Response {
+    let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
+    let body = axum::body::Body::from_stream(stream.map(|frame| {
+        Ok::<_, std::convert::Infallible>(format!("{}\n", serde_json::to_string(&frame).unwrap()))
+    }));
+    Response::builder()
+        .status(200)
+        .header(header::TRANSFER_ENCODING, "chunked")
+        .header(header::CONTENT_TYPE, "application/x-ndjson")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header("X-Accel-Buffering", "no")
+        .body(body)
+        .unwrap()
 }
 
 // pub(crate) enum ResponseDataHolder<D> {
@@ -590,5 +588,180 @@ pub(crate) fn is_en(headers: &axum::http::HeaderMap) -> bool {
         true
     } else {
         *IS_EN
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flow::rt::dto::{Request, ResponseChannelWrapper, ResponseData};
+    use crate::flow::subflow::dto::NextActionType;
+
+    fn req() -> Request {
+        serde_json::from_str(
+            r#"{"robotId":"rb","mainFlowId":"mf","sessionId":"ss","userInputResult":"Successful","userInput":"hi"}"#,
+        )
+        .unwrap()
+    }
+
+    /// The transport contract every client depends on: one JSON value per line,
+    /// each line newline-terminated. Without that delimiter a client has to
+    /// guess where a frame ends — which is what the shipped JavaScript SDK did,
+    /// by splitting on `}{`.
+    #[tokio::test]
+    async fn frames_are_newline_delimited_and_the_last_one_is_the_terminal_frame() {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let channel = ResponseChannelWrapper::new(sender);
+        assert!(channel.push_frame(0, String::from("Hel")));
+        assert!(channel.push_frame(0, String::from("lo")));
+        let mut data = ResponseData::new(&req());
+        data.next_action = NextActionType::Terminate;
+        assert!(channel.push_terminal(envelope_json(Ok(data))));
+        // Dropping the only sender ends the body, exactly as finishing the flow
+        // task does.
+        drop(channel);
+
+        let res = to_ndjson(receiver);
+        assert_eq!(
+            res.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/x-ndjson"
+        );
+        assert!(
+            res.headers().contains_key("x-accel-buffering"),
+            "a proxy must be told not to buffer the frames"
+        );
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = core::str::from_utf8(&body).unwrap();
+        let Some(text) = text.strip_suffix('\n') else {
+            panic!("the body must end with a newline: {text:?}");
+        };
+        let lines: Vec<&str> = text.split('\n').collect();
+        assert_eq!(lines.len(), 3, "one line per frame: {lines:?}");
+
+        let delta: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(delta["contentSeq"], 0);
+        assert_eq!(delta["content"], "Hel");
+
+        let last: serde_json::Value = serde_json::from_str(lines[2]).unwrap();
+        assert!(
+            last["contentSeq"].is_null(),
+            "a null sequence is what marks the terminal frame"
+        );
+        let envelope: serde_json::Value =
+            serde_json::from_str(last["content"].as_str().unwrap()).unwrap();
+        assert_eq!(envelope["status"], 200);
+        assert_eq!(envelope["data"]["nextAction"], "Terminate");
+    }
+
+    /// The point of the whole exercise, checked on the wire rather than through
+    /// a `Body`: the frames have to leave as they are produced. Reading the body
+    /// in-process would happily buffer everything and still pass.
+    #[tokio::test]
+    async fn frames_reach_the_socket_one_by_one() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        async fn stream_slowly() -> axum::response::Response {
+            let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+            let channel = ResponseChannelWrapper::new(sender);
+            tokio::spawn(async move {
+                channel.push_frame(0, String::from("first"));
+                tokio::time::sleep(core::time::Duration::from_millis(300)).await;
+                channel.push_frame(0, String::from("second"));
+                tokio::time::sleep(core::time::Duration::from_millis(300)).await;
+                let mut data = ResponseData::new(&req());
+                data.next_action = NextActionType::Terminate;
+                channel.push_terminal(envelope_json(Ok(data)));
+            });
+            to_ndjson(receiver)
+        }
+
+        let app = axum::Router::new().route("/flow/answer", axum::routing::post(stream_slowly));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+        socket
+            .write_all(
+                b"POST /flow/answer HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\
+                  Connection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+
+        let expected = [
+            r#"{"contentSeq":0,"content":"first"}"#,
+            r#"{"contentSeq":0,"content":"second"}"#,
+            r#""contentSeq":null"#,
+        ];
+        let mut seen: Vec<Option<std::time::Instant>> = vec![None; expected.len()];
+        let mut raw: Vec<u8> = Vec::with_capacity(4096);
+        loop {
+            let mut chunk = [0u8; 4096];
+            let n = socket.read(&mut chunk).await.unwrap();
+            if n == 0 {
+                break;
+            }
+            raw.extend_from_slice(&chunk[..n]);
+            let text = String::from_utf8_lossy(&raw);
+            for (i, want) in expected.iter().enumerate() {
+                if seen[i].is_none() && text.contains(want) {
+                    seen[i] = Some(std::time::Instant::now());
+                }
+            }
+        }
+
+        let text = String::from_utf8_lossy(&raw);
+        let head = text.split("\r\n\r\n").next().unwrap().to_lowercase();
+        assert!(head.starts_with("http/1.1 200 ok"), "{head}");
+        assert_eq!(
+            head.matches("transfer-encoding: chunked").count(),
+            1,
+            "the response must be chunked exactly once: {head}"
+        );
+        assert!(head.contains("content-type: application/x-ndjson"), "{head}");
+
+        let seen: Vec<std::time::Instant> = seen
+            .into_iter()
+            .map(|t| t.expect("a frame never arrived"))
+            .collect();
+        // The flow waits 300 ms between the first two frames, so a body that was
+        // buffered until the end would show almost no spread.
+        let spread = seen[2].duration_since(seen[0]);
+        assert!(
+            spread >= core::time::Duration::from_millis(250),
+            "the frames arrived {spread:?} apart, they were held back"
+        );
+    }
+
+    /// A failure is carried inside the terminal frame with the same shape a
+    /// non-streaming request uses, because the HTTP status is already committed
+    /// by the time the failure is known.
+    #[tokio::test]
+    async fn a_failure_is_reported_in_the_terminal_frame() {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let channel = ResponseChannelWrapper::new(sender);
+        channel.push_terminal(envelope_json::<ResponseData>(Err(Error::WithMessage(
+            String::from("boom"),
+        ))));
+        drop(channel);
+
+        let res = to_ndjson(receiver);
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let frame: serde_json::Value =
+            serde_json::from_str(core::str::from_utf8(&body).unwrap().trim()).unwrap();
+        assert!(frame["contentSeq"].is_null());
+        let envelope: serde_json::Value =
+            serde_json::from_str(frame["content"].as_str().unwrap()).unwrap();
+        assert_eq!(envelope["status"], 500);
+        assert_eq!(envelope["err"]["message"], "boom");
+        assert!(envelope["data"].is_null());
     }
 }

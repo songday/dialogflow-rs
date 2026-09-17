@@ -12,5 +12,6 @@ pub(super) mod llama;
 pub(super) mod moondream;
 pub(super) mod phi3;
 pub(super) mod qwen3;
+pub(crate) mod stream;
 mod token_output_stream;
 pub(crate) mod tts;

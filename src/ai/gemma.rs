@@ -94,41 +94,17 @@ pub(super) fn gen_text(
         }
         // let rr: ResultReceiver;
         if let Some(t) = tokenizer.next_token(next_token)? {
-            // print!("{t}");
-            // std::io::stdout().flush()?;
-            // let result_sender = rr.clone();
-            match result_sender {
-                ResultSender::ChannelSender(sender_wrapper) => {
-                    if let Err(e) = sender_wrapper.try_send(t) {
-                        log::warn!(
-                            "Sent failed, maybe receiver dropped or queue was full, err: {:?}",
-                            &e
-                        );
-                        break;
-                    }
-                    // ResultReceiver::SseSender(sender)
-                }
-                ResultSender::StrBuf(sb) => {
-                    sb.push_str(&t);
-                    // ResultReceiver::StrBuf(sb)
-                }
+            // Stops only when the client is gone. The old `try_send` also
+            // aborted on a full queue, which cut generation short.
+            if !result_sender.push_delta(t) {
+                log::info!("Gemma receiver is gone, stopping generation.");
+                break;
             }
         }
     }
     let dt = start_gen.elapsed();
     if let Some(rest) = tokenizer.decode_rest()? {
-        // print!("{rest}");
-        match result_sender {
-            ResultSender::ChannelSender(sender_wrapper) => {
-                if let Err(e) = sender_wrapper.try_send(rest) {
-                    log::warn!(
-                        "Sent failed, maybe receiver dropped or queue was full, err: {:?}",
-                        &e
-                    );
-                }
-            }
-            ResultSender::StrBuf(sb) => sb.push_str(&rest),
-        }
+        result_sender.push_delta(rest);
     }
     // std::io::stdout().flush()?;
     println!(
