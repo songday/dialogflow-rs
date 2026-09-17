@@ -11,6 +11,12 @@ public class RequestData {
     private String userInput;
     private ImportVariable[] importVariables;
     private String userInputIntent;
+    /**
+     * Asks the server to push the answer as it is produced instead of returning
+     * it in one document. A primitive on purpose: it is always serialized, so
+     * the request says which of the two it wants rather than leaving it implied.
+     */
+    private boolean stream;
 
     public static RequestData create(String robotId, String mainFlowId) {
         RequestData requestData = new RequestData();
