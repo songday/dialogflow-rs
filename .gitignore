@@ -26,3 +26,5 @@ TODO.txt
 # index.html
 /data
 .idea
+src/web/asset.rs
+src/web/asset.txt
