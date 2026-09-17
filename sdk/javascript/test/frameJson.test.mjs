@@ -9,11 +9,34 @@ import { dirname, join } from 'node:path';
 import assert from 'node:assert/strict';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(join(here, '..', 'DialogFlowAiSDK.min.js'), 'utf8');
-const start = source.indexOf('function frameJson(');
-const end = source.indexOf('\nexport {');
-assert.ok(start > -1 && end > start, 'frameJson not found in DialogFlowAiSDK.js');
-const frameJson = eval(`(${source.slice(start, end)})`);
+const artifact = 'DialogFlowAiSDK.min.js';
+const source = readFileSync(join(here, '..', artifact), 'utf8');
+
+/** The fn named `frameJson`, sliced out of `source` down to its closing brace. */
+function extractFrameJson(source) {
+    const start = source.indexOf('function frameJson(');
+    assert.ok(start > -1, `frameJson not found in ${artifact}`);
+    // Counting braces is safe only outside strings, and this body is full of
+    // quoted braces (`'{'`, `'}'`) that a naive count would walk straight into.
+    let depth = 0;
+    let quote = null;
+    let escaped = false;
+    for (let i = source.indexOf('{', start); i < source.length; i++) {
+        const c = source[i];
+        if (quote) {
+            if (escaped) escaped = false;
+            else if (c === '\\') escaped = true;
+            else if (c === quote) quote = null;
+            continue;
+        }
+        if (c === '"' || c === "'" || c === '`') quote = c;
+        else if (c === '{') depth += 1;
+        else if (c === '}' && --depth === 0) return source.slice(start, i + 1);
+    }
+    assert.fail(`frameJson has no closing brace in ${artifact}`);
+}
+
+const frameJson = eval(`(${extractFrameJson(source)})`);
 
 // Quotes, braces and a backslash inside the text: none of them may be mistaken
 // for framing.

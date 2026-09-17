@@ -131,8 +131,8 @@ fn push_answer(
     content_type: AnswerContentType,
 ) {
     if channel_sender.is_streaming() {
-        let content_seq = ctx.add_answer_history(&content);
-        if !channel_sender.push_frame(content_seq, content) {
+        let slot = ctx.add_answer_history(&content);
+        if !channel_sender.push_frame(slot.content_seq, content) {
             log::warn!("Answer frame dropped, the client is gone.");
         }
     } else {
@@ -223,10 +223,11 @@ impl RuntimeNode for LlmGenTextNode {
             // is set up to push them. Awaiting is what makes that work — the
             // channel is drained by the HTTP body while this waits, so frames
             // leave as they are produced instead of piling up until the end.
-            let content_seq = ctx.add_answer_history("");
+            let slot = ctx.add_answer_history("");
             let mut answer = String::with_capacity(1024);
             // `is_streaming()` above guarantees the channel exists.
-            let sender = SenderWrapper::new(channel_sender.sender().unwrap().clone(), content_seq);
+            let sender =
+                SenderWrapper::new(channel_sender.sender().unwrap().clone(), slot.content_seq);
             let r = crate::ai::chat::chat(
                 &req.robot_id,
                 Some(chat_history),
@@ -245,10 +246,17 @@ impl RuntimeNode for LlmGenTextNode {
             };
             if failed {
                 // Whatever went wrong, the client must not be left with
-                // nothing: send the fallback this node is configured with.
+                // nothing: send the fallback this node is configured with. It is
+                // what the history has to record too, not the empty answer.
                 log::warn!("LlmGenTextNode produced no answer, sending the fallback text.");
-                channel_sender.push_frame(content_seq, self.fallback_text.clone());
+                channel_sender.push_frame(slot.content_seq, self.fallback_text.clone());
+                answer.clear();
+                answer.push_str(&self.fallback_text);
             }
+            // The frames carried the text, but the history entry was only
+            // reserved. Leaving it empty would put a blank assistant turn in
+            // front of every later LLM call in this conversation.
+            ctx.fill_answer_history(slot, &answer);
         } else if channel_sender.is_streaming() {
             // The client asked for frames but this node is not configured for
             // token-level streaming, so the answer is generated in full and
@@ -739,10 +747,11 @@ impl LlmChatNode {
             // Token-level streaming. Awaiting keeps the frames in order and
             // leaves the complete answer here, which is what lets the exit
             // condition below be evaluated at all.
-            let content_seq = ctx.add_answer_history("");
+            let slot = ctx.add_answer_history("");
             let mut answer = String::with_capacity(1024);
             // `is_streaming()` above guarantees the channel exists.
-            let sender = SenderWrapper::new(channel_sender.sender().unwrap().clone(), content_seq);
+            let sender =
+                SenderWrapper::new(channel_sender.sender().unwrap().clone(), slot.content_seq);
             if let Err(e) = crate::ai::chat::chat(
                 &req.robot_id,
                 chat_history,
@@ -755,13 +764,27 @@ impl LlmChatNode {
             {
                 log::error!("LlmChatNode response failed, err: {e:?}");
                 match &self.answer_timeout_then {
-                    LlmChatAnswerTimeoutThen::GotoAnotherNode => return false,
+                    LlmChatAnswerTimeoutThen::GotoAnotherNode => {
+                        ctx.discard_answer_history(slot);
+                        return false;
+                    }
                     LlmChatAnswerTimeoutThen::ResponseAlternateText(t) => {
-                        channel_sender.push_frame(content_seq, t.clone());
+                        channel_sender.push_frame(slot.content_seq, t.clone());
                         answer.push_str(t);
                     }
-                    LlmChatAnswerTimeoutThen::DoNothing => return false,
+                    LlmChatAnswerTimeoutThen::DoNothing => {
+                        ctx.discard_answer_history(slot);
+                        return false;
+                    }
                 }
+            }
+            // The frames carried the text, but the history entry was only
+            // reserved. An answer that never produced anything gives the
+            // reservation back instead of leaving a blank turn behind.
+            if answer.is_empty() {
+                ctx.discard_answer_history(slot);
+            } else {
+                ctx.fill_answer_history(slot, &answer);
             }
             // Staying on this node is the normal outcome: the conversation
             // continues, so this node is kept as the current one and the client

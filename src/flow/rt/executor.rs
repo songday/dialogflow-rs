@@ -73,9 +73,10 @@ async fn prepare(req: &mut Request) -> Result<Context> {
 
 /// Adds the assistant turns a run produced to the chat history.
 ///
-/// Note that a streamed answer is not in `answers` — it went out as frames — so
-/// it is not recorded here. Writing those back is a separate change: the index
-/// returned by `Context::add_answer_history` is where the text belongs.
+/// Only the buffered answers are left to do here: a streamed one went out as
+/// frames and was recorded by the node that produced it, as soon as its text was
+/// complete (`Context::fill_answer_history`). Nothing lands twice, because a
+/// streaming response never puts its answers in `res.answers`.
 fn record_answers(ctx: &mut Context, res: &ResponseData) {
     if res.answers.is_empty() {
         return;

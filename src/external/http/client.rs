@@ -566,18 +566,25 @@ mod tests {
         assert_eq!(cache.len(), 0);
     }
 
-    /// `get_client` has to reach the shared cache, not a cache of its own:
-    /// a second call with the same configuration must add nothing to it.
+    /// `get_client` has to reach the shared cache, not a cache of its own: the
+    /// client for a configuration has to end up in `HTTP_CLIENTS`, where the
+    /// next caller with those timeouts finds it.
     ///
-    /// This is the only test that touches `HTTP_CLIENTS`, so the counts are
-    /// not racing with anything.
+    /// Nothing here counts entries: `HTTP_CLIENTS` is process-wide and other
+    /// tests in this binary reach it too — `ai::chat`'s provider tests call
+    /// `get_client` with timeouts of their own — and libtest runs them
+    /// concurrently, so entries can appear between any two reads. Presence is
+    /// the part no other test can make true: no one else uses these numbers.
+    /// That the cache builds each key once and then reuses it is settled
+    /// without racing by `client_cache_reuses_one_client_per_key`, which counts
+    /// builds on a cache of its own.
     #[test]
     fn get_client_goes_through_the_shared_cache() {
-        let before = HTTP_CLIENTS.len();
+        let key = ClientKey::with_proxy(1_000, 5_000, "");
         assert!(get_client(1_000, 5_000, "").is_ok());
-        assert_eq!(HTTP_CLIENTS.len(), before + 1);
+        assert!(HTTP_CLIENTS.contains(&key), "get_client did not cache it");
         assert!(get_client(1_000, 5_000, "").is_ok());
-        assert_eq!(HTTP_CLIENTS.len(), before + 1);
+        assert!(HTTP_CLIENTS.contains(&key), "the cached client went away");
     }
 
     /// The point of the cache, end to end: two `get_client` calls with the
