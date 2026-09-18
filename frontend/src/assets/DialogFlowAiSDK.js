@@ -44,7 +44,10 @@ class DialogFlowAiSDK {
             userInput: userInput || "",
             attachments: self.attachments.splice(0, self.attachments.length),
             importVariables: self.importVariables.splice(0, self.importVariables.length),
-            userInputIntent: userInputIntent
+            userInputIntent: userInputIntent,
+            // Ask for the answer frame by frame. It costs nothing when the flow
+            // sends only one answer: the terminal frame carries it whole.
+            stream: true
         };
         return body;
     }
@@ -203,55 +206,76 @@ class DialogFlowAiSDK {
         if (isStream) {
             const reader = response.body.getReader();
             const decoder = new TextDecoder('utf-8');
-            const stream = new ReadableStream({
-                async start(controller) {
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-                        controller.enqueue(decoder.decode(value, { stream: true }));
-                    }
-                    controller.close();
-                }
-            });
-
-            // ReadableStream -> text chunks
-            const textStream = stream.getReader();
-
-            let { value, done } = await textStream.read();
+            const framer = { carry: '' };
             let idx = -1;
-            while (!done) {
-                console.log('chunk:', value);
-                // console.log('idx:', idx);
-                if (value === null || value === undefined || value.trim().length == 0) {
-                    continue;
-                }
-                value.substring(1, value.length - 1).split('}{').forEach((line) => {
-                    if (line.trim().length > 0) {
-                        console.log('line:', line);
-                        // const c = value.charAt(0);
-                        // let j;
-                        // if (c !== '{' && c !== '[') {
-                        //     j = { data: { answers: [{ content: value }] } };
-                        // }
-                        // else
-                        //     j = JSON.parse(line);
-                        const j = JSON.parse('{' + line + '}');
-                        if (Object.hasOwn(j, 'contentSeq') && j.contentSeq !== null) {
-                            self.appendAnswers({ status: 200, data: { answers: [{ content: j.content }] } }, j.contentSeq);
-                        } else {
-                            const r = self.appendAnswers({ status: 200, data: JSON.parse(j.content) }, idx);
-                            idx = r.chatIdx;
-                        }
+            const handle = (text) => {
+                for (const frame of frameJson(framer, text)) {
+                    console.log('frame:', frame);
+                    const j = JSON.parse(frame);
+                    if (Object.hasOwn(j, 'contentSeq') && j.contentSeq !== null) {
+                        self.appendAnswers({ status: 200, data: { answers: [{ content: j.content }] } }, j.contentSeq);
+                    } else {
+                        // Terminal frame: its content is the whole response, so the
+                        // final nextAction and collectData arrive with it.
+                        const r = self.appendAnswers(JSON.parse(j.content), idx);
+                        idx = r.chatIdx;
                     }
-                });
-                ({ value, done } = await textStream.read());
+                }
+            };
+
+            for (; ;) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                console.log('chunk:', value);
+                // `stream: true` keeps a character split across two chunks whole.
+                handle(decoder.decode(value, { stream: true }));
             }
+            // Flush whatever the decoder was still holding.
+            handle(decoder.decode());
         } else {
             const res = await response.json();
             console.log('Response data:', res);
             self.appendAnswers(res, -1);
         }
     };
+}
+
+// Splits a stream of newline-delimited JSON into whole documents.
+//
+// A chunk can end anywhere — mid-frame, mid-string, even mid-escape — so the
+// unfinished tail is carried over to the next call and the scan ignores braces
+// that are inside a string literal. It also does not care whether a document is
+// the only thing in a chunk, or shares one with three others.
+function frameJson(state, text) {
+    const buf = state.carry + text;
+    const frames = [];
+    let start = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < buf.length; i++) {
+        const c = buf[i];
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (c === '\\') escaped = true;
+            else if (c === '"') inString = false;
+        } else if (c === '"') {
+            inString = true;
+        } else if (c === '{' || c === '[') {
+            if (depth === 0) start = i;
+            depth++;
+        } else if (c === '}' || c === ']') {
+            depth--;
+            if (depth === 0 && start > -1) {
+                frames.push(buf.slice(start, i + 1));
+                start = -1;
+            }
+        }
+    }
+    // Only an unfinished document is worth keeping. Anything before it has been
+    // handed out already, and the rest is whitespace between frames.
+    state.carry = depth > 0 && start > -1 ? buf.slice(start) : '';
+    return frames;
 }
 
 export { DialogFlowAiSDK };

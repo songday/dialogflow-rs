@@ -52,16 +52,64 @@ pub(crate) struct Context {
     pub(crate) chat_history: Vec<Prompt>,
 }
 
+/// Where an answer sits in the chat history.
+///
+/// The two numbers are not the same, and the difference is load-bearing:
+/// `content_seq` is what goes out on the wire, and every shipped client keys its
+/// rendering on that exact value, so it keeps the meaning it has always had —
+/// the index of the message *preceding* the answer. `idx` is the answer's own
+/// slot, which is what code that needs to write the answer back has to use.
+///
+/// See `doc/streaming.md` §5 for why the off-by-one is kept rather than fixed.
+#[derive(Clone, Copy)]
+pub(crate) struct AnswerSlot {
+    pub(crate) content_seq: usize,
+    pub(crate) idx: usize,
+}
+
 impl Context {
-    pub(crate) fn add_answer_history(&mut self, content: &str) -> usize {
-        let l = self.chat_history.len() - 1;
+    pub(crate) fn add_answer_history(&mut self, content: &str) -> AnswerSlot {
+        let idx = self.chat_history.len();
         self.chat_history.push(Prompt {
             role: String::from("assistant"),
             content: super::executor::HTML_TAG_REGEX
                 .replace_all(content, "")
                 .to_string(),
         });
-        l
+        AnswerSlot {
+            // `saturating_sub` rather than `- 1`: `prepare` always pushes the user
+            // turn before any node runs, so the history is never empty here, and
+            // an underflow should not be able to take a request down if that ever
+            // stops being true.
+            content_seq: idx.saturating_sub(1),
+            idx,
+        }
+    }
+
+    /// Fills in a slot reserved by [`Self::add_answer_history`], for an answer
+    /// whose text is only known after the fact.
+    ///
+    /// A streamed answer is the reason this exists: its slots are reserved before
+    /// generation starts, because the frames go out while the tokens are still
+    /// being produced.
+    pub(crate) fn fill_answer_history(&mut self, slot: AnswerSlot, content: &str) {
+        if let Some(p) = self.chat_history.get_mut(slot.idx) {
+            p.content = super::executor::HTML_TAG_REGEX
+                .replace_all(content, "")
+                .to_string();
+        }
+    }
+
+    /// Drops a reservation made by [`Self::add_answer_history`], for an answer
+    /// that ended up sending nothing.
+    ///
+    /// An empty assistant turn is worse than no turn: it is what the next LLM
+    /// call would read. Only the newest entry can be dropped, so a stale slot
+    /// cannot take someone else's message with it.
+    pub(crate) fn discard_answer_history(&mut self, slot: AnswerSlot) {
+        if slot.idx + 1 == self.chat_history.len() {
+            self.chat_history.pop();
+        }
     }
 
     pub(crate) fn set_user_input_intent(&mut self, intent: String) {
@@ -246,4 +294,94 @@ async fn clean_robot_sessions(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A context with the user turn `prepare` always pushes first.
+    fn ctx() -> Context {
+        Context {
+            robot_id: String::from("rb"),
+            main_flow_id: String::from("mf"),
+            session_id: String::from("ss"),
+            node: None,
+            nodes: LinkedList::new(),
+            vars: HashMap::new(),
+            user_input_intent: None,
+            none_persistent_vars: HashMap::new(),
+            none_persistent_data: HashMap::new(),
+            user_media: None,
+            last_active_time: 0,
+            chat_history: vec![Prompt {
+                role: String::from("user"),
+                content: String::from("hi"),
+            }],
+        }
+    }
+
+    #[test]
+    fn a_slot_carries_both_numbers_and_they_differ() {
+        let mut c = ctx();
+        let slot = c.add_answer_history("one");
+        // The wire value is what the shipped clients key on; the slot is where
+        // the answer actually landed. Writing to `content_seq` would hit the
+        // user's turn.
+        assert_eq!(slot.content_seq, 0);
+        assert_eq!(slot.idx, 1);
+        assert_eq!(c.chat_history[slot.content_seq].role, "user");
+        assert_eq!(c.chat_history[slot.idx].role, "assistant");
+
+        let second = c.add_answer_history("two");
+        assert_eq!(second.content_seq, 1);
+        assert_eq!(second.idx, 2);
+        assert_eq!(c.chat_history.len(), 3);
+    }
+
+    #[test]
+    fn a_reserved_answer_is_filled_in_after_the_fact() {
+        let mut c = ctx();
+        let slot = c.add_answer_history("");
+        // What a streamed answer looks like mid-generation: the frames have gone
+        // out, the history entry is still blank.
+        assert_eq!(c.chat_history[slot.idx].content, "");
+        c.fill_answer_history(slot, "the whole answer");
+        assert_eq!(c.chat_history[slot.idx].content, "the whole answer");
+        // It replaced the placeholder rather than appending a second turn.
+        assert_eq!(c.chat_history.len(), 2);
+    }
+
+    #[test]
+    fn a_reservation_nothing_came_of_is_dropped() {
+        let mut c = ctx();
+        let slot = c.add_answer_history("");
+        c.discard_answer_history(slot);
+        assert_eq!(c.chat_history.len(), 1);
+        assert_eq!(c.chat_history[0].role, "user");
+    }
+
+    #[test]
+    fn a_stale_reservation_cannot_take_another_message_with_it() {
+        let mut c = ctx();
+        let stale = c.add_answer_history("first");
+        let newest = c.add_answer_history("second");
+        // The first slot is no longer the newest entry, so dropping it must be a
+        // no-op rather than popping someone else's turn.
+        c.discard_answer_history(stale);
+        assert_eq!(c.chat_history.len(), 3);
+        c.discard_answer_history(newest);
+        assert_eq!(c.chat_history.len(), 2);
+    }
+
+    #[test]
+    fn an_answer_is_recorded_with_its_markup_stripped() {
+        let mut c = ctx();
+        let slot = c.add_answer_history("<b>reserved</b>");
+        assert_eq!(c.chat_history[slot.idx].content, "reserved");
+        // The filled-in text goes through the same cleaning, so the two ways of
+        // recording an answer cannot drift apart.
+        c.fill_answer_history(slot, "<i>filled</i>");
+        assert_eq!(c.chat_history[slot.idx].content, "filled");
+    }
 }

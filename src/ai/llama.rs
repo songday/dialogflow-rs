@@ -142,32 +142,14 @@ pub(super) fn gen_text(
             //     break;
             // }
             log::info!("Llama {}", &t);
-            match result_sender {
-                ResultSender::ChannelSender(sender_wrapper) => {
-                    if sender_wrapper.sender.is_closed() {
-                        log::info!("Sender closed, break");
-                        break;
-                    }
-                    sender_wrapper.send(t);
-                }
-                ResultSender::StrBuf(sb) => {
-                    sb.push_str(&t);
-                    // ResultReceiver::StrBuf(sb)
-                }
+            if !result_sender.push_delta(t) {
+                log::info!("Llama receiver is gone, stopping generation.");
+                break;
             }
         }
     }
     if let Some(rest) = tokenizer.decode_rest()? {
-        match result_sender {
-            ResultSender::ChannelSender(sender_wrapper) => {
-                // crate::sse_send!(sender, rest);
-                sender_wrapper.send(rest);
-            }
-            ResultSender::StrBuf(sb) => {
-                sb.push_str(&rest);
-                // ResultReceiver::StrBuf(sb)
-            }
-        }
+        result_sender.push_delta(rest);
     }
     let dt = start_gen.elapsed();
     log::info!(

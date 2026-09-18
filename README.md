@@ -13,7 +13,7 @@
 
 # ✨ Features
 * 🛒 **Light** Only ONE executable file, it can run smoothly on laptops without GPUs (data files will be created at runtime automatically).
-* 🐱‍🏍 **AI powered** Integrated `Huggingface local models (Llama, Phi-3, Gemma, Multilingual E5, MiniLM L6v2, NomicEmbedTextV1_5, etc.)`, `Ollama` and `OpenAI`, this can be used for `Chat`, `Text generation` and `Intent detection`.
+* 🐱‍🏍 **AI powered** Integrated `Huggingface local models (Llama, Phi-3, Gemma, Multilingual E5, MiniLM L6v2, NomicEmbedTextV1_5, etc.)`, and **any OpenAI-compatible endpoint** — `OpenAI`, `DeepSeek`, `Zhipu GLM`, `Qwen`, `Moonshot Kimi`, `SiliconFlow`, `Groq`, `OpenRouter`, `Ollama`, `vLLM`, `LM Studio`, or your own gateway. Just fill in the URL and API key. This can be used for `Chat`, `Text generation` and `Intent detection`.
 * 🚀 **Fast** Built on Rust and Vue3.
 * 😀 **Simple** Use the mouse to drag and drop with our intuitive node-based editor.
 * 🔐 **Safe** 100% open source, all runtime data is saved locally (Using `OpenAI API` may expose some data).
@@ -23,6 +23,25 @@
 * 💻 **Binary releases**, please check [here](https://github.com/dialogflowai/dialogflow/releases)
 
 > By default application will listen to `127.0.0.1:12715`, you can use `-ip` and `-port` specify new value, e.g.: `dialogflow -ip 0.0.0.0 -port 8888`
+
+### Streaming answers
+
+`POST /flow/answer` returns the answer in one document unless the request body asks
+for `"stream": true`. Then the response is `application/x-ndjson`: one JSON frame per
+line, each carrying a piece of an answer (`{"contentSeq": 0, "content": "..."}`), and
+the last line is always a terminal frame (`contentSeq: null`) whose `content` is the
+whole `{status, data, err}` response, so the final `nextAction` and `collectData`
+arrive with it.
+
+```bash
+curl -N -H 'Content-Type: application/json' \
+  -d '{"robotId":"...","mainFlowId":"...","userInput":"hi","stream":true}' \
+  http://127.0.0.1:12715/flow/answer
+```
+
+A client that does not send `stream` gets exactly the JSON it got before 1.23. See
+[doc/streaming.md](doc/streaming.md) for the full protocol, the Java/JavaScript client
+contracts and the known limitations.
 
 <!-- # Releases and source code
 * 💾 If you're looking for **binary releases**, please check [here](https://github.com/dialogflowai/dialogflow/releases)

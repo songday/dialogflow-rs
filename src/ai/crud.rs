@@ -10,7 +10,7 @@ use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt as _;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::ai::completion;
 
@@ -39,8 +39,11 @@ pub(crate) async fn gen_text(bytes: Bytes) -> Sse<impl Stream<Item = Result<Even
         // Either::Right(stream::once(futures::future::ready(Ok::<Event, Infallible>(
         //     Event::default().data("Invalid robot_id or prompt")
         // ))))
-        let (sender, receiver) = mpsc::channel::<crate::flow::rt::dto::StreamingResponseData>(5);
-        let stream = ReceiverStream::new(receiver).map(|s| {
+        // Unbounded so generation is never throttled by whoever is reading the
+        // response, and so a slow reader cannot make the producer block.
+        let (sender, receiver) =
+            mpsc::unbounded_channel::<crate::flow::rt::dto::StreamingResponseData>();
+        let stream = UnboundedReceiverStream::new(receiver).map(|s| {
             // log::info!("Sse sending {s}");
             let event = Event::default().data(s.content);
             Ok::<Event, Infallible>(event)

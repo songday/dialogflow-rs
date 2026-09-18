@@ -5,20 +5,19 @@ use regex::Regex;
 use super::context::Context;
 use super::dto::{Request, ResponseChannelWrapper, ResponseData};
 use crate::ai::completion::Prompt;
-use crate::flow::rt::dto::{StreamingResponseData, UserInputResult};
 use crate::flow::rt::node::RuntimeNode;
-use crate::intent::detector;
 use crate::result::{Error, Result};
+use crate::web::server::envelope_json;
 
 pub(crate) static HTML_TAG_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<[^>]+>").unwrap());
 
-pub(in crate::flow::rt) async fn process(
-    req: &mut Request,
-) -> Result<(
-    ResponseData,
-    Option<tokio::sync::mpsc::Receiver<StreamingResponseData>>,
-)> {
+/// Nodes a single request may run before the flow is assumed to be looping.
+const MAX_NODE_EXECUTIONS: usize = 100;
+
+/// Everything that happens before the first node runs: the session, its
+/// context, attachments, the entry node, imported variables and the user turn.
+async fn prepare(req: &mut Request) -> Result<Context> {
     // log::info!("user input: {}", &req.user_input);
     // let now = std::time::Instant::now();
     if req.session_id.is_none() || req.session_id.as_ref().unwrap().is_empty() {
@@ -69,50 +68,47 @@ pub(in crate::flow::rt) async fn process(
         role: String::from("user"),
         content: HTML_TAG_REGEX.replace_all(&req.user_input, "").to_string(),
     });
-    let r = exec(req, &mut ctx).await;
-    if r.is_ok() {
-        let (res, _receiver) = r.as_ref().unwrap();
-        if !res.answers.is_empty() {
-            for a in res.answers.iter() {
-                ctx.chat_history.push(Prompt {
-                    role: String::from("assistant"),
-                    content: HTML_TAG_REGEX.replace_all(&a.content, "").to_string(),
-                });
-            }
-        }
-    }
-    // println!("exec {:?}", now.elapsed());
-    // let now = std::time::Instant::now();
-    ctx.save().await?;
-    // log::info!("ctx save time {:?}", now.elapsed());
-    r
+    Ok(ctx)
 }
 
-pub(in crate::flow::rt) async fn exec(
+/// Adds the assistant turns a run produced to the chat history.
+///
+/// Only the buffered answers are left to do here: a streamed one went out as
+/// frames and was recorded by the node that produced it, as soon as its text was
+/// complete (`Context::fill_answer_history`). Nothing lands twice, because a
+/// streaming response never puts its answers in `res.answers`.
+fn record_answers(ctx: &mut Context, res: &ResponseData) {
+    if res.answers.is_empty() {
+        return;
+    }
+    for a in res.answers.iter() {
+        ctx.chat_history.push(Prompt {
+            role: String::from("assistant"),
+            content: HTML_TAG_REGEX.replace_all(&a.content, "").to_string(),
+        });
+    }
+}
+
+/// Runs nodes until one asks to stop or the queue empties.
+async fn run(
     req: &Request,
     ctx: &mut Context,
-) -> Result<(
-    ResponseData,
-    Option<tokio::sync::mpsc::Receiver<StreamingResponseData>>,
-)> {
+    channel: &ResponseChannelWrapper,
+) -> Result<ResponseData> {
     // let now = std::time::Instant::now();
     let mut response = ResponseData::new(req);
-    let mut sender_wapper = ResponseChannelWrapper {
-        sender: None,
-        receiver: None,
-    };
-    for _i in 0..100 {
+    for _i in 0..MAX_NODE_EXECUTIONS {
         // let now = std::time::Instant::now();
         if let Some(mut n) = ctx.pop_node().await {
             // println!("pop node {:?}", now.elapsed());
-            let ret = n.exec(req, ctx, &mut response, &mut sender_wapper).await;
+            let ret = n.exec(req, ctx, &mut response, channel).await;
             // println!("node exec {:?}", now.elapsed());
             if ret {
                 // log::info!("exec time {:?}", now.elapsed());
-                return Ok((response, sender_wapper.receiver));
+                return Ok(response);
             }
         } else {
-            return Ok((response, sender_wapper.receiver));
+            return Ok(response);
         }
     }
     let m = if *crate::web::server::IS_EN {
@@ -121,4 +117,47 @@ pub(in crate::flow::rt) async fn exec(
         "执行次数太多，请检查流程配置是否正确。"
     };
     Err(Error::WithMessage(String::from(m)))
+}
+
+/// Runs a flow whose answers are buffered and sent as one document.
+pub(in crate::flow::rt) async fn process(req: &mut Request) -> Result<ResponseData> {
+    let mut ctx = prepare(req).await?;
+    let r = run(req, &mut ctx, &ResponseChannelWrapper::none()).await;
+    if let Ok(res) = r.as_ref() {
+        record_answers(&mut ctx, res);
+    }
+    // println!("exec {:?}", now.elapsed());
+    ctx.save().await?;
+    // log::info!("ctx save time {:?}", now.elapsed());
+    r
+}
+
+/// Runs a flow whose answers are pushed frame by frame as they are produced,
+/// and ends it with one terminal frame carrying the same `{status, data, err}`
+/// envelope a non-streaming request returns.
+///
+/// That frame is the only way a failure can be reported here: by the time this
+/// runs the response headers have already gone out, so the status is committed.
+/// Nothing is returned to the caller for the same reason.
+pub(in crate::flow::rt) async fn process_streaming(
+    req: &mut Request,
+    channel: ResponseChannelWrapper,
+) {
+    let r = match prepare(req).await {
+        Ok(mut ctx) => {
+            let r = run(req, &mut ctx, &channel).await;
+            if let Ok(res) = r.as_ref() {
+                record_answers(&mut ctx, res);
+            }
+            match ctx.save().await {
+                Ok(()) => r,
+                Err(e) => Err(e),
+            }
+        }
+        Err(e) => Err(e),
+    };
+    if let Err(e) = &r {
+        log::error!("Streamed flow failed: {e:?}");
+    }
+    channel.push_terminal(envelope_json(r));
 }

@@ -98,30 +98,17 @@ pub(super) fn gen_text(
         generated_tokens += 1;
         if next_token == eos_token {
             if let Some(t) = tokenizer.decode_rest()? {
-                match result_sender {
-                    ResultSender::ChannelSender(sender_wrapper) => {
-                        // crate::sse_send!(sender, t);
-                        sender_wrapper.send(t);
-                    }
-                    ResultSender::StrBuf(sb) => {
-                        sb.push_str(&t);
-                        // ResultReceiver::StrBuf(sb)
-                    }
-                }
+                result_sender.push_delta(t);
             }
             break;
         }
         if let Some(t) = tokenizer.next_token(next_token)? {
-            match result_sender {
-                ResultSender::ChannelSender(sender_wrapper) => {
-                    sender_wrapper.send(t);
-                }
-                ResultSender::StrBuf(sb) => {
-                    sb.push_str(&t);
-                    // ResultReceiver::StrBuf(sb)
-                }
+            // Stops as soon as the client is gone. This used to have no check
+            // at all, so a closed connection still ran the whole generation.
+            if !result_sender.push_delta(t) {
+                log::info!("Phi3 receiver is gone, stopping generation.");
+                break;
             }
-            // std::io::stdout().flush()?;
         }
         pos += context_size;
     }

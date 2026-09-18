@@ -29,6 +29,12 @@ pub(crate) struct Request {
     pub(crate) import_variables: Option<Vec<SimpleVariable>>,
     #[serde(rename = "userInputIntent")]
     pub(crate) user_input_intent: Option<String>,
+    /// Whether the caller wants the answer pushed frame by frame. Absent means
+    /// `false`, so a client that knows nothing about streaming still gets the
+    /// single-document response it expects.
+    #[serde(default)]
+    #[serde(rename = "stream")]
+    pub(crate) stream: bool,
 }
 
 #[derive(Serialize)]
@@ -52,29 +58,57 @@ pub(crate) struct AnswerData {
     pub(crate) content_type: AnswerContentType,
 }
 
+/// The channel an answer travels through when the caller asked for streaming.
+/// Owned by the request handler, handed to the flow runner, read by nobody in
+/// this process: the frames go straight out over HTTP.
 pub(crate) struct ResponseChannelWrapper {
-    pub(crate) sender: Option<tokio::sync::mpsc::Sender<StreamingResponseData>>,
-    pub(crate) receiver: Option<tokio::sync::mpsc::Receiver<StreamingResponseData>>,
+    sender: Option<tokio::sync::mpsc::UnboundedSender<StreamingResponseData>>,
 }
 
 impl ResponseChannelWrapper {
-    pub(crate) fn new(buffer: usize) -> Self {
-        let (sender, receiver) = tokio::sync::mpsc::channel(buffer);
+    /// Wraps an open channel: answers become frames as they are produced.
+    pub(crate) fn new(sender: tokio::sync::mpsc::UnboundedSender<StreamingResponseData>) -> Self {
         Self {
             sender: Some(sender),
-            receiver: Some(receiver),
         }
     }
-    pub(crate) fn send_response(&self, res: &ResponseData) {
-        let res_data = serde_json::to_string(res).unwrap();
-        log::info!("send response: {}", &res_data);
-        crate::sse_send!(
-            self.sender.as_ref().unwrap(),
-            StreamingResponseData {
-                content_seq: None,
-                content: res_data,
-            }
-        );
+    /// No channel: answers are buffered into the response document. This is
+    /// what a client that did not ask for streaming gets.
+    pub(crate) fn none() -> Self {
+        Self { sender: None }
+    }
+    /// Whether this request asked for a streamed answer.
+    pub(crate) fn is_streaming(&self) -> bool {
+        self.sender.is_some()
+    }
+    /// The raw channel, for handing to a generator that pushes its own deltas.
+    pub(crate) fn sender(&self) -> Option<&tokio::sync::mpsc::UnboundedSender<StreamingResponseData>> {
+        self.sender.as_ref()
+    }
+    /// Pushes one answer delta, tagged with the answer it belongs to.
+    ///
+    /// Returns `false` once the client is gone. Every generation loop stops on
+    /// that, which is the only thing that ends a run nobody is listening to.
+    pub(crate) fn push_frame(&self, content_seq: usize, content: String) -> bool {
+        self.send(StreamingResponseData {
+            content_seq: Some(content_seq),
+            content,
+        })
+    }
+    /// Pushes the terminal frame: the same `{status, data, err}` envelope a
+    /// non-streaming request returns as a document, so a client reads a result
+    /// the same way whatever the transport. A `None` sequence marks it terminal.
+    pub(crate) fn push_terminal(&self, envelope: String) -> bool {
+        self.send(StreamingResponseData {
+            content_seq: None,
+            content: envelope,
+        })
+    }
+    fn send(&self, frame: StreamingResponseData) -> bool {
+        match &self.sender {
+            Some(s) => s.send(frame).is_ok(),
+            None => false,
+        }
     }
 }
 

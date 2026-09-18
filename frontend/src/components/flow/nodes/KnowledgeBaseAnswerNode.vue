@@ -4,6 +4,7 @@ import {
     copyProperties,
     httpReq,
     getDefaultBranch,
+    providerDisplayName,
 } from "../../../assets/tools.js";
 import { useI18n } from "vue-i18n";
 import EpWarning from "~icons/ep/warning";
@@ -56,7 +57,7 @@ const updateBrief = () => {
         source: nodeData.retrieveAnswerSources.join(","),
         fallbackStep: nextStep,
     });
-    modelId.value = settings.chatProvider.provider.id;
+    modelId.value = providerDisplayName(settings.chatProvider.provider.id, t);
     modelName.value = settings.chatProvider.provider.model;
 };
 const nodeName = ref();

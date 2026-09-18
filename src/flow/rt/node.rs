@@ -10,7 +10,6 @@ use super::condition::ConditionData;
 use super::context::Context;
 use super::dto::{
     AnswerContentType, AnswerData, CollectData, Request, ResponseChannelWrapper, ResponseData,
-    StreamingResponseData,
 };
 use crate::ai::chat::{ResultSender, SenderWrapper};
 use crate::ai::completion::Prompt;
@@ -55,7 +54,7 @@ impl RuntimeNode for RuntimeNodeEnum {
         req: &Request,
         ctx: &mut Context,
         response: &mut ResponseData,
-        channel_sender: &mut ResponseChannelWrapper,
+        channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         match self {
             RuntimeNodeEnum::TextNode(n) => n.exec(req, ctx, response, channel_sender).await,
@@ -86,7 +85,7 @@ pub(crate) trait RuntimeNode {
         req: &Request,
         ctx: &mut Context,
         response: &mut ResponseData,
-        channel_sender: &mut ResponseChannelWrapper,
+        channel_sender: &ResponseChannelWrapper,
     ) -> bool;
 }
 
@@ -116,6 +115,34 @@ fn add_next_node(ctx: &mut Context, next_node_id: &str) {
     ctx.add_node(next_node_id);
 }
 
+/// Records one complete answer.
+///
+/// A streamed one leaves as a frame of its own, tagged with the index it takes
+/// in the chat history — which is why it is written there now, the frame and the
+/// history entry being the same event. A buffered one waits in the response
+/// document and reaches the history later, in `executor::record_answers`. Either
+/// way the answer is recorded exactly once, and the only difference a client sees
+/// is when it arrives.
+fn push_answer(
+    ctx: &mut Context,
+    response: &mut ResponseData,
+    channel_sender: &ResponseChannelWrapper,
+    content: String,
+    content_type: AnswerContentType,
+) {
+    if channel_sender.is_streaming() {
+        let slot = ctx.add_answer_history(&content);
+        if !channel_sender.push_frame(slot.content_seq, content) {
+            log::warn!("Answer frame dropped, the client is gone.");
+        }
+    } else {
+        response.answers.push(AnswerData {
+            content,
+            content_type,
+        });
+    }
+}
+
 #[derive(Archive, Deserialize, Serialize)]
 #[rkyv(compare(PartialEq))]
 pub(crate) struct TextNode {
@@ -131,26 +158,18 @@ impl RuntimeNode for TextNode {
         req: &Request,
         ctx: &mut Context,
         response: &mut ResponseData,
-        channel_sender: &mut ResponseChannelWrapper,
+        channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // log::info!("Into TextNode {}", &self.text);
         // let now = std::time::Instant::now();
         match replace_vars(&self.text, req, ctx).await {
-            Ok(answer) => {
-                if channel_sender.sender.is_some() {
-                    let sender = channel_sender.sender.as_ref().unwrap().clone();
-                    let streaming = StreamingResponseData {
-                        content_seq: Some(ctx.add_answer_history(&answer)),
-                        content: answer,
-                    };
-                    crate::sse_send!(sender, streaming);
-                } else {
-                    response.answers.push(AnswerData {
-                        content: answer,
-                        content_type: self.text_type.clone(),
-                    })
-                }
-            }
+            Ok(answer) => push_answer(
+                ctx,
+                response,
+                channel_sender,
+                answer,
+                self.text_type.clone(),
+            ),
             Err(e) => log::error!("{e:?}"),
         };
         // log::info!("add {}", &self.next_node_id);
@@ -179,7 +198,7 @@ impl RuntimeNode for LlmGenTextNode {
         req: &Request,
         ctx: &mut Context,
         response: &mut ResponseData,
-        channel_sender: &mut ResponseChannelWrapper,
+        channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // log::info!("Into LlmGenTextNode");
         // let now = std::time::Instant::now();
@@ -199,58 +218,74 @@ impl RuntimeNode for LlmGenTextNode {
             content: self.prompt.clone(),
         };
         chat_history.push(p);
-        if self.response_streaming {
-            // let r = super::facade::get_sender(req.session_id.as_ref().unwrap());
-            // if r.is_err() {
-            //     add_next_node(ctx, &self.next_node_id);
-            //     return false;
-            // }
-            // let s_op = r.unwrap();
-            // if s_op.is_none() {
-            //     add_next_node(ctx, &self.next_node_id);
-            //     return false;
-            // }
-            // let s = s_op.unwrap();
-            // let ticket = String::new();
-            let robot_id = req.robot_id.clone();
-            let connect_timeout = self.connect_timeout;
-            let read_timeout = self.read_timeout;
-            let media = ctx.user_media.clone();
-            // let (s, r) = tokio::sync::mpsc::channel::<String>(1);
-            if channel_sender.sender.is_none() {
-                let (s, r) = tokio::sync::mpsc::channel::<StreamingResponseData>(2);
-                channel_sender.sender = Some(s);
-                channel_sender.receiver = Some(r);
+        if channel_sender.is_streaming() && self.response_streaming {
+            // Token-level streaming: the client asked for frames and this node
+            // is set up to push them. Awaiting is what makes that work — the
+            // channel is drained by the HTTP body while this waits, so frames
+            // leave as they are produced instead of piling up until the end.
+            let slot = ctx.add_answer_history("");
+            let mut answer = String::with_capacity(1024);
+            // `is_streaming()` above guarantees the channel exists.
+            let sender =
+                SenderWrapper::new(channel_sender.sender().unwrap().clone(), slot.content_seq);
+            let r = crate::ai::chat::chat(
+                &req.robot_id,
+                Some(chat_history),
+                ctx.user_media.as_ref(),
+                self.connect_timeout,
+                self.read_timeout,
+                ResultSender::ChannelSender(sender, &mut answer),
+            )
+            .await;
+            let failed = match &r {
+                Err(e) => {
+                    log::error!("LlmGenTextNode response failed, err: {e:?}");
+                    true
+                }
+                Ok(()) => answer.is_empty(),
+            };
+            if failed {
+                // Whatever went wrong, the client must not be left with
+                // nothing: send the fallback this node is configured with. It is
+                // what the history has to record too, not the empty answer.
+                log::warn!("LlmGenTextNode produced no answer, sending the fallback text.");
+                channel_sender.push_frame(slot.content_seq, self.fallback_text.clone());
+                answer.clear();
+                answer.push_str(&self.fallback_text);
             }
-            let s = channel_sender.sender.clone().unwrap();
-            let res_data = serde_json::to_string(response).unwrap();
-            let content_seq = ctx.add_answer_history("");
-            tokio::task::spawn(async move {
-                let send_data = StreamingResponseData {
-                    content_seq: None,
-                    content: res_data,
-                };
-                if let Err(e) = s.send(send_data).await {
-                    log::warn!("LlmGenTextNode response failed, err: {:?}", &e);
-                    return;
-                }
-                let sender_wrappoer = SenderWrapper {
-                    sender: s,
-                    content_seq,
-                };
-                if let Err(e) = crate::ai::chat::chat(
-                    &robot_id,
-                    Some(chat_history),
-                    media.as_ref(),
-                    connect_timeout,
-                    read_timeout,
-                    ResultSender::ChannelSender(sender_wrappoer),
-                )
-                .await
-                {
-                    log::warn!("LlmGenTextNode response failed, err: {:?}", &e);
-                }
-            });
+            // The frames carried the text, but the history entry was only
+            // reserved. Leaving it empty would put a blank assistant turn in
+            // front of every later LLM call in this conversation.
+            ctx.fill_answer_history(slot, &answer);
+        } else if channel_sender.is_streaming() {
+            // The client asked for frames but this node is not configured for
+            // token-level streaming, so the answer is generated in full and
+            // sent as one frame. Buffering it into the response document
+            // instead would lose it, because a streaming response never sends
+            // that document.
+            let mut answer = String::with_capacity(1024);
+            if let Err(e) = crate::ai::chat::chat(
+                &req.robot_id,
+                Some(chat_history),
+                ctx.user_media.as_ref(),
+                self.connect_timeout,
+                self.read_timeout,
+                ResultSender::StrBuf(&mut answer),
+            )
+            .await
+            {
+                log::error!("LlmGenTextNode response failed, err: {e:?}");
+            }
+            if answer.is_empty() {
+                answer.push_str(&self.fallback_text);
+            }
+            push_answer(
+                ctx,
+                response,
+                channel_sender,
+                answer,
+                AnswerContentType::TextPlain,
+            );
         } else {
             let now = std::time::Instant::now();
             let mut s = String::with_capacity(1024);
@@ -342,7 +377,7 @@ impl RuntimeNode for GotoMainFlowNode {
         _req: &Request,
         ctx: &mut Context,
         _response: &mut ResponseData,
-        _channel_sender: &mut ResponseChannelWrapper,
+        _channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // println!("Into GotoMainFlowNode");
         ctx.main_flow_id.clear();
@@ -364,7 +399,7 @@ impl RuntimeNode for GotoAnotherNode {
         _req: &Request,
         ctx: &mut Context,
         _response: &mut ResponseData,
-        _channel_sender: &mut ResponseChannelWrapper,
+        _channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // println!("Into GotoAnotherNode");
         add_next_node(ctx, &self.next_node_id);
@@ -387,7 +422,7 @@ impl RuntimeNode for CollectNode {
         req: &Request,
         ctx: &mut Context,
         response: &mut ResponseData,
-        _channel_sender: &mut ResponseChannelWrapper,
+        _channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // println!("Into CollectNode");
         if let Some(r) = collector::collect(&req.user_input, &self.collect_type) {
@@ -425,7 +460,7 @@ impl RuntimeNode for ConditionNode {
         req: &Request,
         ctx: &mut Context,
         _response: &mut ResponseData,
-        _channel_sender: &mut ResponseChannelWrapper,
+        _channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // println!("Into ConditionNode");
         let mut r = false;
@@ -456,13 +491,13 @@ impl RuntimeNode for TerminateNode {
         _req: &Request,
         _ctx: &mut Context,
         response: &mut ResponseData,
-        channel_sender: &mut ResponseChannelWrapper,
+        _channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // log::info!("Into TerminateNode");
+        // The terminal frame is not sent from here: the run always ends with
+        // one, and sending it here as well would deliver it before the nodes
+        // that still have answers to add.
         response.next_action = NextActionType::Terminate;
-        if channel_sender.sender.is_some() {
-            channel_sender.send_response(response);
-        }
         true
     }
 }
@@ -484,7 +519,7 @@ impl RuntimeNode for ExternalHttpCallNode {
         req: &Request,
         ctx: &mut Context,
         _response: &mut ResponseData,
-        _channel_sender: &mut ResponseChannelWrapper,
+        _channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // println!("Into ExternalHttpCallNode");
         let mut goto_node_id = &self.next_node_id;
@@ -621,7 +656,7 @@ impl RuntimeNode for SendEmailNode {
         req: &Request,
         ctx: &mut Context,
         _response: &mut ResponseData,
-        _channel_sender: &mut ResponseChannelWrapper,
+        _channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // println!("Into SendEmailNode");
         if let Ok(Some(settings)) = get_settings(&req.robot_id).await {
@@ -673,7 +708,7 @@ impl LlmChatNode {
         req: &Request,
         ctx: &mut Context,
         response: &mut ResponseData,
-        channel_sender: &mut ResponseChannelWrapper,
+        channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // log::info!("Into LlmChatNode");
         self.cur_run_times += 1;
@@ -708,48 +743,95 @@ impl LlmChatNode {
         } else {
             Some(ctx.chat_history.clone())
         };
-        if self.response_streaming {
-            // let r = super::facade::get_sender(req.session_id.as_ref().unwrap());
-            // if r.is_err() {
-            //     add_next_node(ctx, &self.next_node_id);
-            //     return false;
-            // }
-            // let s_op = r.unwrap();
-            // if s_op.is_none() {
-            //     add_next_node(ctx, &self.next_node_id);
-            //     return false;
-            // }
-            // let s = s_op.unwrap();
-            // let ticket = String::new();
-            let robot_id = req.robot_id.clone();
-            let connect_timeout = self.connect_timeout;
-            let read_timeout = self.read_timeout;
-            let media = ctx.user_media.clone();
-            // let (s, r) = tokio::sync::mpsc::channel::<String>(1);
-            if channel_sender.sender.is_none() {
-                let (s, r) = tokio::sync::mpsc::channel::<StreamingResponseData>(2);
-                channel_sender.sender = Some(s);
-                channel_sender.receiver = Some(r);
-            }
-            let s = channel_sender.sender.clone().unwrap();
-            let sender_wrapper = SenderWrapper {
-                sender: s,
-                content_seq: ctx.add_answer_history(""),
-            };
-            tokio::task::spawn(async move {
-                if let Err(e) = crate::ai::chat::chat(
-                    &robot_id,
-                    chat_history,
-                    media.as_ref(),
-                    connect_timeout,
-                    read_timeout,
-                    ResultSender::ChannelSender(sender_wrapper),
-                )
-                .await
-                {
-                    log::info!("LlmChatNode response failed, err: {:?}", &e);
+        if self.response_streaming && channel_sender.is_streaming() {
+            // Token-level streaming. Awaiting keeps the frames in order and
+            // leaves the complete answer here, which is what lets the exit
+            // condition below be evaluated at all.
+            let slot = ctx.add_answer_history("");
+            let mut answer = String::with_capacity(1024);
+            // `is_streaming()` above guarantees the channel exists.
+            let sender =
+                SenderWrapper::new(channel_sender.sender().unwrap().clone(), slot.content_seq);
+            if let Err(e) = crate::ai::chat::chat(
+                &req.robot_id,
+                chat_history,
+                ctx.user_media.as_ref(),
+                self.connect_timeout,
+                self.read_timeout,
+                ResultSender::ChannelSender(sender, &mut answer),
+            )
+            .await
+            {
+                log::error!("LlmChatNode response failed, err: {e:?}");
+                match &self.answer_timeout_then {
+                    LlmChatAnswerTimeoutThen::GotoAnotherNode => {
+                        ctx.discard_answer_history(slot);
+                        return false;
+                    }
+                    LlmChatAnswerTimeoutThen::ResponseAlternateText(t) => {
+                        channel_sender.push_frame(slot.content_seq, t.clone());
+                        answer.push_str(t);
+                    }
+                    LlmChatAnswerTimeoutThen::DoNothing => {
+                        ctx.discard_answer_history(slot);
+                        return false;
+                    }
                 }
-            });
+            }
+            // The frames carried the text, but the history entry was only
+            // reserved. An answer that never produced anything gives the
+            // reservation back instead of leaving a blank turn behind.
+            if answer.is_empty() {
+                ctx.discard_answer_history(slot);
+            } else {
+                ctx.fill_answer_history(slot, &answer);
+            }
+            // Staying on this node is the normal outcome: the conversation
+            // continues, so this node is kept as the current one and the client
+            // sends the next turn to it.
+            if !answer.is_empty()
+                && let Some(s) = check_contains_str
+                && answer.contains(s.as_str())
+            {
+                return false;
+            }
+            true
+        } else if channel_sender.is_streaming() {
+            // The client asked for frames but this node is not configured for
+            // token-level streaming, so the answer is generated in full and
+            // sent as one frame rather than buffered into a document that a
+            // streaming response never sends.
+            let mut answer = String::with_capacity(1024);
+            if let Err(e) = crate::ai::chat::chat(
+                &req.robot_id,
+                chat_history,
+                ctx.user_media.as_ref(),
+                self.connect_timeout,
+                self.read_timeout,
+                ResultSender::StrBuf(&mut answer),
+            )
+            .await
+            {
+                log::error!("LlmChatNode response failed, err: {e:?}");
+                match &self.answer_timeout_then {
+                    LlmChatAnswerTimeoutThen::GotoAnotherNode => return false,
+                    LlmChatAnswerTimeoutThen::ResponseAlternateText(t) => answer.push_str(t),
+                    LlmChatAnswerTimeoutThen::DoNothing => return false,
+                }
+            }
+            if !answer.is_empty() {
+                let exit = check_contains_str.is_some_and(|s| answer.contains(s.as_str()));
+                push_answer(
+                    ctx,
+                    response,
+                    channel_sender,
+                    answer,
+                    AnswerContentType::TextPlain,
+                );
+                if exit {
+                    return false;
+                }
+            }
             true
         } else {
             let now = std::time::Instant::now();
@@ -845,7 +927,7 @@ impl RuntimeNode for LlmChatNode {
         req: &Request,
         ctx: &mut Context,
         response: &mut ResponseData,
-        channel_sender: &mut ResponseChannelWrapper,
+        channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // log::info!("Into LlmChatNode");
         let r = self.inner_exec(req, ctx, response, channel_sender).await;
@@ -1081,17 +1163,25 @@ impl KnowledgeBaseAnswerNode {
             }
         }
     }
-    fn fallback_answer(&self, ctx: &mut Context, response: &mut ResponseData) -> bool {
+    fn fallback_answer(
+        &self,
+        ctx: &mut Context,
+        response: &mut ResponseData,
+        channel_sender: &ResponseChannelWrapper,
+    ) -> bool {
         match &self.no_recall_then {
             KnowledgeBaseAnswerNoRecallThen::GotoAnotherNode => {
                 add_next_node(ctx, &self.next_node_id);
                 false
             }
             KnowledgeBaseAnswerNoRecallThen::ReturnAlternateAnswerInstead(s) => {
-                response.answers.push(AnswerData {
-                    content: s.clone(),
-                    content_type: AnswerContentType::TextPlain,
-                });
+                push_answer(
+                    ctx,
+                    response,
+                    channel_sender,
+                    s.clone(),
+                    AnswerContentType::TextPlain,
+                );
                 let r = RuntimeNodeEnum::KnowledgeBaseAnswerNode(self.clone());
                 let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&r).unwrap();
                 ctx.node = Some(bytes.into_vec());
@@ -1107,7 +1197,7 @@ impl RuntimeNode for KnowledgeBaseAnswerNode {
         req: &Request,
         ctx: &mut Context,
         response: &mut ResponseData,
-        _channel_sender: &mut ResponseChannelWrapper,
+        channel_sender: &ResponseChannelWrapper,
     ) -> bool {
         // log::info!("Into LlmChaKnowledgeBaseAnswerNodetNode");
         for answer_source in &self.retrieve_answer_sources {
@@ -1119,15 +1209,22 @@ impl RuntimeNode for KnowledgeBaseAnswerNode {
             if let Some(content) = r
                 && !content.is_empty()
             {
-                response.answers.push(AnswerData {
-                    content: content,
-                    content_type: AnswerContentType::TextPlain,
-                });
+                // A retrieved answer is complete the moment it arrives, so it
+                // is pushed like any other answer instead of being buffered.
+                // Previously it ignored the channel, which meant a streamed
+                // response never carried a knowledge base answer.
+                push_answer(
+                    ctx,
+                    response,
+                    channel_sender,
+                    content,
+                    AnswerContentType::TextPlain,
+                );
                 add_next_node(ctx, &self.next_node_id);
                 return false;
             }
         }
-        self.fallback_answer(ctx, response)
+        self.fallback_answer(ctx, response, channel_sender)
         /*
         let result = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(crate::kb::qa::retrieve_answer(
