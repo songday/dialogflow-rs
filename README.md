@@ -13,7 +13,7 @@
 
 # ✨ Features
 * 🛒 **Light** Only ONE executable file, it can run smoothly on laptops without GPUs (data files will be created at runtime automatically).
-* 🐱‍🏍 **AI powered** Integrated `Huggingface local models (Llama, Phi-3, Gemma, Multilingual E5, MiniLM L6v2, NomicEmbedTextV1_5, etc.)`, `Ollama` and `OpenAI`, this can be used for `Chat`, `Text generation` and `Intent detection`.
+* 🐱‍🏍 **AI powered** Integrated `Huggingface local models (Llama, Phi-3, Gemma, Multilingual E5, MiniLM L6v2, NomicEmbedTextV1_5, etc.)`, and **any OpenAI-compatible endpoint** — `OpenAI`, `DeepSeek`, `Zhipu GLM`, `Qwen`, `Moonshot Kimi`, `SiliconFlow`, `Groq`, `OpenRouter`, `Ollama`, `vLLM`, `LM Studio`, or your own gateway. Just fill in the URL and API key. This can be used for `Chat`, `Text generation` and `Intent detection`.
 * 🚀 **Fast** Built on Rust and Vue3.
 * 😀 **Simple** Use the mouse to drag and drop with our intuitive node-based editor.
 * 🔐 **Safe** 100% open source, all runtime data is saved locally (Using `OpenAI API` may expose some data).
