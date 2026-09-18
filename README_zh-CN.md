@@ -15,7 +15,7 @@
 
 # ✨ 关键特性
 * 🛒 **轻量级** 只有一个执行文件, 可以在没有GPU的笔记本上平滑的执行 (数据文件会在运行期动态的生成).
-* 🐱‍🏍 **AI 驱动** 集成了 `Huggingface 本地模型 (Llama, Phi-3, Gemma, Multilingual E5, MiniLM L6v2, NomicEmbedTextV1_5 等其它模型)`, `Ollama` 和 `OpenAI`, 可以用于 `流程聊天`, `答案节点文本生成` 以及 `意图识别` 等.
+* 🐱‍🏍 **AI 驱动** 集成了 `Huggingface 本地模型 (Llama, Phi-3, Gemma, Multilingual E5, MiniLM L6v2, NomicEmbedTextV1_5 等其它模型)`, 以及 **任何与 OpenAI-compatible 兼容的接口** — `OpenAI`, `DeepSeek`, `智谱 GLM`, `通义千问`, `月之暗面 Kimi`, `硅基流动`, `Groq`, `OpenRouter`, `Ollama`, `vLLM`, `LM Studio`, 或者你自己的大模型网关. 只需要填入终端接口地址和 API key, 可以用于 `流程聊天`, `答案节点文本生成` 以及 `意图识别` 等.
 * 🚀 **快速** 使用`Rust`和`Vue`构建.
 * 😀 **简单** 通过使用可视化的流程编辑器，只需要用鼠标拖拽几个不同类型的节点, 即可创建一个简单的对话机器人.
 * 🔐 **安全** 100% 开源, 所有运行时的数据, 都保存在本地 (使用 `OpenAI API` 可能会暴露一些数据).
