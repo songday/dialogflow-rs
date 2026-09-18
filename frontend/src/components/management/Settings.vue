@@ -6,8 +6,6 @@ import { copyProperties, httpReq, getRobotType } from "../../assets/tools.js";
 import { useI18n } from "vue-i18n";
 import chatPicThumbnail from "@/assets/usedByLlmChatNode-thumbnail.png";
 import chatPic from "@/assets/usedByLlmChatNode.png";
-import textGenerationPicThumbnail from "@/assets/usedByDialogNodeTextGeneration-thumbnail.png";
-import textGenerationPic from "@/assets/usedByDialogNodeTextGeneration.png";
 import sentenceEmbeddingPicThumbnail from "@/assets/usedBySentenceEmbedding-thumbnail.png";
 import sentenceEmbeddingPic from "@/assets/usedBySentenceEmbedding.png";
 
@@ -34,21 +32,6 @@ const settings = reactive({
     smtpTimeoutSec: 60,
     emailVerificationRegex: "",
     chatProvider: {
-        provider: {
-            id: "",
-            model: "",
-        },
-        apiUrl: "",
-        apiUrlDisabled: false,
-        showApiKeyInput: true,
-        apiKey: "",
-        max_token_len: 1000,
-        connectTimeoutMillis: 5000,
-        readTimeoutMillis: 10000,
-        maxResponseTokenLength: 5000,
-        proxyUrl: "",
-    },
-    textGenerationProvider: {
         provider: {
             id: "",
             model: "",
@@ -114,9 +97,6 @@ const smtpFailedDetail = ref("");
 const showHfIncorrectChatModelTip = ref(false);
 const showHfChatModelDownloadProgress = ref(false);
 const chatModelRepository = ref("");
-const showHfIncorrectGenerationModelTip = ref(false);
-const showHfGenerationModelDownloadProgress = ref(false);
-const textGenerationModelRepository = ref("");
 const showHfIncorrectEmbeddingModelTip = ref(false);
 const showHfEmbeddingModelDownloadProgress = ref(false);
 const sentenceEmbeddingModelRepository = ref("");
@@ -155,18 +135,11 @@ onMounted(async () => {
             settings.chatProvider.provider.id,
             settings.chatProvider.apiUrl,
         );
-        textGenerationDynamicReqUrlMap.set(
-            settings.textGenerationProvider.provider.id,
-            settings.textGenerationProvider.apiUrl,
-        );
         sentenceEmbeddingDynamicReqUrlMap.set(
             settings.sentenceEmbeddingProvider.provider.id,
             settings.sentenceEmbeddingProvider.apiUrl,
         );
         await changeChatProvider(settings.chatProvider.provider.id);
-        await changeTextGenerationProvider(
-            settings.textGenerationProvider.provider.id,
-        );
         await changeSentenceEmbeddingProvider(
             settings.sentenceEmbeddingProvider.provider.id,
         );
@@ -194,21 +167,6 @@ async function checkHfModelFiles() {
             }
         }
     } else showHfIncorrectChatModelTip.value = false;
-    if (settings.textGenerationProvider.provider.id == "HuggingFace") {
-        for (let i = 0; i < textGenerationModelOptions.length; i++) {
-            if (
-                textGenerationModelOptions[i].value ==
-                settings.textGenerationProvider.provider.model
-            ) {
-                let l = textGenerationModelOptions[i].value;
-                const p = l.lastIndexOf(" ");
-                if (p > -1) l = l.substring(0, p);
-                textGenerationModelRepository.value = l;
-                repostories.set(showHfIncorrectGenerationModelTip, l);
-                break;
-            }
-        }
-    } else showHfIncorrectGenerationModelTip.value = false;
     if (settings.sentenceEmbeddingProvider.provider.id == "HuggingFace") {
         for (let i = 0; i < sentenceEmbeddingModelOptions.length; i++) {
             if (
@@ -321,8 +279,11 @@ async function downloadModels(m) {
             showHfIncorrectEmbeddingModelTip.value = false;
             showHfEmbeddingModelDownloadProgress.value = true;
         } else {
-            showHfIncorrectGenerationModelTip.value = false;
-            showHfGenerationModelDownloadProgress.value = true;
+            // 本地对话模型的下载。进度以前是写进"文本生成"那一块的 ref（那个
+            // 区块已经并掉了），而对话区块自己绑的 showHfChatModelDownloadProgress
+            // 从来没人赋值——于是下载中一个进度条都不显示。现在写它自己这个。
+            showHfIncorrectChatModelTip.value = false;
+            showHfChatModelDownloadProgress.value = true;
         }
         timeoutID = setTimeout(async () => {
             await showDownloadProgress();
@@ -332,8 +293,8 @@ async function downloadModels(m) {
 
 function downloadComplete() {
     clearTimeout(timeoutID);
-    showHfIncorrectGenerationModelTip.value = false;
-    showHfGenerationModelDownloadProgress.value = false;
+    showHfIncorrectChatModelTip.value = false;
+    showHfChatModelDownloadProgress.value = false;
     showHfIncorrectEmbeddingModelTip.value = false;
     showHfEmbeddingModelDownloadProgress.value = false;
 }
@@ -350,7 +311,7 @@ async function showDownloadProgress() {
         if (r.data.err) {
             ElMessage.error(r.data.err);
             clearTimeout(timeoutID);
-            showHfGenerationModelDownloadProgress.value = false;
+            showHfChatModelDownloadProgress.value = false;
             showHfEmbeddingModelDownloadProgress.value = false;
             return;
         } else if (r.data.downloading) {
@@ -467,12 +428,14 @@ const compatibleVendors = [
         chatUrl: "https://openrouter.ai/api/v1/chat/completions",
         chatModels: ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"],
     },
-    // Ollama 从 v0.1.24 起就有 OpenAI 兼容端点，所以它也走这条路。
-    // 注意地址是 /v1/...，不是原生的 /api/chat。
+    // 对话走 Ollama 的**原生**端点 `/api/chat`：后端按地址选实现，这条路上的
+    // token 上限用 `options.num_predict`、图片是裸 base64，比兼容端点更贴 Ollama。
+    // 向量仍然用 `/v1/embeddings`（那边是标准形状，且本区块没做过原生分支）。
+    // 老记录里指向 `.../v1/chat/completions` 的 Ollama 也照常能用——同样是按地址分的。
     {
         key: "ollama",
         nameKey: "botSettings.vendorOllama",
-        chatUrl: "http://localhost:11434/v1/chat/completions",
+        chatUrl: "http://localhost:11434/api/chat",
         chatModels: [],
         embedUrl: "http://localhost:11434/v1/embeddings",
         embedModels: ["nomic-embed-text", "bge-m3", "mxbai-embed-large"],
@@ -635,98 +598,6 @@ const addAnotherChatModel = (m) => {
     chatModelSelector.value?.blur();
     settings.chatProvider.provider.model = m;
     anotherChatModel.value = "";
-};
-
-const textGenerationProviders = [
-    {
-        id: "HuggingFace",
-        nameKey: "botSettings.providerHuggingFace",
-        apiUrl: "Model will be downloaded locally at ./data/models",
-        apiUrlDisabled: true,
-        showApiKeyInput: false,
-        models: [
-            {
-                label: "microsoft/Phi-3-mini-4k-instruct (7.7GB)",
-                value: "Phi3Mini4kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-mini-128k-instruct (7.7GB)",
-                value: "Phi3Mini128kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-small-8k-instruct (15GB)",
-                value: "Phi3Small8kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-small-128k-instruct (15GB)",
-                value: "Phi3Small128kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-medium-4k-instruct (30GB)",
-                value: "Phi3Medium4kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-medium-128k-instruct (30GB)",
-                value: "Phi3Medium128kInstruct",
-            },
-            {
-                label: "google/gemma-2b-it (4.9GB)",
-                value: "Gemma2bInstruct",
-                need_auth_header: true,
-            },
-            {
-                label: "google/gemma-7b-it (12.1GB)",
-                value: "Gemma7bInstruct",
-                need_auth_header: true,
-            },
-            {
-                label: "meta-llama/Meta-Llama-3-8B-Instruct (??GB)",
-                value: "MetaLlama3_8bInstruct",
-                need_auth_header: true,
-            },
-            {
-                label: "upstage/SOLAR-10.7B-v1.0 (21.5GB)",
-                value: "Solar10_7bV1_0",
-            },
-            {
-                label: "Qwen/Qwen2-7B-Instruct (15.4GB)",
-                value: "Qwen2_7BInstruct",
-            },
-            {
-                label: "Qwen/Qwen2-72B-Instruct (144GB)",
-                value: "Qwen2_72BInstruct",
-            },
-            {
-                label: "TinyLlama/TinyLlama-1.1B-Chat-v1.0 (2.2GB)",
-                value: "TinyLlama1_1bChatV1_0",
-            },
-        ],
-    },
-    {
-        id: "OpenAICompatible",
-        nameKey: "botSettings.providerOpenAiCompatible",
-        apiUrl: "https://api.openai.com/v1/chat/completions",
-        apiUrlDisabled: false,
-        showApiKeyInput: true,
-        models: [],
-    },
-];
-
-const textGenerationProviderProxyEnabled = ref(false);
-const isAddingAnotherTextGenerationModel = ref(false);
-const anotherTextGenerationModel = ref("");
-const textGenerationModelSelector = ref();
-const addAnotherTextGenerationModel = (m) => {
-    if (!m || choosedTextGenerationProvider.value == "HuggingFace") return;
-    const p = textGenerationProviders.find(
-        (d) => d.id == choosedTextGenerationProvider.value,
-    );
-    if (p == null) return;
-    ensureOption(textGenerationModelOptions, m);
-    ensureOption(p.models, m);
-    textGenerationModelSelector.value?.blur();
-    settings.textGenerationProvider.provider.model = m;
-    anotherTextGenerationModel.value = "";
 };
 
 // https://docs.spring.io/spring-ai/reference/api/embeddings.html
@@ -906,122 +777,7 @@ const fetchChatModelList = async () => {
         chatModelListLoading.value = false;
     }
 };
-const textGenerationModelOptions = reactive([]);
-const textGenerationDynamicReqUrlMap = new Map();
-const choosedTextGenerationProvider = ref("");
-const textGenerationVendorKey = ref("");
-const refreshTextGenerationVendor = () => {
-    const p = textGenerationProviders.find((d) => d.id == "OpenAICompatible");
-    const v = vendorByKey(
-        deriveVendorKey(settings.textGenerationProvider.apiUrl, "chat"),
-    );
-    textGenerationVendorKey.value = v.key;
-    p.models.splice(
-        0,
-        p.models.length,
-        ...vendorModels(v, "chat").map((m) => ({ label: m, value: m })),
-    );
-    ensureOption(p.models, settings.textGenerationProvider.provider.model);
-    textGenerationModelOptions.splice(
-        0,
-        textGenerationModelOptions.length,
-        ...p.models,
-    );
-};
-const applyTextGenerationVendorPreset = (key) => {
-    // 同 chat：「自定义」不清空地址，理由见 applyChatVendorPreset。
-    const u = vendorUrl(vendorByKey(key), "chat");
-    if (u) settings.textGenerationProvider.apiUrl = u;
-    refreshTextGenerationVendor();
-};
-const changeTextGenerationProvider = async (n) => {
-    if (choosedTextGenerationProvider.value)
-        textGenerationDynamicReqUrlMap.set(
-            choosedTextGenerationProvider.value,
-            settings.textGenerationProvider.apiUrl,
-        );
-    for (let i = 0; i < textGenerationProviders.length; i++) {
-        if (textGenerationProviders[i].id == n) {
-            if (textGenerationProviders[i].apiUrlDisabled)
-                settings.textGenerationProvider.apiUrl =
-                    textGenerationProviders[i].apiUrl;
-            else {
-                // 同 chat：看"在不在 map 里"，不看值真不真。
-                const u = textGenerationDynamicReqUrlMap.get(n);
-                settings.textGenerationProvider.apiUrl =
-                    u != null ? u : textGenerationProviders[i].apiUrl;
-            }
-            settings.textGenerationProvider.apiUrlDisabled =
-                textGenerationProviders[i].apiUrlDisabled;
-            settings.textGenerationProvider.showApiKeyInput =
-                textGenerationProviders[i].showApiKeyInput;
-            choosedTextGenerationProvider.value = n;
-            // 同 chat：关掉可能开着的添加表单。
-            isAddingAnotherTextGenerationModel.value = false;
-            // 同 chat：不在加载路径上打用户的端点，拉取只在按钮后面。
-            if (n == "OpenAICompatible") refreshTextGenerationVendor();
-            else
-                textGenerationModelOptions.splice(
-                    0,
-                    textGenerationModelOptions.length,
-                    ...textGenerationProviders[i].models,
-                );
-            break;
-        }
-    }
-    // 同 chat：存量的、已从选择器移除的 provider 只保证模型名可见。
-    if (!choosedTextGenerationProvider.value)
-        ensureOption(
-            textGenerationModelOptions,
-            settings.textGenerationProvider.provider.model,
-        );
-};
-const textGenerationModelListLoading = ref(false);
-const fetchTextGenerationModelList = async () => {
-    if (!settings.textGenerationProvider.apiUrl) return;
-    textGenerationModelListLoading.value = true;
-    try {
-        const r = await httpReq(
-            "GET",
-            "management/settings/model/openai/list",
-            {
-                url: settings.textGenerationProvider.apiUrl,
-                apiKey: settings.textGenerationProvider.apiKey,
-                proxyUrl: settings.textGenerationProvider.proxyUrl,
-                connectTimeoutMillis:
-                    settings.textGenerationProvider.connectTimeoutMillis,
-                readTimeoutMillis:
-                    settings.textGenerationProvider.readTimeoutMillis,
-            },
-            null,
-            null,
-        );
-        if (r.status != 200 || !Array.isArray(r.data))
-            throw new Error(r.err?.message || "bad response");
-        // 端点返回的就是权威列表，直接替换掉厂商预设的那批候选。
-        const p = textGenerationProviders.find(
-            (d) => d.id == "OpenAICompatible",
-        );
-        p.models.splice(
-            0,
-            p.models.length,
-            ...r.data.map((m) => ({ label: m, value: m })),
-        );
-        ensureOption(p.models, settings.textGenerationProvider.provider.model);
-        textGenerationModelOptions.splice(
-            0,
-            textGenerationModelOptions.length,
-            ...p.models,
-        );
-        ElMessage.success(
-            t("botSettings.fetchModelListOk", { count: r.data.length }),
-        );
-    } catch {
-        ElMessage.error(t("botSettings.fetchModelListFailed"));
-    } finally {
-        textGenerationModelListLoading.value = false;
-    }
-};
+
 const sentenceEmbeddingModelOptions = reactive([]);
 const sentenceEmbeddingDynamicReqUrlMap = new Map();
 const choosedSentenceEmbeddingProvider = ref("");
@@ -1156,7 +912,6 @@ const addAnotherSentenceEmbeddingModel = (m) => {
 };
 
 const usedByLlmChatNodeBig = [chatPic];
-const usedByTextGenerationBig = [textGenerationPic];
 const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
 </script>
 <template>
@@ -1428,285 +1183,6 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             </template>
         </el-alert>
         <div v-if="showHfChatModelDownloadProgress" class="download-progress">
-            <div class="download-progress-url">{{ $t("botSettings.downloading") }}: {{ downloadingUrl }}</div>
-            <el-progress
-                :percentage="Number(downloadingProgress) || 0"
-                :stroke-width="14"
-                striped
-                striped-flow
-            />
-        </div>
-    </el-card>
-
-    <el-card class="settings-card" shadow="never">
-        <template #header>
-            <div class="section-title">
-                {{ $t("botSettings.txtGen") }}
-                <el-tooltip effect="light" placement="right">
-                    <template #content>
-                        <span v-html="$t('botSettings.chatModelTip')"></span>
-                    </template>
-                    <el-button circle>?</el-button>
-                </el-tooltip>
-            </div>
-        </template>
-        <el-row>
-            <el-col :span="16">
-                <el-form
-                    :model="settings.textGenerationProvider"
-                    :label-width="formLabelWidth"
-                >
-                    <el-form-item :label="t('botSettings.provider')">
-                        <el-radio-group
-                            v-model="settings.textGenerationProvider.provider.id"
-                            @change="changeTextGenerationProvider"
-                        >
-                            <el-radio-button
-                                v-for="item in textGenerationProviders"
-                                :id="item.id"
-                                :key="item.id"
-                                :label="item.id"
-                                :value="item.id"
-                            >
-                                {{ $t(item.nameKey) }}
-                            </el-radio-button>
-                        </el-radio-group>
-                    </el-form-item>
-                    <el-form-item
-                        v-if="
-                            settings.textGenerationProvider.provider.id ==
-                            'OpenAICompatible'
-                        "
-                        :label="t('botSettings.vendor')"
-                    >
-                        <el-select
-                            v-model="textGenerationVendorKey"
-                            @change="applyTextGenerationVendorPreset"
-                        >
-                            <el-option
-                                v-for="item in vendorsFor('chat')"
-                                :key="item.key"
-                                :label="$t(item.nameKey)"
-                                :value="item.key"
-                            />
-                        </el-select>
-                        <div class="form-item-help">
-                            {{ $t("botSettings.compatibleApiHint") }}
-                        </div>
-                    </el-form-item>
-                    <el-form-item :label="t('botSettings.reqAddr')">
-                        <el-input
-                            v-model="settings.textGenerationProvider.apiUrl"
-                            :disabled="
-                                settings.textGenerationProvider.apiUrlDisabled
-                            "
-                            @change="refreshTextGenerationVendor"
-                        />
-                    </el-form-item>
-                    <el-form-item
-                        :label="$t('botSettings.apiKey')"
-                        v-show="settings.textGenerationProvider.showApiKeyInput"
-                    >
-                        <el-input
-                            v-model="settings.textGenerationProvider.apiKey"
-                            show-password
-                        />
-                    </el-form-item>
-                    <el-form-item :label="t('botSettings.model')">
-                        <el-select
-                            ref="textGenerationModelSelector"
-                            v-model="
-                                settings.textGenerationProvider.provider.model
-                            "
-                            :placeholder="$t('botSettings.chooseModel')"
-                            :filterable="
-                                settings.textGenerationProvider.provider.id !=
-                                'HuggingFace'
-                            "
-                            :allow-create="
-                                settings.textGenerationProvider.provider.id !=
-                                'HuggingFace'
-                            "
-                        >
-                            <el-option
-                                v-for="item in textGenerationModelOptions"
-                                :id="item.value"
-                                :key="item.value"
-                                :label="item.label"
-                                :value="item.value"
-                            />
-                            <template #footer>
-                                <el-button
-                                    :disabled="
-                                        settings.textGenerationProvider
-                                            .provider.id == 'HuggingFace'
-                                    "
-                                    v-if="!isAddingAnotherTextGenerationModel"
-                                    text
-                                    bg
-                                    @click="
-                                        isAddingAnotherTextGenerationModel = true
-                                    "
-                                >
-                                    {{ $t("botSettings.anotherModel") }}
-                                </el-button>
-                                <!-- 同 chat：只禁用按钮不够，表单本身也要挡住。 -->
-                                <template
-                                    v-else-if="
-                                        settings.textGenerationProvider.provider
-                                            .id != 'HuggingFace'
-                                    "
-                                >
-                                    <el-input
-                                        v-model="anotherTextGenerationModel"
-                                        :placeholder="$t('botSettings.inputModelName')"
-                                        style="margin-bottom: 8px"
-                                    />
-                                    <el-button
-                                        type="primary"
-                                        @click="
-                                            addAnotherTextGenerationModel(
-                                                anotherTextGenerationModel,
-                                            )
-                                        "
-                                    >
-                                        {{ $t("botSettings.confirm") }}
-                                    </el-button>
-                                    <el-button
-                                        @click="
-                                            isAddingAnotherTextGenerationModel = false
-                                        "
-                                        >{{ $t("botSettings.cancelLower") }}</el-button
-                                    >
-                                </template>
-                            </template>
-                        </el-select>
-                        <el-button
-                            v-if="
-                                settings.textGenerationProvider.provider.id ==
-                                'OpenAICompatible'
-                            "
-                            :loading="textGenerationModelListLoading"
-                            :disabled="!settings.textGenerationProvider.apiUrl"
-                            style="margin-left: 8px"
-                            @click="fetchTextGenerationModelList"
-                        >
-                            {{ $t("botSettings.fetchModelList") }}
-                        </el-button>
-                    </el-form-item>
-                    <el-form-item :label="t('botSettings.maxResTokenLen')">
-                        <el-input-number
-                            v-model="
-                                settings.textGenerationProvider
-                                    .maxResponseTokenLength
-                            "
-                            :min="10"
-                            :max="100000"
-                            :step="5"
-                        />
-                    </el-form-item>
-                    <el-form-item
-                        :label="t('botSettings.connTimeout')"
-                        v-show="
-                            settings.textGenerationProvider.provider.id !=
-                            'HuggingFace'
-                        "
-                    >
-                        <el-input-number
-                            v-model="
-                                settings.textGenerationProvider
-                                    .connectTimeoutMillis
-                            "
-                            :min="100"
-                            :max="65500"
-                            :step="100"
-                        />
-                        <span class="form-item-suffix">{{
-                            t("common.millis")
-                        }}</span>
-                    </el-form-item>
-                    <el-form-item
-                        :label="t('botSettings.readTimeout')"
-                        v-show="
-                            settings.textGenerationProvider.provider.id !=
-                            'HuggingFace'
-                        "
-                    >
-                        <el-input-number
-                            v-model="
-                                settings.textGenerationProvider
-                                    .readTimeoutMillis
-                            "
-                            :min="1000"
-                            :max="65500"
-                            :step="100"
-                        />
-                        <span class="form-item-suffix">{{
-                            t("common.millis")
-                        }}</span>
-                    </el-form-item>
-                    <el-form-item
-                        :label="t('botSettings.proxy')"
-                        v-show="
-                            settings.textGenerationProvider.provider.id !=
-                            'HuggingFace'
-                        "
-                    >
-                        <div class="proxy-row">
-                            <el-switch
-                                v-model="textGenerationProviderProxyEnabled"
-                                :active-text="$t('common.enable')"
-                            />
-                            <el-input
-                                v-model="settings.textGenerationProvider.proxyUrl"
-                                placeholder="http://127.0.0.1:9270"
-                                :disabled="!textGenerationProviderProxyEnabled"
-                            />
-                        </div>
-                    </el-form-item>
-                </el-form>
-            </el-col>
-            <el-col :span="7" :offset="1">
-                <div class="usage-note">
-                    {{ $t("botSettings.txtGenUsage") }}
-                </div>
-                <el-image
-                    :src="textGenerationPicThumbnail"
-                    :zoom-rate="1.2"
-                    :max-scale="7"
-                    :min-scale="0.2"
-                    :preview-src-list="usedByTextGenerationBig"
-                    :initial-index="4"
-                    fit="cover"
-                />
-            </el-col>
-        </el-row>
-        <el-alert
-            v-if="showHfIncorrectGenerationModelTip"
-            type="warning"
-            :closable="false"
-            class="hf-alert"
-        >
-            <template #title>
-                {{ $t("botSettings.hfModelMissing") }}
-                <el-button
-                    type="primary"
-                    text
-                    @click="
-                        downloadModels(
-                            settings.textGenerationProvider.provider.model,
-                        )
-                    "
-                >
-                    {{ $t("botSettings.hfModelDownloadLink") }}
-                </el-button>
-                {{ $t("botSettings.hfModelManual", { repo: textGenerationModelRepository }) }}
-            </template>
-        </el-alert>
-        <div
-            v-if="showHfGenerationModelDownloadProgress"
-            class="download-progress"
-        >
             <div class="download-progress-url">{{ $t("botSettings.downloading") }}: {{ downloadingUrl }}</div>
             <el-progress
                 :percentage="Number(downloadingProgress) || 0"

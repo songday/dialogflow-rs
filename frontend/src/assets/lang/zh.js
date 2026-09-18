@@ -281,11 +281,9 @@ export default {
     connTimeout: "请求超时时间",
     readTimeout: "读取超时时间",
     proxy: "代理",
-    txtGen: "文本生成",
     sentenceEmbedding: "句子向量",
     simThres: "相似度阈值",
     chatModelUsage: "用于 LLM 聊天节点。",
-    txtGenUsage: "用于对话节点。",
     sentenceEmbeddingUsage: "用于意图相似句。",
     inputModelName: "请输入模型名称",
     confirm: "确定",
@@ -296,7 +294,7 @@ export default {
     anotherModel: "添加自定义模型名",
     vendor: "厂商",
     compatibleApiHint:
-        "填写 OpenAI 兼容的完整接口地址，形如 https://…/v1/chat/completions。下方可直接选择常见厂商并自动填入地址。API Key 以明文保存在本地，切换厂商时不会自动清除。",
+        "填写 OpenAI 兼容的完整接口地址，形如 https://…/v1/chat/completions（Ollama 用原生的 http://localhost:11434/api/chat）。下方可直接选择常见厂商并自动填入地址。API Key 以明文保存在本地，切换厂商时不会自动清除。",
     embeddingApiHint:
         "填写 OpenAI 兼容的 Embeddings 接口地址，形如 https://…/v1/embeddings。",
     fetchModelList: "获取模型列表",

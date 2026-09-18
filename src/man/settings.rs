@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::ai::huggingface::HuggingFaceModel;
-use crate::ai::{asr, chat, completion, embedding, huggingface, tts};
+use crate::ai::{asr, chat, embedding, huggingface, tts};
 use crate::db;
 use crate::db_executor;
 use crate::result::{Error, Result};
@@ -61,8 +61,6 @@ pub(crate) struct Settings {
     pub(crate) max_session_idle_sec: u32,
     #[serde(rename = "chatProvider")]
     pub(crate) chat_provider: ChatProvider,
-    #[serde(rename = "textGenerationProvider")]
-    pub(crate) text_generation_provider: TextGenerationProvider,
     #[serde(rename = "sentenceEmbeddingProvider")]
     pub(crate) sentence_embedding_provider: SentenceEmbeddingProvider,
     #[serde(rename = "asrProvider")]
@@ -117,24 +115,6 @@ pub(crate) struct Settings {
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct ChatProvider {
     pub(crate) provider: chat::ChatProvider,
-    #[serde(rename = "apiUrl")]
-    pub(crate) api_url: String,
-    #[serde(rename = "apiKey")]
-    pub(crate) api_key: String,
-    pub(crate) model: String,
-    #[serde(rename = "connectTimeoutMillis")]
-    pub(crate) connect_timeout_millis: u32,
-    #[serde(rename = "readTimeoutMillis")]
-    pub(crate) read_timeout_millis: u32,
-    #[serde(rename = "maxResponseTokenLength")]
-    pub(crate) max_response_token_length: u32,
-    #[serde(rename = "proxyUrl")]
-    pub(crate) proxy_url: String,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-pub(crate) struct TextGenerationProvider {
-    pub(crate) provider: completion::TextGenerationProvider,
     #[serde(rename = "apiUrl")]
     pub(crate) api_url: String,
     #[serde(rename = "apiKey")]
@@ -222,18 +202,6 @@ impl Default for Settings {
             max_session_idle_sec: 1800,
             chat_provider: ChatProvider {
                 provider: chat::ChatProvider::HuggingFace(
-                    huggingface::HuggingFaceModel::TinyLlama1_1bChatV1_0,
-                ),
-                api_url: String::new(),
-                api_key: String::new(),
-                model: String::new(),
-                connect_timeout_millis: 5000,
-                read_timeout_millis: 10000,
-                max_response_token_length: 1000,
-                proxy_url: String::new(),
-            },
-            text_generation_provider: TextGenerationProvider {
-                provider: completion::TextGenerationProvider::HuggingFace(
                     huggingface::HuggingFaceModel::TinyLlama1_1bChatV1_0,
                 ),
                 api_url: String::new(),
@@ -374,23 +342,16 @@ pub(crate) async fn rest_save_global_settings(
 }
 
 pub(crate) async fn save_settings(robot_id: &str, data: Settings) -> Result<()> {
-    if let completion::TextGenerationProvider::HuggingFace(m) =
-        &data.text_generation_provider.provider
-    {
-        if let Err(e) = crate::ai::chat::replace_model_cache(robot_id, m) {
+    // 本地 HF 模型在这里就装进缓存，免得第一次对话时才现装。
+    //
+    // 这里原来有**两段**长得一样的代码，都去匹配 `text_generation_provider` 的
+    // 本地模型：第一段把模型塞进 chat 的缓存，第二段（已经不存在的）
+    // `completion::replace_model_cache`。也就是说对话模型自己反而从来没在保存时
+    // 进过缓存，全靠第一次调用时懒加载。文本生成并入对话之后只剩这一段。
+    if let chat::ChatProvider::HuggingFace(m) = &data.chat_provider.provider {
+        if let Err(e) = chat::replace_model_cache(robot_id, m) {
             log::warn!(
                 "Hugging face model files for chat were incorrect. Err: {:?}",
-                &e
-            );
-        }
-    }
-
-    if let completion::TextGenerationProvider::HuggingFace(m) =
-        &data.text_generation_provider.provider
-    {
-        if let Err(e) = completion::replace_model_cache(robot_id, m) {
-            log::warn!(
-                "Hugging face model files for completion were incorrect. Err: {:?}",
                 &e
             );
         }
@@ -604,8 +565,14 @@ pub(crate) async fn list_openai_models(
 /// 模型列表就在用户配置的那个端点隔壁：`.../v1/chat/completions` 和
 /// `.../v1/embeddings` 都在 `.../v1/models` 下。Ollama 的兼容端点形状相同，
 /// 所以原生 `/api/tags` 那套 `rfind('/')` 派生方式在这里不适用。
+///
+/// 例外是 Ollama 的原生对话端点 `/api/chat`：它的模型列表在 `/api/tags`，
+/// 不带 `/v1`（形状也不同，`retrieve_openai_models` 两种都认）。
 fn models_url(u: &str) -> String {
     let base = u.trim().trim_end_matches('/');
+    if let Some(base) = base.strip_suffix("/api/chat") {
+        return format!("{}/api/tags", base.trim_end_matches('/'));
+    }
     let base = ["/chat/completions", "/completions", "/embeddings"]
         .iter()
         .find_map(|suffix| base.strip_suffix(suffix))
@@ -683,6 +650,15 @@ mod tests {
         assert_eq!(
             models_url("http://localhost:11434/v1/chat/completions"),
             "http://localhost:11434/v1/models"
+        );
+        // Ollama's native chat endpoint instead: the model list is `/api/tags`.
+        assert_eq!(
+            models_url("http://localhost:11434/api/chat"),
+            "http://localhost:11434/api/tags"
+        );
+        assert_eq!(
+            models_url("http://192.168.1.9:11434/api/chat/"),
+            "http://192.168.1.9:11434/api/tags"
         );
         // Trailing slashes and stray whitespace are the common paste accidents.
         assert_eq!(

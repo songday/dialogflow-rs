@@ -77,7 +77,7 @@ pub(super) fn gen_text(
     let mut rng = Rand::new();
     let mut logits_processor = LogitsProcessor::new(
         rng.r#gen::<u64>(),
-        Some(super::completion::TEMPERATURE),
+        Some(super::chat::TEMPERATURE),
         top_p,
     );
     let mut generated_tokens = 0usize;
@@ -100,15 +100,15 @@ pub(super) fn gen_text(
             model.text_model.forward_with_img(&bos_token, &input_ids, &image_embeds)?
         };
         let logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
-        let logits = if super::completion::REPEAT_PENALTY == 1. {
+        let logits = if super::chat::REPEAT_PENALTY == 1. {
             logits
         } else {
             let start_at = tokens
                 .len()
-                .saturating_sub(super::completion::REPEAT_LAST_N);
+                .saturating_sub(super::chat::REPEAT_LAST_N);
             candle_transformers::utils::apply_repeat_penalty(
                 &logits,
-                super::completion::REPEAT_PENALTY,
+                super::chat::REPEAT_PENALTY,
                 &tokens[start_at..],
             )?
         };

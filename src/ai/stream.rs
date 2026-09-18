@@ -82,8 +82,6 @@ pub(crate) enum DeltaFormat {
     OpenAi,
     /// Ollama `/api/chat`.
     OllamaChat,
-    /// Ollama `/api/generate`.
-    OllamaGenerate,
 }
 
 /// Turns raw response chunks into ordered text deltas.
@@ -133,7 +131,7 @@ impl DeltaStream {
         if let Some(line) = self.lines.take_rest() {
             match self.format {
                 DeltaFormat::OpenAi => self.open_ai_line(&line, &mut out),
-                DeltaFormat::OllamaChat | DeltaFormat::OllamaGenerate => {
+                DeltaFormat::OllamaChat => {
                     if let Some(t) = self.payload_delta(&line) {
                         out.push(t);
                     }
@@ -159,7 +157,7 @@ impl DeltaStream {
             }
             match self.format {
                 DeltaFormat::OpenAi => self.open_ai_line(&line, &mut out),
-                DeltaFormat::OllamaChat | DeltaFormat::OllamaGenerate => {
+                DeltaFormat::OllamaChat => {
                     if line.trim().is_empty() {
                         continue;
                     }
@@ -246,7 +244,6 @@ impl DeltaStream {
                 .get("content")?
                 .as_str()?,
             DeltaFormat::OllamaChat => value.get("message")?.get("content")?.as_str()?,
-            DeltaFormat::OllamaGenerate => value.get("response")?.as_str()?,
         };
         if text.is_empty() {
             return None;
@@ -415,15 +412,6 @@ mod tests {
         );
         assert_eq!(out, vec!["Hel", "lo"]);
         assert!(s.is_done());
-    }
-
-    #[test]
-    fn ollama_generate_reads_response_field() {
-        let bytes = b"{\"response\":\"a\",\"done\":false}\n{\"response\":\"b\",\"done\":false}\n";
-        assert_eq!(
-            assert_chunking_is_irrelevant(DeltaFormat::OllamaGenerate, bytes),
-            vec!["a", "b"],
-        );
     }
 
     /// The last payload has to survive either way a stream can end early: with

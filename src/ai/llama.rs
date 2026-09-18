@@ -63,25 +63,25 @@ pub(super) fn gen_text(
     // log::info!("starting the inference loop");
     // log::info!("{prompt}");
     let mut logits_processor = {
-        let sampling = if super::completion::TEMPERATURE <= 0. {
+        let sampling = if super::chat::TEMPERATURE <= 0. {
             Sampling::ArgMax
         } else {
             match (top_k, top_p) {
                 (None, None) => Sampling::All {
-                    temperature: super::completion::TEMPERATURE,
+                    temperature: super::chat::TEMPERATURE,
                 },
                 (Some(k), None) => Sampling::TopK {
                     k,
-                    temperature: super::completion::TEMPERATURE,
+                    temperature: super::chat::TEMPERATURE,
                 },
                 (None, Some(p)) => Sampling::TopP {
                     p,
-                    temperature: super::completion::TEMPERATURE,
+                    temperature: super::chat::TEMPERATURE,
                 },
                 (Some(k), Some(p)) => Sampling::TopKThenTopP {
                     k,
                     p,
-                    temperature: super::completion::TEMPERATURE,
+                    temperature: super::chat::TEMPERATURE,
                 },
             }
         };
@@ -104,15 +104,15 @@ pub(super) fn gen_text(
         let input = Tensor::new(ctxt, device)?.unsqueeze(0)?;
         let logits = model.forward(&input, context_index, &mut cache)?;
         let logits = logits.squeeze(0)?;
-        let logits = if super::completion::REPEAT_PENALTY == 1. {
+        let logits = if super::chat::REPEAT_PENALTY == 1. {
             logits
         } else {
             let start_at = tokens
                 .len()
-                .saturating_sub(super::completion::REPEAT_LAST_N);
+                .saturating_sub(super::chat::REPEAT_LAST_N);
             candle_transformers::utils::apply_repeat_penalty(
                 &logits,
-                super::completion::REPEAT_PENALTY,
+                super::chat::REPEAT_PENALTY,
                 &tokens[start_at..],
             )?
         };

@@ -2,7 +2,6 @@ pub(crate) mod asr;
 pub(crate) mod audio;
 pub(crate) mod bs1770;
 pub(crate) mod chat;
-pub(crate) mod completion;
 pub(crate) mod crud;
 pub(crate) mod dto;
 pub(crate) mod embedding;

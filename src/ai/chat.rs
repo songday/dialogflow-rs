@@ -7,12 +7,26 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::completion::Prompt;
 use super::stream::{DeltaFormat, DeltaStream};
 use crate::ai::huggingface::{HuggingFaceModel, LoadedHuggingFaceModel};
 use crate::flow::rt::dto::StreamingResponseData;
 use crate::man::settings;
 use crate::result::{Error, Result};
+
+/// 一条对话消息。历史、单个提示词、以及 `/ai/text/generation` 收上来的
+/// JSON 提示词数组都是这个形状。
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct Prompt {
+    pub(crate) role: String,
+    pub(crate) content: String,
+}
+
+/// 本地 HuggingFace 模型的采样参数。原来住在 `completion.rs`——那个模块是
+/// 给"文本生成"用的第二套 provider 配置，现在并进了这里，所以这几个常量也
+/// 跟着搬（`gemma` / `llama` / `phi3` / `moondream` 都在用）。
+pub(crate) const TEMPERATURE: f64 = 0.7;
+pub(crate) const REPEAT_PENALTY: f32 = 1.1;
+pub(crate) const REPEAT_LAST_N: usize = 64;
 
 static LOADED_MODELS: LazyLock<Mutex<HashMap<String, LoadedHuggingFaceModel>>> =
     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
@@ -122,19 +136,44 @@ pub(crate) async fn chat(
                 Ok(())
             }
             ChatProvider::OpenAICompatible(m) => {
-                open_ai_compatible(
-                    &m,
-                    chat_history,
-                    media,
-                    &settings.chat_provider.api_url,
-                    &settings.chat_provider.api_key,
-                    settings.chat_provider.max_response_token_length,
-                    connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis),
-                    read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis),
-                    &settings.chat_provider.proxy_url,
-                    result_sender,
-                )
-                .await?;
+                let connect_timeout =
+                    connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis);
+                let read_timeout =
+                    read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis);
+                // Ollama 的原生对话端点和 OpenAI 协议不是一套东西：token 上限在
+                // `options.num_predict` 而不是 `max_tokens`，图片是裸 base64 而不是
+                // content parts，回来的是 NDJSON 而不是 SSE。所以按**地址**决定走哪条
+                // 实现——UI 里的厂商本来就是从地址反查的，两者不可能不一致，老记录
+                // 里指向 `.../v1/chat/completions` 的 Ollama 也照旧走 OpenAI 兼容分支。
+                if is_ollama_chat_url(&settings.chat_provider.api_url) {
+                    ollama(
+                        &settings.chat_provider.api_url,
+                        &m,
+                        chat_history,
+                        media,
+                        &settings.chat_provider.api_key,
+                        connect_timeout,
+                        read_timeout,
+                        &settings.chat_provider.proxy_url,
+                        settings.chat_provider.max_response_token_length,
+                        result_sender,
+                    )
+                    .await?;
+                } else {
+                    open_ai_compatible(
+                        &m,
+                        chat_history,
+                        media,
+                        &settings.chat_provider.api_url,
+                        &settings.chat_provider.api_key,
+                        settings.chat_provider.max_response_token_length,
+                        connect_timeout,
+                        read_timeout,
+                        &settings.chat_provider.proxy_url,
+                        result_sender,
+                    )
+                    .await?;
+                }
                 Ok(())
             }
             ChatProvider::Ollama(m) => {
@@ -143,6 +182,7 @@ pub(crate) async fn chat(
                     &m,
                     chat_history,
                     media,
+                    &settings.chat_provider.api_key,
                     connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis),
                     read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis),
                     &settings.chat_provider.proxy_url,
@@ -158,6 +198,58 @@ pub(crate) async fn chat(
             "Can NOT retrieve settings from robot_id: {robot_id}"
         )))
     }
+}
+
+/// `/ai/text/generation` 的实现：对话节点里那个"生成文本"按钮。
+///
+/// 它原来走 `completion.rs`——一份独立的 provider 配置加一套独立的请求构造，
+/// 于是同一个机器人要在设置页配两遍模型；而在线模型那条分支把调用方给过来的
+/// JSON 提示词数组当成纯文本塞进一条 user 消息，界面里填的 system 提示词根本
+/// 到不了模型。现在它和对话节点走**完全相同**的路径、用同一份配置。
+pub(crate) async fn gen_text(
+    robot_id: &str,
+    prompt: &str,
+    sender: UnboundedSender<StreamingResponseData>,
+) -> Result<()> {
+    let history = parse_prompt(prompt);
+    // 这里的应答只往通道里推，没人读累积的文本，但 `ResultSender` 两种变体都
+    // 需要一块缓冲，就随它留着。
+    let mut answer = String::with_capacity(1024);
+    chat(
+        robot_id,
+        Some(history),
+        None,
+        None,
+        None,
+        ResultSender::ChannelSender(SenderWrapper::new(sender, 0), &mut answer),
+    )
+    .await
+}
+
+/// 调用方发来的提示词：`[{"role":"user","content":"…"}]`。不是 JSON 就当成
+/// 一条 user 消息，纯文本的老调用方也不至于直接失败。
+///
+/// system 消息统一提到最前。调用方是按 `[user, system]` 拼的（`DialogNode.vue`
+/// 先 push user 再 push system），而 system 落在 user 之后对部分端点是非法顺序；
+/// 本地 HF 那条路径本来也是把它拆出来放最前的，这样三个后端行为才一致。
+fn parse_prompt(s: &str) -> Vec<Prompt> {
+    let mut prompts: Vec<Prompt> = serde_json::from_str(s).unwrap_or_else(|_| {
+        vec![Prompt {
+            role: String::from("user"),
+            content: String::from(s),
+        }]
+    });
+    // `sort_by_key` 是稳定排序，system 之间的相对顺序不变。
+    prompts.sort_by_key(|p| !p.role.eq("system"));
+    prompts
+}
+
+/// 地址是不是 Ollama 的原生对话端点。
+///
+/// 只看路径不看主机：远程 Ollama（`http://192.168.x.x:11434/api/chat`）和本机
+/// 一样常见，而 `/api/chat` 这个路径是 Ollama 特有的。
+fn is_ollama_chat_url(u: &str) -> bool {
+    u.trim().trim_end_matches('/').ends_with("/api/chat")
 }
 
 fn huggingface(
@@ -289,9 +381,14 @@ async fn open_ai_compatible(
     messages.push(Value::Object(sys_message));
     if let Some(h) = chat_history {
         for p in h.into_iter() {
+            // 键必须是 `role` 和 `content`。这里原来写的是
+            // `map.insert(p.role, Value::String(p.content))`，即把角色名当成了
+            // 键（`{"user":"hi"}`），任何端点都会以"缺少 role"驳回；视觉那段
+            // 靠 `get("role")` 找最后一条 user 消息，也因此永远找不到。
             let mut map = Map::new();
-            map.insert(p.role, Value::String(p.content));
-            messages.push(Value::from(map));
+            map.insert(String::from("role"), Value::String(p.role));
+            map.insert(String::from("content"), Value::String(p.content));
+            messages.push(Value::Object(map));
         }
     }
     // OpenAI-compatible vision format: the last user message's content becomes
@@ -415,6 +512,7 @@ async fn ollama(
     // s: &str,
     chat_history: Option<Vec<Prompt>>,
     media: Option<&crate::ai::dto::UserMediaData>,
+    api_key: &str,
     connect_timeout_millis: u32,
     read_timeout_millis: u32,
     proxy_url: &str,
@@ -480,13 +578,18 @@ async fn ollama(
     let obj = Value::Object(req_body);
     let body = serde_json::to_string(&obj)?;
     log::info!("Request Ollama body {}", &body);
-    let req = client.post(u).body(body);
-    let res = req.send().await?;
+    let mut req = client.post(u).header("Content-Type", "application/json");
+    // Ollama 自己不看这个头，但把模型放在网关/鉴权代理后面的（以及 Ollama 云）
+    // 需要它；界面上的 API Key 输入框就在这一项下面，配了却不发等于骗人。
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {api_key}"));
+    }
+    let res = req.body(body).send().await?;
     let status = res.status();
     if !status.is_success() {
         let body = res.text().await.unwrap_or_default();
         return Err(Error::WithMessage(format!(
-            "Ollama endpoint returned {status}: {body}"
+            "Ollama endpoint {u} returned {status}: {body}"
         )));
     }
     if result_sender.is_streaming() {
@@ -570,6 +673,37 @@ mod tests {
             body.contains("\"max_tokens\":4242"),
             "the configured token cap must be sent: {body}"
         );
+        // 消息必须是 `{"role":…,"content":…}`。这里曾经写成 `{"user":"hi"}`——
+        // 把角色名当成了键，任何端点都会以"缺少 role"驳回，视觉那段靠
+        // `get("role")` 找最后一条 user 消息也因此永远找不到。
+        assert!(
+            body.contains("\"role\":\"user\"") && body.contains("\"content\":\"hi\""),
+            "every message needs role and content keys: {body}"
+        );
+        assert!(
+            !body.contains("\"hi\":") && !body.contains("\"user\":\"hi\""),
+            "the role must not be used as the key: {body}"
+        );
+    }
+
+    /// `/ai/text/generation` 收到的提示词是 JSON 数组，且调用方按
+    /// `[user, system]` 的顺序拼（`DialogNode.vue`）。system 必须被提到最前，
+    /// 否则部分端点会直接拒绝这个顺序；纯文本则退化成一条 user 消息。
+    #[test]
+    fn parse_prompt_puts_system_first_and_accepts_plain_text() {
+        let p = parse_prompt(
+            r#"[{"role":"user","content":"写一句问候"},{"role":"system","content":"你是客服"}]"#,
+        );
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].role, "system");
+        assert_eq!(p[0].content, "你是客服");
+        assert_eq!(p[1].role, "user");
+        assert_eq!(p[1].content, "写一句问候");
+
+        let p = parse_prompt("hello");
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].role, "user");
+        assert_eq!(p[0].content, "hello");
     }
 
     /// The point of the streaming path: provider output arrives as arbitrary
@@ -692,5 +826,78 @@ mod tests {
             format!("{e:?}").contains("URL is empty"),
             "the error should say what is missing: {e:?}"
         );
+    }
+
+    /// 走 Ollama 原生端点时线上的形状和 OpenAI 兼容那条完全不同：token 上限在
+    /// `options.num_predict`，图片是裸 base64。这条实现由地址（`/api/chat`）选中，
+    /// 所以这个测试同时锁住了"为什么值得为它分一条路"。
+    #[tokio::test]
+    async fn ollama_native_endpoint_sends_options_and_raw_base64_images() {
+        let body = "{\"message\":{\"content\":\"hi\"},\"done\":false}\n\
+                    {\"message\":{\"content\":\"\"},\"done\":true}\n";
+        let head = String::from(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n",
+        );
+        let (url, request) = serve_capturing("/api/chat", head, body).await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut answer = String::new();
+        // `UserMediaData` 存的可能是 data URI，Ollama 只吃逗号后面那段。
+        let media = crate::ai::dto::UserMediaData {
+            images: vec![String::from("data:image/png;base64,QUJD")],
+        };
+        ollama(
+            &url,
+            "llava",
+            prompt(),
+            Some(&media),
+            "test-key",
+            3_331,
+            9_991,
+            "",
+            4_242,
+            ResultSender::ChannelSender(SenderWrapper::new(tx, 0), &mut answer),
+        )
+        .await
+        .unwrap();
+        assert_eq!(answer, "hi");
+        assert_eq!(drain(&mut rx), vec!["hi"]);
+
+        let request = request.await.unwrap();
+        assert!(
+            request.starts_with("POST /api/chat "),
+            "the configured path must be used: {request}"
+        );
+        // Ollama 本身不校验这个头，但网关/鉴权代理和 Ollama 云需要它。
+        assert!(
+            request.to_lowercase().contains("authorization: bearer test-key"),
+            "the configured key must be sent: {request}"
+        );
+        let body = request.split("\r\n\r\n").nth(1).unwrap_or_default();
+        assert!(
+            body.contains("\"num_predict\":4242"),
+            "Ollama takes the cap in options.num_predict: {body}"
+        );
+        assert!(
+            !body.contains("max_tokens"),
+            "max_tokens is an OpenAI field and Ollama ignores it: {body}"
+        );
+        assert!(
+            body.contains("\"images\":[\"QUJD\"]"),
+            "Ollama wants bare base64 without the data URI prefix: {body}"
+        );
+    }
+
+    /// 只有 Ollama 的原生对话地址才选中那条实现；`/v1/chat/completions`
+    /// （Ollama 的兼容端点，以及所有别的厂商）继续走 OpenAI 兼容分支。
+    #[test]
+    fn only_ollama_native_urls_select_the_ollama_path() {
+        assert!(is_ollama_chat_url("http://localhost:11434/api/chat"));
+        assert!(is_ollama_chat_url("http://192.168.1.9:11434/api/chat/"));
+        assert!(is_ollama_chat_url("  http://localhost:11434/api/chat  "));
+        assert!(!is_ollama_chat_url(
+            "http://localhost:11434/v1/chat/completions"
+        ));
+        assert!(!is_ollama_chat_url("https://api.deepseek.com/v1/chat/completions"));
+        assert!(!is_ollama_chat_url(""));
     }
 }

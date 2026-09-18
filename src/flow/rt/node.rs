@@ -12,7 +12,7 @@ use super::dto::{
     AnswerContentType, AnswerData, CollectData, Request, ResponseChannelWrapper, ResponseData,
 };
 use crate::ai::chat::{ResultSender, SenderWrapper};
-use crate::ai::completion::Prompt;
+use crate::ai::chat::Prompt;
 use crate::external::http::client as http;
 use crate::flow::rt::collector;
 use crate::flow::subflow::dto::NextActionType;
