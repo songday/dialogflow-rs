@@ -98,11 +98,16 @@ impl ResultSender<'_, StreamingResponseData> {
 #[serde(tag = "id", content = "model")]
 pub(crate) enum ChatProvider {
     HuggingFace(HuggingFaceModel),
-    /// 兼容 2026-09-17 之前存的记录（那时这个变体叫 `OpenAI`）。
-    /// 等所有实例都保存过一次设置后即可删掉这行。
-    #[serde(alias = "OpenAI")]
+    /// 兼容老记录的两个名字：
+    /// - `OpenAI`：2026-09-17 之前这个变体叫这个名字；
+    /// - `Ollama`：UI 里曾经有第三个"Ollama"选项，它对应的是**原生**端点，
+    ///   那条路现在由 `api_url` 选中（`is_ollama_chat_url`），不再需要一个
+    ///   单独的变体。老记录的 `apiUrl` 就是 `http://localhost:11434/api/chat`，
+    ///   所以别名过来之后照样走原生实现。
+    ///
+    /// 两个别名都可以在所有实例保存过一次设置后删掉。
+    #[serde(alias = "OpenAI", alias = "Ollama")]
     OpenAICompatible(String),
-    Ollama(String),
 }
 
 pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
@@ -174,22 +179,6 @@ pub(crate) async fn chat(
                     )
                     .await?;
                 }
-                Ok(())
-            }
-            ChatProvider::Ollama(m) => {
-                ollama(
-                    &settings.chat_provider.api_url,
-                    &m,
-                    chat_history,
-                    media,
-                    &settings.chat_provider.api_key,
-                    connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis),
-                    read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis),
-                    &settings.chat_provider.proxy_url,
-                    settings.chat_provider.max_response_token_length,
-                    result_sender,
-                )
-                .await?;
                 Ok(())
             }
         }
@@ -899,5 +888,29 @@ mod tests {
         ));
         assert!(!is_ollama_chat_url("https://api.deepseek.com/v1/chat/completions"));
         assert!(!is_ollama_chat_url(""));
+    }
+
+    /// 老记录必须还能读进来：反序列化失败不是"少一个选项"，而是 `get_settings`
+    /// 直接返回 Err、设置页整个打不开（老 `OpenAI` 那个坑就是这么来的）。
+    ///
+    /// `Ollama` 这条尤其要紧：UI 里已经没有这个选项，但历史记录存的是
+    /// `{"id":"Ollama"}` 加上 `apiUrl = http://localhost:11434/api/chat`，
+    /// 别名接过来之后由**地址**选中原生实现，行为不变。
+    #[test]
+    fn legacy_provider_ids_still_deserialize() {
+        let p: ChatProvider = serde_json::from_str(r#"{"id":"Ollama","model":"llama3"}"#).unwrap();
+        assert!(
+            matches!(p, ChatProvider::OpenAICompatible(ref m) if m == "llama3"),
+            "the old Ollama id must land on the URL-selected variant"
+        );
+        let p: ChatProvider = serde_json::from_str(r#"{"id":"OpenAI","model":"gpt-4o"}"#).unwrap();
+        assert!(matches!(p, ChatProvider::OpenAICompatible(ref m) if m == "gpt-4o"));
+
+        // 别名只影响读；再存一次就写成新名字，这是别名将来可以删掉的前提。
+        let p = ChatProvider::OpenAICompatible(String::from("x"));
+        assert_eq!(
+            serde_json::to_string(&p).unwrap(),
+            r#"{"id":"OpenAICompatible","model":"x"}"#
+        );
     }
 }
