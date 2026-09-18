@@ -84,7 +84,10 @@ impl ResultSender<'_, StreamingResponseData> {
 #[serde(tag = "id", content = "model")]
 pub(crate) enum ChatProvider {
     HuggingFace(HuggingFaceModel),
-    OpenAI(String),
+    /// 兼容 2026-09-17 之前存的记录（那时这个变体叫 `OpenAI`）。
+    /// 等所有实例都保存过一次设置后即可删掉这行。
+    #[serde(alias = "OpenAI")]
+    OpenAICompatible(String),
     Ollama(String),
 }
 
@@ -118,13 +121,14 @@ pub(crate) async fn chat(
                 )?;
                 Ok(())
             }
-            ChatProvider::OpenAI(m) => {
-                open_ai(
+            ChatProvider::OpenAICompatible(m) => {
+                open_ai_compatible(
                     &m,
                     chat_history,
                     media,
                     &settings.chat_provider.api_url,
                     &settings.chat_provider.api_key,
+                    settings.chat_provider.max_response_token_length,
                     connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis),
                     read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis),
                     &settings.chat_provider.proxy_url,
@@ -249,12 +253,13 @@ fn huggingface(
     // Ok(())
 }
 
-async fn open_ai(
+async fn open_ai_compatible(
     m: &str,
     chat_history: Option<Vec<Prompt>>,
     media: Option<&crate::ai::dto::UserMediaData>,
     api_url: &str,
     api_key: &str,
+    max_response_token_length: u32,
     connect_timeout_millis: u32,
     read_timeout_millis: u32,
     proxy_url: &str,
@@ -333,14 +338,23 @@ async fn open_ai(
         String::from("stream"),
         Value::Bool(result_sender.is_streaming()),
     );
+    // 这个上限原来在本路径上被完全忽略（只有本地和 Ollama 分支用了），
+    // 所以界面上那个"最大响应 token 长度"对任何在线模型都是摆设。
+    req_body.insert(
+        String::from("max_tokens"),
+        Value::from(max_response_token_length),
+    );
     let obj = Value::Object(req_body);
-    let u = if api_url.is_empty() {
-        String::from("https://api.openai.com/v1/chat/completions")
-    } else {
-        String::from(api_url)
-    };
+    // 不再回退到 api.openai.com：用户填了别家的 key 却漏了地址时，
+    // 静默把请求（和 key）打向 OpenAI 不是我们该做的选择。
+    if api_url.is_empty() {
+        return Err(Error::WithMessage(String::from(
+            "OpenAI-compatible API URL is empty, please configure it in settings.",
+        )));
+    }
+    let u = String::from(api_url);
     let req = client
-        .post(u)
+        .post(&u)
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {api_key}"))
         .body(serde_json::to_string(&obj)?);
@@ -350,8 +364,10 @@ async fn open_ai(
         // Without this a rejected key or an unknown model shows up as a
         // silently empty answer.
         let body = res.text().await.unwrap_or_default();
+        // 报错里带上地址：这是排查任意第三方端点的唯一线索，
+        // 而用户往往同时配了好几个 provider。
         return Err(Error::WithMessage(format!(
-            "OpenAI-compatible endpoint returned {status}: {body}"
+            "OpenAI-compatible endpoint {u} returned {status}: {body}"
         )));
     }
     if result_sender.is_streaming() {
@@ -508,70 +524,52 @@ async fn ollama(
 
 #[cfg(test)]
 mod tests {
+    use crate::ai::test_support::{drain, prompt, serve, serve_capturing, sse_event, sse_head};
+
     use super::*;
 
-    /// Serves one canned response, written in the given pieces so the write
-    /// boundaries fall exactly where a test wants them — including in the
-    /// middle of a multi-byte character. `cuts` are absolute byte offsets into
-    /// `body`, so the client sees the body arrive in `cuts.len() + 1` reads.
-    ///
-    /// Each test uses its own read timeout, and that is part of the client
-    /// cache key, so no two tests share a client or its connection pool.
-    async fn serve(head: String, body: &str, cuts: &[usize]) -> String {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    /// What actually goes on the wire: the configured URL, the key, and the
+    /// token cap. The cap used to be dropped entirely on this path, and an
+    /// empty URL used to silently become OpenAI's.
+    #[tokio::test]
+    async fn open_ai_compatible_sends_url_key_and_token_cap() {
+        let body = format!("{}data: [DONE]\n\n", sse_event("hi"));
+        let (url, request) =
+            serve_capturing("/custom/llm/chat/completions", sse_head(), &body).await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut answer = String::new();
+        open_ai_compatible(
+            "deepseek-chat",
+            prompt(),
+            None,
+            &url,
+            "test-key",
+            4_242,
+            3_323,
+            9_923,
+            "",
+            ResultSender::ChannelSender(SenderWrapper::new(tx, 0), &mut answer),
+        )
+        .await
+        .unwrap();
+        assert_eq!(answer, "hi");
+        assert_eq!(drain(&mut rx), vec!["hi"]);
 
-        let body = body.as_bytes();
-        let mut pieces: Vec<Vec<u8>> = vec![head.into_bytes()];
-        let mut start = 0;
-        for &cut in cuts {
-            assert!(cut >= start && cut <= body.len(), "cut {cut} is out of order or past the end");
-            pieces.push(body[start..cut].to_vec());
-            start = cut;
-        }
-        pieces.push(body[start..].to_vec());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            let Ok((mut socket, _)) = listener.accept().await else {
-                return;
-            };
-            // Read the request head so the client is not still writing when the
-            // response arrives.
-            let mut buf = [0u8; 2048];
-            let _ = socket.read(&mut buf).await;
-            for piece in pieces {
-                if socket.write_all(&piece).await.is_err() {
-                    return;
-                }
-                tokio::task::yield_now().await;
-            }
-        });
-        format!("http://{addr}/v1/chat/completions")
-    }
-
-    fn sse_head() -> String {
-        String::from("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n")
-    }
-
-    fn sse_event(text: &str) -> String {
-        format!("data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}}}}]}}\n\n")
-    }
-
-    fn prompt() -> Option<Vec<Prompt>> {
-        Some(vec![Prompt {
-            role: String::from("user"),
-            content: String::from("hi"),
-        }])
-    }
-
-    /// Collects what the stream pushed, in order.
-    fn drain(rx: &mut tokio::sync::mpsc::UnboundedReceiver<StreamingResponseData>) -> Vec<String> {
-        let mut out = Vec::new();
-        while let Ok(f) = rx.try_recv() {
-            assert_eq!(f.content_seq, Some(0), "every delta belongs to answer 0");
-            out.push(f.content);
-        }
-        out
+        let request = request.await.unwrap();
+        assert!(
+            request.starts_with("POST /custom/llm/chat/completions "),
+            "the configured path must be used, not a hardcoded one: {request}"
+        );
+        // Header names arrive lowercased over HTTP/1.1.
+        assert!(
+            request.to_lowercase().contains("authorization: bearer test-key"),
+            "the configured key must be sent: {request}"
+        );
+        let body = request.split("\r\n\r\n").nth(1).unwrap_or_default();
+        assert!(
+            body.contains("\"max_tokens\":4242"),
+            "the configured token cap must be sent: {body}"
+        );
     }
 
     /// The point of the streaming path: provider output arrives as arbitrary
@@ -579,7 +577,7 @@ mod tests {
     /// The cuts below land inside a multi-byte character and between an event's
     /// lines, which is where the old code gave up and lost the whole answer.
     #[tokio::test]
-    async fn open_ai_streams_deltas_whatever_the_chunk_boundaries() {
+    async fn open_ai_compatible_streams_deltas_whatever_the_chunk_boundaries() {
         let body = format!(
             ": OPENROUTER PROCESSING\n\n{}{}{}data: [DONE]\n\n{}",
             sse_event("Hello, "),
@@ -596,12 +594,13 @@ mod tests {
         let url = serve(sse_head(), &body, &cuts).await;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let mut answer = String::new();
-        open_ai(
+        open_ai_compatible(
             "test-model",
             prompt(),
             None,
             &url,
             "test-key",
+            1_000,
             3_311,
             9_913,
             "",
@@ -616,18 +615,19 @@ mod tests {
     /// A client that hangs up stops the generation, and stopping is not an
     /// error: the run just ends.
     #[tokio::test]
-    async fn open_ai_stops_when_the_client_is_gone() {
+    async fn open_ai_compatible_stops_when_the_client_is_gone() {
         let body = format!("{}{}{}", sse_event("a"), sse_event("b"), sse_event("c"));
         let url = serve(sse_head(), &body, &[]).await;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         drop(rx);
         let mut answer = String::new();
-        open_ai(
+        open_ai_compatible(
             "test-model",
             prompt(),
             None,
             &url,
             "test-key",
+            1_000,
             3_313,
             9_917,
             "",
@@ -641,7 +641,7 @@ mod tests {
     /// A rejection has to surface. It used to look like an empty answer, which
     /// a flow reports as a successful response with nothing in it.
     #[tokio::test]
-    async fn open_ai_reports_a_http_error() {
+    async fn open_ai_compatible_reports_a_http_error() {
         let body = String::from("{\"error\":{\"message\":\"bad key\"}}");
         let head = format!(
             "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -649,12 +649,13 @@ mod tests {
         );
         let url = serve(head, &body, &[]).await;
         let mut answer = String::new();
-        let e = open_ai(
+        let e = open_ai_compatible(
             "test-model",
             prompt(),
             None,
             &url,
             "test-key",
+            1_000,
             3_317,
             9_919,
             "",
@@ -664,6 +665,32 @@ mod tests {
         .unwrap_err();
         let e = format!("{e:?}");
         assert!(e.contains("401"), "the error should name the status: {e}");
+        assert!(e.contains(&url), "the error should name the URL: {e}");
         assert!(answer.is_empty(), "nothing should be read from a rejection");
+    }
+
+    /// An empty URL is a configuration mistake, not a reason to quietly send
+    /// the user's key to OpenAI.
+    #[tokio::test]
+    async fn open_ai_compatible_refuses_an_empty_url() {
+        let mut answer = String::new();
+        let e = open_ai_compatible(
+            "test-model",
+            prompt(),
+            None,
+            "",
+            "test-key",
+            1_000,
+            3_321,
+            9_921,
+            "",
+            ResultSender::StrBuf(&mut answer),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{e:?}").contains("URL is empty"),
+            "the error should say what is missing: {e:?}"
+        );
     }
 }

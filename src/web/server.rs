@@ -292,6 +292,10 @@ fn gen_router() -> Router {
             get(settings::list_ollama_models),
         )
         .route(
+            "/management/settings/model/openai/list",
+            get(settings::list_openai_models),
+        )
+        .route(
             "/kb/qa",
             get(kb::list_qa).post(kb::save_qa).delete(kb::delete_qa),
         )

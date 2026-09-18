@@ -109,6 +109,20 @@ export function genBranchesByNode(node) {
     return branches;
 }
 
+// provider.id 是给程序看的（"OpenAICompatible"），不是给用户看的。
+// 节点上的摘要文案用它渲染，所以要翻译一下；认不出来的 id 原样返回，
+// 这样以后新增 provider 时不会显示成空白。
+export function providerDisplayName(id, t) {
+    switch (id) {
+        case 'OpenAICompatible':
+            return t('botSettings.providerOpenAiCompatible');
+        case 'HuggingFace':
+            return t('botSettings.providerHuggingFace');
+        default:
+            return id;
+    }
+}
+
 export function copyProperties(src, target) {
     if (src == null || src == undefined)
         return;

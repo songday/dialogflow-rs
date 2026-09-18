@@ -517,8 +517,12 @@ pub(crate) async fn check_embedding_model(Query(q): Query<RobotQuery>) -> impl I
                     let info = m.get_info();
                     huggingface::check_model_files(&info)
                 }
-                embedding::SentenceEmbeddingProvider::OpenAI(_) => {
-                    if settings.sentence_embedding_provider.api_key.is_empty() {
+                embedding::SentenceEmbeddingProvider::OpenAICompatible(_) => {
+                    if settings.sentence_embedding_provider.api_url.is_empty() {
+                        Err(Error::WithMessage(String::from(
+                            "lang.settings.apiUrlEmpty",
+                        )))
+                    } else if settings.sentence_embedding_provider.api_key.is_empty() {
                         Err(Error::WithMessage(String::from("OPENAI_API_KEY is empty.")))
                     } else {
                         Ok(())
@@ -555,7 +559,142 @@ pub(crate) async fn list_ollama_models(
         ))));
     }
     let new_url = format!("{}/tags", &url[0..end_pos.unwrap()]);
-    to_res(retrieve_ollama_models(dbg!(&new_url)).await)
+    to_res(retrieve_ollama_models(&new_url).await)
+}
+
+/// 列出 OpenAI 兼容端点的模型，供前端"获取模型列表"按钮使用。
+///
+/// 参数走 query 而不是 body：模型名现在由用户手输，拼错只会得到一个看不出
+/// 原因的 404，这个接口就是为了消掉那个首次使用的障碍。
+pub(crate) async fn list_openai_models(
+    Query(q): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let Some(url) = q.get("url") else {
+        return to_res(Err(Error::WithMessage(String::from(
+            "API URL parameter not found",
+        ))));
+    };
+    if url.trim().is_empty() {
+        return to_res(Err(Error::WithMessage(String::from(
+            "API URL parameter is empty",
+        ))));
+    }
+    let api_key = q.get("apiKey").map(String::as_str).unwrap_or_default();
+    let proxy_url = q.get("proxyUrl").map(String::as_str).unwrap_or_default();
+    let connect_timeout_millis = q
+        .get("connectTimeoutMillis")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5_000u64);
+    let read_timeout_millis = q
+        .get("readTimeoutMillis")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10_000u64);
+    to_res(
+        retrieve_openai_models(
+            url,
+            api_key,
+            connect_timeout_millis,
+            read_timeout_millis,
+            proxy_url,
+        )
+        .await,
+    )
+}
+
+/// 模型列表就在用户配置的那个端点隔壁：`.../v1/chat/completions` 和
+/// `.../v1/embeddings` 都在 `.../v1/models` 下。Ollama 的兼容端点形状相同，
+/// 所以原生 `/api/tags` 那套 `rfind('/')` 派生方式在这里不适用。
+fn models_url(u: &str) -> String {
+    let base = u.trim().trim_end_matches('/');
+    let base = ["/chat/completions", "/completions", "/embeddings"]
+        .iter()
+        .find_map(|suffix| base.strip_suffix(suffix))
+        .unwrap_or(base);
+    format!("{}/models", base.trim_end_matches('/'))
+}
+
+async fn retrieve_openai_models(
+    url: &str,
+    api_key: &str,
+    connect_timeout_millis: u64,
+    read_timeout_millis: u64,
+    proxy_url: &str,
+) -> Result<Vec<String>> {
+    // 走共享 client 而不是裸 reqwest::get，这样用户的代理和超时设置才生效。
+    let client = crate::external::http::get_client(
+        connect_timeout_millis,
+        read_timeout_millis,
+        proxy_url,
+    )?;
+    let mut req = client.get(models_url(url));
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {api_key}"));
+    }
+    let res = req.send().await?;
+    let status = res.status();
+    let bytes = res.bytes().await?;
+    if !status.is_success() {
+        return Err(Error::WithMessage(format!(
+            "Model list endpoint returned {status}: {}",
+            String::from_utf8_lossy(bytes.as_ref())
+        )));
+    }
+    let json: Value = serde_json::from_slice(bytes.as_ref())?;
+    let mut result: Vec<String> = Vec::with_capacity(16);
+    // `{"data":[{"id":...}]}` 是 OpenAI 的形状；裸数组和 Ollama 原生的
+    // `{"models":[{"id":...}]}` 顺带接受，代价极小。
+    let items = json
+        .get("data")
+        .and_then(Value::as_array)
+        .or_else(|| json.get("models").and_then(Value::as_array))
+        .or_else(|| json.as_array());
+    if let Some(items) = items {
+        for item in items {
+            if let Some(id) = item
+                .get("id")
+                .or_else(|| item.get("model"))
+                .and_then(Value::as_str)
+            {
+                result.push(String::from(id));
+            }
+        }
+    }
+    result.sort();
+    result.dedup();
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn models_url_sits_next_to_the_configured_endpoint() {
+        assert_eq!(
+            models_url("https://api.deepseek.com/v1/chat/completions"),
+            "https://api.deepseek.com/v1/models"
+        );
+        assert_eq!(
+            models_url("https://api.openai.com/v1/embeddings"),
+            "https://api.openai.com/v1/models"
+        );
+        // Ollama's compatibility endpoint, which is why the native `/api/tags`
+        // derivation cannot be reused here.
+        assert_eq!(
+            models_url("http://localhost:11434/v1/chat/completions"),
+            "http://localhost:11434/v1/models"
+        );
+        // Trailing slashes and stray whitespace are the common paste accidents.
+        assert_eq!(
+            models_url("  https://api.moonshot.cn/v1/chat/completions/  "),
+            "https://api.moonshot.cn/v1/models"
+        );
+        // A bare host is a documented wrong guess: the field stays editable.
+        assert_eq!(
+            models_url("https://api.deepseek.com"),
+            "https://api.deepseek.com/models"
+        );
+    }
 }
 
 async fn retrieve_ollama_models(url: &str) -> Result<Vec<String>> {

@@ -229,9 +229,9 @@ const regenerateAll = async () => {
     const t = await httpReq("GET", 'management/settings', { robotId: robotId }, null, null)
     console.log(t);
     if (t.status == 200 && t.data) {
-        if (t.data.sentenceEmbeddingProvider.provider.id == 'OpenAI') {
+        if (t.data.sentenceEmbeddingProvider.provider.id == 'OpenAICompatible') {
             ElMessageBox.confirm(
-                'The sentence embedding providor is OpenAI, this will incur some fees. Continue?',
+                'The sentence embedding providor is a remote (paid) one, this will incur some fees. Continue?',
                 'Warning',
                 {
                     confirmButtonText: 'Regenerate all',
@@ -557,8 +557,8 @@ const goBack = () => {
             <div class="disabled-tip" v-show="phraseInputDisabled">
                 <el-icon style="margin-top: 4px; flex-shrink: 0"><RiSparkling2Line /></el-icon>
                 <span>
-                    This feature was disabled because <b>local model files were missing</b> or <b>api-key of OpenAI is
-                        empty</b>, please
+                    This feature was disabled because <b>local model files were missing</b> or <b>the sentence
+                        embedding API key is empty</b>, please
                     goto <router-link :to="{ name: 'settings', params: { robotId: robotId } }">settings</router-link> and
                     select one
                     model first.

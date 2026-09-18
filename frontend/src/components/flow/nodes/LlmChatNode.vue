@@ -4,6 +4,7 @@ import {
     copyProperties,
     httpReq,
     getDefaultBranch,
+    providerDisplayName,
 } from "../../../assets/tools.js";
 import { useI18n } from "vue-i18n";
 import EpWarning from "~icons/ep/warning";
@@ -129,7 +130,7 @@ onMounted(async () => {
 });
 
 const updateBrief = () => {
-    modelId.value = settings.chatProvider.provider.id;
+    modelId.value = providerDisplayName(settings.chatProvider.provider.id, t);
     modelName.value = settings.chatProvider.provider.model;
     // let h =
     //     "Chat model: " +
@@ -140,7 +141,7 @@ const updateBrief = () => {
     // h += "<br/>Exit this node by: " + nodeData.nodeExitType.substring(6);
     let h = t("llmChatNode.brief", {
         model: settings.chatProvider.provider.model,
-        id: settings.chatProvider.provider.id,
+        id: providerDisplayName(settings.chatProvider.provider.id, t),
         contextLength: nodeData.contextLength,
         nodeExitType: nodeData.nodeExitType.substring(6),
     });

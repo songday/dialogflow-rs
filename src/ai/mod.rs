@@ -13,5 +13,7 @@ pub(super) mod moondream;
 pub(super) mod phi3;
 pub(super) mod qwen3;
 pub(crate) mod stream;
+#[cfg(test)]
+pub(crate) mod test_support;
 mod token_output_stream;
 pub(crate) mod tts;

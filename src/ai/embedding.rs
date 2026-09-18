@@ -17,7 +17,10 @@ use crate::result::{Error, Result};
 #[serde(tag = "id", content = "model")]
 pub(crate) enum SentenceEmbeddingProvider {
     HuggingFace(HuggingFaceModel),
-    OpenAI(String),
+    /// 兼容 2026-09-17 之前存的记录（那时这个变体叫 `OpenAI`）。
+    /// 等所有实例都保存过一次设置后即可删掉这行。
+    #[serde(alias = "OpenAI")]
+    OpenAICompatible(String),
     Ollama(String),
 }
 
@@ -25,10 +28,11 @@ pub(crate) async fn embedding(robot_id: &str, s: &str) -> Result<(Vec<f32>, f32)
     if let Some(settings) = settings::get_settings(robot_id).await? {
         let v = match settings.sentence_embedding_provider.provider {
             SentenceEmbeddingProvider::HuggingFace(m) => hugging_face(robot_id, &m.get_info(), s),
-            SentenceEmbeddingProvider::OpenAI(m) => {
-                open_ai(
+            SentenceEmbeddingProvider::OpenAICompatible(m) => {
+                open_ai_compatible(
                     &m,
                     s,
+                    &settings.sentence_embedding_provider.api_url,
                     &settings.sentence_embedding_provider.api_key,
                     settings.sentence_embedding_provider.connect_timeout_millis,
                     settings.sentence_embedding_provider.read_timeout_millis,
@@ -119,9 +123,10 @@ fn hugging_face(robot_id: &str, info: &HuggingFaceModelInfo, s: &str) -> Result<
 //     }
 // }
 
-async fn open_ai(
+async fn open_ai_compatible(
     m: &str,
     s: &str,
+    api_url: &str,
     api_key: &str,
     connect_timeout_millis: u32,
     read_timeout_millis: u32,
@@ -137,17 +142,33 @@ async fn open_ai(
     map.insert(String::from("model"), Value::String(String::from(m)));
     let obj = Value::Object(map);
     let authorization = format!("Bearer {api_key}");
+    // 不再回退到 api.openai.com：用户填了别家的 key 却漏了地址时，
+    // 静默把请求（和 key）打向 OpenAI 不是我们该做的选择。
+    if api_url.is_empty() {
+        return Err(Error::WithMessage(String::from(
+            "OpenAI-compatible API URL is empty, please configure it in settings.",
+        )));
+    }
+    let u = String::from(api_url);
     let req = client
-        .post("https://api.openai.com/v1/embeddings")
+        .post(&u)
         .header("Content-Type", "application/json")
         .header("Authorization", &authorization)
         .body(serde_json::to_string(&obj)?);
-    let r = req
+    let res = req
         // .timeout(Duration::from_millis(60000))
         .send()
-        .await?
-        .text()
         .await?;
+    let status = res.status();
+    if !status.is_success() {
+        // 这条路径原来不检查状态码，于是一个 401 或 404 会退化成看不懂的
+        // JSON 解析错误。现在它要面对任意第三方端点，得把话说清楚。
+        let body = res.text().await.unwrap_or_default();
+        return Err(Error::WithMessage(format!(
+            "OpenAI-compatible endpoint {u} returned {status}: {body}"
+        )));
+    }
+    let r = res.text().await?;
     let v: Value = serde_json::from_str(&r)?;
     let mut embedding_result: Vec<f32> = Vec::with_capacity(3072);
     if let Some(d) = v["data"].as_array() {
@@ -225,4 +246,58 @@ pub(crate) fn vec_to_db(v: &Vec<f32>) -> turso::Value {
             .flatten()
             .collect::<Vec<u8>>(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ai::test_support::serve_capturing;
+
+    use super::*;
+
+    /// The URL used to be hardcoded to OpenAI's, so pointing this provider at
+    /// anything else silently queried the wrong host. It also never checked the
+    /// status code, turning a 401 into an unreadable JSON error.
+    #[tokio::test]
+    async fn open_ai_compatible_sends_url_and_key() {
+        let body = String::from(r#"{"data":[{"embedding":[0.5,0.25]}]}"#);
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let (url, request) = serve_capturing("/custom/llm/embeddings", head, &body).await;
+        let v = open_ai_compatible("bge-m3", "你好", &url, "test-key", 3_327, 9_927, "")
+            .await
+            .unwrap();
+        assert_eq!(v, vec![0.5f32, 0.25]);
+
+        let request = request.await.unwrap();
+        assert!(
+            request.starts_with("POST /custom/llm/embeddings "),
+            "the configured path must be used, not a hardcoded one: {request}"
+        );
+        // Header names arrive lowercased over HTTP/1.1.
+        assert!(
+            request
+                .to_lowercase()
+                .contains("authorization: bearer test-key"),
+            "the configured key must be sent: {request}"
+        );
+    }
+
+    /// A rejection has to surface as itself, not as a parse error.
+    #[tokio::test]
+    async fn open_ai_compatible_reports_a_http_error() {
+        let body = String::from(r#"{"error":{"message":"bad key"}}"#);
+        let head = format!(
+            "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let (url, _request) = serve_capturing("/custom/llm/embeddings", head, &body).await;
+        let e = open_ai_compatible("bge-m3", "hi", &url, "test-key", 3_329, 9_929, "")
+            .await
+            .unwrap_err();
+        let e = format!("{e:?}");
+        assert!(e.contains("401"), "the error should name the status: {e}");
+        assert!(e.contains("bad key"), "the error should carry the body: {e}");
+    }
 }

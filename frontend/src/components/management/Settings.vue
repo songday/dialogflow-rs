@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, onMounted, onUnmounted, provide } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
 import { copyProperties, httpReq, getRobotType } from "../../assets/tools.js";
 import { useI18n } from "vue-i18n";
 import chatPicThumbnail from "@/assets/usedByLlmChatNode-thumbnail.png";
@@ -140,6 +141,28 @@ onMounted(async () => {
             );
         originalSentenceEmbeddingModelId.value =
             r.data.sentenceEmbeddingProvider.provider.id;
+        // 这件事必须在 change*Provider 之前做：
+        // 把已存地址种进 urlMap。change*Provider 的 else 分支要读这个 map，
+        // 不种的话它会拿到 undefined，于是把刚 copyProperties 进来的用户
+        // 地址覆盖成预设值——配了远程地址的用户进一次设置页再保存就被改回去了。
+        //
+        // 这里**不做**空地址兜底：每条记录都是建机器人时由 settings::init() 写下的
+        // Settings::default()，那时的 provider 是 HuggingFace、api_url 是空串，
+        // 而 HuggingFace 那条分支会把地址显示替换掉。所以"在线模型 + 空地址"
+        // 只可能来自用户自己清空——把它悄悄换成 OpenAI 的地址，正是后端刚
+        // 去掉的那个行为。空地址会由后端明确报错，这才是我们想要的。
+        chatDynamicReqUrlMap.set(
+            settings.chatProvider.provider.id,
+            settings.chatProvider.apiUrl,
+        );
+        textGenerationDynamicReqUrlMap.set(
+            settings.textGenerationProvider.provider.id,
+            settings.textGenerationProvider.apiUrl,
+        );
+        sentenceEmbeddingDynamicReqUrlMap.set(
+            settings.sentenceEmbeddingProvider.provider.id,
+            settings.sentenceEmbeddingProvider.apiUrl,
+        );
         await changeChatProvider(settings.chatProvider.provider.id);
         await changeTextGenerationProvider(
             settings.textGenerationProvider.provider.id,
@@ -369,11 +392,160 @@ const smtpTest = async () => {
 const ollamaModels = [];
 provide("ollamaModels", { ollamaModels });
 
+// OpenAI 兼容端点的厂商预设。
+//
+// 厂商不做持久化，而是每次从 apiUrl 反查出来。本次改动里 URL 是唯一决定
+// 行为的因素，所以反查结果不可能与实际请求不一致；代价是同一网关下的不同
+// 厂商会被归成"自定义"，可以接受——预设的职责只是填 URL 和给模型候选。
+//
+// apiUrl / embedUrl 必须是**完整的端点路径**（形如 .../v1/chat/completions），
+// 不是 base URL：后端就是拿它直接 POST 的。厂商模型名会变，用之前对一下。
+const compatibleVendors = [
+    {
+        key: "openai",
+        nameKey: "botSettings.vendorOpenAi",
+        chatUrl: "https://api.openai.com/v1/chat/completions",
+        chatModels: [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4-turbo",
+            "gpt-4-vision-preview",
+            "gpt-3.5-turbo",
+        ],
+        embedUrl: "https://api.openai.com/v1/embeddings",
+        embedModels: [
+            "text-embedding-3-large",
+            "text-embedding-3-small",
+            "text-embedding-ada-002",
+        ],
+    },
+    {
+        key: "deepseek",
+        nameKey: "botSettings.vendorDeepSeek",
+        chatUrl: "https://api.deepseek.com/v1/chat/completions",
+        chatModels: ["deepseek-chat", "deepseek-reasoner"],
+    },
+    {
+        key: "zhipu",
+        nameKey: "botSettings.vendorZhipu",
+        chatUrl: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        chatModels: ["glm-4-plus", "glm-4-air", "glm-4-flash"],
+        embedUrl: "https://open.bigmodel.cn/api/paas/v4/embeddings",
+        embedModels: ["embedding-3", "embedding-2"],
+    },
+    {
+        key: "qwen",
+        nameKey: "botSettings.vendorQwen",
+        chatUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        chatModels: ["qwen-max", "qwen-plus", "qwen-turbo"],
+        embedUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
+        embedModels: ["text-embedding-v3", "text-embedding-v2"],
+    },
+    {
+        key: "moonshot",
+        nameKey: "botSettings.vendorMoonshot",
+        chatUrl: "https://api.moonshot.cn/v1/chat/completions",
+        chatModels: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    },
+    {
+        key: "siliconflow",
+        nameKey: "botSettings.vendorSiliconFlow",
+        chatUrl: "https://api.siliconflow.cn/v1/chat/completions",
+        chatModels: ["deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-7B-Instruct"],
+        embedUrl: "https://api.siliconflow.cn/v1/embeddings",
+        embedModels: ["BAAI/bge-m3", "BAAI/bge-large-zh-v1.5"],
+    },
+    {
+        key: "groq",
+        nameKey: "botSettings.vendorGroq",
+        chatUrl: "https://api.groq.com/openai/v1/chat/completions",
+        chatModels: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+    },
+    {
+        key: "openrouter",
+        nameKey: "botSettings.vendorOpenRouter",
+        chatUrl: "https://openrouter.ai/api/v1/chat/completions",
+        chatModels: ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"],
+    },
+    // Ollama 从 v0.1.24 起就有 OpenAI 兼容端点，所以它也走这条路。
+    // 注意地址是 /v1/...，不是原生的 /api/chat。
+    {
+        key: "ollama",
+        nameKey: "botSettings.vendorOllama",
+        chatUrl: "http://localhost:11434/v1/chat/completions",
+        chatModels: [],
+        embedUrl: "http://localhost:11434/v1/embeddings",
+        embedModels: ["nomic-embed-text", "bge-m3", "mxbai-embed-large"],
+    },
+    {
+        key: "vllm",
+        nameKey: "botSettings.vendorVllm",
+        chatUrl: "http://localhost:8000/v1/chat/completions",
+        chatModels: [],
+        embedUrl: "http://localhost:8000/v1/embeddings",
+        embedModels: [],
+    },
+    {
+        key: "lmstudio",
+        nameKey: "botSettings.vendorLmStudio",
+        chatUrl: "http://localhost:1234/v1/chat/completions",
+        chatModels: [],
+        embedUrl: "http://localhost:1234/v1/embeddings",
+        embedModels: [],
+    },
+    // 留空的地址，让用户自己填。
+    {
+        key: "custom",
+        nameKey: "botSettings.vendorCustom",
+        chatUrl: "",
+        chatModels: [],
+        embedUrl: "",
+        embedModels: [],
+    },
+];
+const customVendor = compatibleVendors[compatibleVendors.length - 1];
+
+// 只归一化尾斜杠和大小写，**不做前缀匹配**：用户通过网关/代理走的路径是
+// 合法的，前缀匹配会把用户自己填的地址重新贴成别家的标签。
+const normalizeUrl = (u) => (u || "").trim().replace(/\/+$/, "").toLowerCase();
+const vendorUrlKey = (kind) => (kind == "embedding" ? "embedUrl" : "chatUrl");
+const vendorUrl = (v, kind) => v[vendorUrlKey(kind)] || "";
+// 走这个而不是直接写 v.chatModels / v.embedModels：向量区块复制对话区块的
+// 代码时，最后一个 chatModels 忘了改是很容易发生的事。
+const vendorModels = (v, kind) =>
+    (kind == "embedding" ? v.embedModels : v.chatModels) || [];
+// 某区块可选的厂商。没有 embeddings 端点的（moonshot / groq / openrouter）
+// 不出现在向量区块的列表里。
+const vendorsFor = (kind) =>
+    compatibleVendors.filter((v) => v.key == "custom" || vendorUrl(v, kind));
+const vendorByKey = (key) =>
+    compatibleVendors.find((v) => v.key == key) || customVendor;
+// 从地址反查厂商；认不出来归到"自定义"。空地址返回空串，交给调用方兜底。
+const deriveVendorKey = (apiUrl, kind) => {
+    const u = normalizeUrl(apiUrl);
+    if (!u) return "";
+    const k = vendorUrlKey(kind);
+    const hit = compatibleVendors.find((v) => v[k] && normalizeUrl(v[k]) == u);
+    return hit ? hit.key : "custom";
+};
+// 值非空且不在候选里就补一个选项。**必要**，不是可选：Element Plus 关闭态
+// 显示的是匹配到的 option 的 label，缺了它，重载后的自定义模型名会显示成
+// 一个空白框（值其实是对的）。
+//
+// 代价：切换厂商后，上一个厂商的模型名会作为候选留在列表里（因为它是当前
+// 选中值）。没法区分"用户手输的名字"和"上个厂商的预设名"——两者在存储里
+// 都是同一个字符串。留着比丢掉好：丢掉会让当前选择显示成空白框。真选了
+// 不对的模型，后端会带着端点地址报错。
+const ensureOption = (list, value) => {
+    if (!value) return;
+    if (list.find((d) => d.value == value) == null) list.unshift({ label: value, value });
+};
+
 // https://docs.spring.io/spring-ai/reference/api/chat/completions.html
 const chatProviders = [
     {
         id: "HuggingFace",
-        name: "HuggingFace",
+        nameKey: "botSettings.providerHuggingFace",
         apiUrl: "Model will be downloaded locally at ./data/models",
         apiUrlDisabled: true,
         showApiKeyInput: false,
@@ -436,50 +608,39 @@ const chatProviders = [
         ],
     },
     {
-        id: "OpenAI",
-        name: "OpenAI",
+        id: "OpenAICompatible",
+        nameKey: "botSettings.providerOpenAiCompatible",
+        // 地址只是没配过时的兜底，真正的值来自 onMounted 里种进 map 的已存
+        // 记录；changeChatProvider 会拿厂商预设覆盖模型候选。
         apiUrl: "https://api.openai.com/v1/chat/completions",
-        apiUrlDisabled: true,
-        showApiKeyInput: true,
-        models: [
-            { label: "gpt-4o", value: "gpt-4o" },
-            { label: "gpt-4o-mini", value: "gpt-4o-mini" },
-            { label: "gpt-4", value: "gpt-4" },
-            { label: "gpt-4-turbo", value: "gpt-4-turbo" },
-            { label: "gpt-4-vision-preview", value: "gpt-4-vision-preview" },
-            { label: "gpt-4-32k", value: "gpt-4-32k" },
-            { label: "gpt-3.5-turbo", value: "gpt-3.5-turbo" },
-            { label: "gpt-3.5-turbo-16k", value: "gpt-3.5-turbo-16k" },
-        ],
-    },
-    {
-        id: "Ollama",
-        name: "Ollama",
-        apiUrl: "http://localhost:11434/api/chat",
         apiUrlDisabled: false,
-        showApiKeyInput: false,
-        models: ollamaModels,
+        showApiKeyInput: true,
+        models: [],
     },
 ];
 
 const chatProviderProxyEnabled = ref(false);
-const isAddingAnotherChatOllamaModel = ref(false);
-const anotherChatOllamaModel = ref("");
+const isAddingAnotherChatModel = ref(false);
+const anotherChatModel = ref("");
 const chatModelSelector = ref();
-const addAnotherChatOllamaModel = (m) => {
-    const obj = { label: m, value: m };
-    chatModelOptions.unshift(obj);
-    chatProviders[2].models.unshift(obj);
-    chatModelSelector.value.blur();
-    settings.chatProvider.provider.id = "Ollama";
-    settings.chatProvider.provider.model = obj.value;
-    anotherChatOllamaModel.value = "";
+// 「添加自定义模型名」。原来这里硬编码 chatProviders[2]（数组一旦少一项就
+// 静默加错地方），还无条件把 provider.id 改成 "Ollama"。现在加到用户当前
+// 选中的那一项，且不再改 provider——那是单选按钮的职责。
+const addAnotherChatModel = (m) => {
+    if (!m || choosedChatProvider.value == "HuggingFace") return;
+    const p = chatProviders.find((d) => d.id == choosedChatProvider.value);
+    if (p == null) return;
+    ensureOption(chatModelOptions, m);
+    ensureOption(p.models, m);
+    chatModelSelector.value?.blur();
+    settings.chatProvider.provider.model = m;
+    anotherChatModel.value = "";
 };
 
 const textGenerationProviders = [
     {
         id: "HuggingFace",
-        name: "HuggingFace",
+        nameKey: "botSettings.providerHuggingFace",
         apiUrl: "Model will be downloaded locally at ./data/models",
         apiUrlDisabled: true,
         showApiKeyInput: false,
@@ -542,49 +703,37 @@ const textGenerationProviders = [
         ],
     },
     {
-        id: "OpenAI",
-        name: "OpenAI",
+        id: "OpenAICompatible",
+        nameKey: "botSettings.providerOpenAiCompatible",
         apiUrl: "https://api.openai.com/v1/chat/completions",
-        apiUrlDisabled: true,
-        showApiKeyInput: true,
-        models: [
-            { label: "gpt-4", value: "gpt-4" },
-            { label: "gpt-4-turbo-preview", value: "gpt-4-turbo-preview" },
-            { label: "gpt-4-vision-preview", value: "gpt-4-vision-preview" },
-            { label: "gpt-4-32k", value: "gpt-4-32k" },
-            { label: "gpt-3.5-turbo", value: "gpt-3.5-turbo" },
-            { label: "gpt-3.5-turbo-16k", value: "gpt-3.5-turbo-16k" },
-        ],
-    },
-    {
-        id: "Ollama",
-        name: "Ollama",
-        apiUrl: "http://localhost:11434/api/generate",
         apiUrlDisabled: false,
-        showApiKeyInput: false,
-        models: ollamaModels,
+        showApiKeyInput: true,
+        models: [],
     },
 ];
 
 const textGenerationProviderProxyEnabled = ref(false);
-const isAddingAnotherTextGenerationOllamaModel = ref(false);
-const anotherTextGenerationOllamaModel = ref("");
+const isAddingAnotherTextGenerationModel = ref(false);
+const anotherTextGenerationModel = ref("");
 const textGenerationModelSelector = ref();
-const addAnotherTextGenerationOllamaModel = (m) => {
-    const obj = { label: m, value: m };
-    textGenerationModelOptions.unshift(obj);
-    textGenerationProviders[2].models.unshift(obj);
-    textGenerationModelSelector.value.blur();
-    settings.textGenerationProvider.provider.id = "Ollama";
-    settings.textGenerationProvider.provider.model = obj.value;
-    anotherTextGenerationOllamaModel.value = "";
+const addAnotherTextGenerationModel = (m) => {
+    if (!m || choosedTextGenerationProvider.value == "HuggingFace") return;
+    const p = textGenerationProviders.find(
+        (d) => d.id == choosedTextGenerationProvider.value,
+    );
+    if (p == null) return;
+    ensureOption(textGenerationModelOptions, m);
+    ensureOption(p.models, m);
+    textGenerationModelSelector.value?.blur();
+    settings.textGenerationProvider.provider.model = m;
+    anotherTextGenerationModel.value = "";
 };
 
 // https://docs.spring.io/spring-ai/reference/api/embeddings.html
 const sentenceEmbeddingProviders = [
     {
         id: "HuggingFace",
-        name: "HuggingFace",
+        nameKey: "botSettings.providerHuggingFace",
         apiUrl: "Model will be downloaded locally at ./data/models",
         apiUrlDisabled: true,
         showApiKeyInput: false,
@@ -636,68 +785,44 @@ const sentenceEmbeddingProviders = [
         ],
     },
     {
-        id: "OpenAI",
-        name: "OpenAI",
+        id: "OpenAICompatible",
+        nameKey: "botSettings.providerOpenAiCompatible",
         apiUrl: "https://api.openai.com/v1/embeddings",
-        apiUrlDisabled: true,
-        showApiKeyInput: true,
-        models: [
-            {
-                label: "text-embedding-3-large",
-                value: "text-embedding-3-large",
-            },
-            {
-                label: "text-embedding-3-small",
-                value: "text-embedding-3-small",
-            },
-            {
-                label: "text-embedding-ada-002",
-                value: "text-embedding-ada-002",
-            },
-        ],
-    },
-    {
-        id: "Ollama",
-        name: "Ollama",
-        apiUrl: "http://localhost:11434/api/embeddings",
         apiUrlDisabled: false,
-        showApiKeyInput: false,
-        models: [
-            { label: "nomic-embed-text:v1.5", value: "nomic-embed-text:v1.5" },
-            {
-                label: "mxbai-embed-large:335m",
-                value: "mxbai-embed-large:335m",
-            },
-            { label: "bge-m3:567m", value: "bge-m3:567m" },
-            { label: "bge-large:335m", value: "bge-large:335m" },
-            {
-                label: "snowflake-arctic-embed:335m",
-                value: "snowflake-arctic-embed:335m",
-            },
-            {
-                label: "snowflake-arctic-embed2:568m",
-                value: "snowflake-arctic-embed2:568m",
-            },
-            { label: "all-minilm:33m", value: "all-minilm:33m" },
-            {
-                label: "paraphrase-multilingual:278m",
-                value: "paraphrase-multilingual:278m",
-            },
-            {
-                label: "granite-embedding:278m",
-                value: "granite-embedding:278m",
-            },
-            {
-                label: "jina-embeddings-v2-base-en",
-                value: "jina/jina-embeddings-v2-base-en:latest",
-            },
-        ],
+        showApiKeyInput: true,
+        models: [],
     },
 ];
 const sentenceEmbeddingProviderProxyEnabled = ref(false);
 const chatModelOptions = reactive([]);
 const chatDynamicReqUrlMap = new Map();
 const choosedChatProvider = ref("");
+const chatVendorKey = ref("");
+// 从当前地址反查厂商写回下拉，并用该厂商的模型候选重建候选列表。
+// 两个触发点：选中「在线模型」，以及用户手改地址后失焦（@change，不是逐键）。
+const refreshChatVendor = () => {
+    const p = chatProviders.find((d) => d.id == "OpenAICompatible");
+    const v = vendorByKey(deriveVendorKey(settings.chatProvider.apiUrl, "chat"));
+    chatVendorKey.value = v.key;
+    p.models.splice(
+        0,
+        p.models.length,
+        ...vendorModels(v, "chat").map((m) => ({ label: m, value: m })),
+    );
+    ensureOption(p.models, settings.chatProvider.provider.model);
+    chatModelOptions.splice(0, chatModelOptions.length, ...p.models);
+};
+// 选厂商 = 填它的地址，然后照常刷新。
+//
+// 「自定义」没有预设地址，这里**刻意不清空**地址框：清空之后，一条"故意留空的
+// 自定义地址"和一条"从没配过地址"的记录在存储里长得一模一样（厂商不持久化），
+// 加载时的空值兜底就会把 OpenAI 的地址给你写回来——正是后端刚去掉的那个行为。
+// 用户选它就是想自己填，地址框就在旁边，直接改就行。
+const applyChatVendorPreset = (key) => {
+    const u = vendorUrl(vendorByKey(key), "chat");
+    if (u) settings.chatProvider.apiUrl = u;
+    refreshChatVendor();
+};
 const changeChatProvider = async (n) => {
     if (choosedChatProvider.value)
         chatDynamicReqUrlMap.set(
@@ -709,52 +834,106 @@ const changeChatProvider = async (n) => {
             if (chatProviders[i].apiUrlDisabled)
                 settings.chatProvider.apiUrl = chatProviders[i].apiUrl;
             else {
-                settings.chatProvider.apiUrl = chatDynamicReqUrlMap.get(
-                    settings.chatProvider.provider.id,
-                );
-                if (!settings.chatProvider.apiUrl)
-                    settings.chatProvider.apiUrl = chatProviders[i].apiUrl;
+                // 判断"在不在 map 里"，不是"值真不真"：用户把地址清空后保存，
+                // 存下来的就是空串，那是他的选择，不能拿预设把它填回去。
+                // map 里没有这一项才说明这个 provider 是第一次被选中。
+                const u = chatDynamicReqUrlMap.get(n);
+                settings.chatProvider.apiUrl =
+                    u != null ? u : chatProviders[i].apiUrl;
             }
             settings.chatProvider.apiUrlDisabled =
                 chatProviders[i].apiUrlDisabled;
             settings.chatProvider.showApiKeyInput =
                 chatProviders[i].showApiKeyInput;
             choosedChatProvider.value = n;
-            if (n == "Ollama") {
-                const r = await httpReq(
-                    "GET",
-                    "management/settings/model/ollama/list",
-                    { url: chatProviders[i].apiUrl },
-                    null,
-                    null,
-                );
-                chatProviders[i].models.splice(
+            // 关掉可能开着的「添加自定义模型名」表单：它的输入框不跟着 provider
+            // 变，留着会让用户在切到本地模型后提交一个 HuggingFace 不认的模型名。
+            isAddingAnotherChatModel.value = false;
+            // 不在这里拉模型列表：加载时也会走到这里，那等于每次进设置页都
+            // 打向（可能是内网、可能连不通的）用户端点。拉取只在按钮后面。
+            if (n == "OpenAICompatible") refreshChatVendor();
+            else
+                chatModelOptions.splice(
                     0,
-                    chatProviders[i].models.length,
-                    ...r.data.map((n) => ({ label: n, value: n })),
+                    chatModelOptions.length,
+                    ...chatProviders[i].models,
                 );
-                if (
-                    chatProviders[i].models.find(
-                        (d) => d.value == settings.chatProvider.provider.model,
-                    ) == null
-                ) {
-                    addAnotherChatOllamaModel(
-                        settings.chatProvider.provider.model,
-                    );
-                }
-            }
-            chatModelOptions.splice(
-                0,
-                chatModelOptions.length,
-                ...chatProviders[i].models,
-            );
             break;
         }
+    }
+    // 存量记录里可能存着已从选择器移除的 provider（本轮的 Ollama）。这里刻意
+    // **不动记录本身**——后端仍认得它、原生路径照走，直接保存也不会丢——只是
+    // 单选按钮没法高亮它。至少把已存的模型名显示出来，别是一片空白。
+    if (!choosedChatProvider.value)
+        ensureOption(chatModelOptions, settings.chatProvider.provider.model);
+};
+const chatModelListLoading = ref(false);
+const fetchChatModelList = async () => {
+    if (!settings.chatProvider.apiUrl) return;
+    chatModelListLoading.value = true;
+    try {
+        const r = await httpReq(
+            "GET",
+            "management/settings/model/openai/list",
+            {
+                url: settings.chatProvider.apiUrl,
+                apiKey: settings.chatProvider.apiKey,
+                proxyUrl: settings.chatProvider.proxyUrl,
+                connectTimeoutMillis: settings.chatProvider.connectTimeoutMillis,
+                readTimeoutMillis: settings.chatProvider.readTimeoutMillis,
+            },
+            null,
+            null,
+        );
+        if (r.status != 200 || !Array.isArray(r.data))
+            throw new Error(r.err?.message || "bad response");
+        // 端点返回的就是权威列表，直接替换掉厂商预设的那批候选。
+        const p = chatProviders.find((d) => d.id == "OpenAICompatible");
+        p.models.splice(
+            0,
+            p.models.length,
+            ...r.data.map((m) => ({ label: m, value: m })),
+        );
+        ensureOption(p.models, settings.chatProvider.provider.model);
+        chatModelOptions.splice(0, chatModelOptions.length, ...p.models);
+        ElMessage.success(
+            t("botSettings.fetchModelListOk", { count: r.data.length }),
+        );
+    } catch {
+        // 只提示失败，**不动**用户已经手输的模型名：拉取不到的端点照样能用。
+        ElMessage.error(t("botSettings.fetchModelListFailed"));
+    } finally {
+        chatModelListLoading.value = false;
     }
 };
 const textGenerationModelOptions = reactive([]);
 const textGenerationDynamicReqUrlMap = new Map();
 const choosedTextGenerationProvider = ref("");
+const textGenerationVendorKey = ref("");
+const refreshTextGenerationVendor = () => {
+    const p = textGenerationProviders.find((d) => d.id == "OpenAICompatible");
+    const v = vendorByKey(
+        deriveVendorKey(settings.textGenerationProvider.apiUrl, "chat"),
+    );
+    textGenerationVendorKey.value = v.key;
+    p.models.splice(
+        0,
+        p.models.length,
+        ...vendorModels(v, "chat").map((m) => ({ label: m, value: m })),
+    );
+    ensureOption(p.models, settings.textGenerationProvider.provider.model);
+    textGenerationModelOptions.splice(
+        0,
+        textGenerationModelOptions.length,
+        ...p.models,
+    );
+};
+const applyTextGenerationVendorPreset = (key) => {
+    // 同 chat：「自定义」不清空地址，理由见 applyChatVendorPreset。
+    const u = vendorUrl(vendorByKey(key), "chat");
+    if (u) settings.textGenerationProvider.apiUrl = u;
+    refreshTextGenerationVendor();
+};
 const changeTextGenerationProvider = async (n) => {
     if (choosedTextGenerationProvider.value)
         textGenerationDynamicReqUrlMap.set(
@@ -767,56 +946,110 @@ const changeTextGenerationProvider = async (n) => {
                 settings.textGenerationProvider.apiUrl =
                     textGenerationProviders[i].apiUrl;
             else {
+                // 同 chat：看"在不在 map 里"，不看值真不真。
+                const u = textGenerationDynamicReqUrlMap.get(n);
                 settings.textGenerationProvider.apiUrl =
-                    textGenerationDynamicReqUrlMap.get(
-                        settings.textGenerationProvider.provider.id,
-                    );
-                if (!settings.textGenerationProvider.apiUrl)
-                    settings.textGenerationProvider.apiUrl =
-                        textGenerationProviders[i].apiUrl;
+                    u != null ? u : textGenerationProviders[i].apiUrl;
             }
             settings.textGenerationProvider.apiUrlDisabled =
                 textGenerationProviders[i].apiUrlDisabled;
             settings.textGenerationProvider.showApiKeyInput =
                 textGenerationProviders[i].showApiKeyInput;
             choosedTextGenerationProvider.value = n;
-            if (n == "Ollama") {
-                const r = await httpReq(
-                    "GET",
-                    "management/settings/model/ollama/list",
-                    { url: textGenerationProviders[i].apiUrl },
-                    null,
-                    null,
-                );
-                textGenerationProviders[i].models.splice(
+            // 同 chat：关掉可能开着的添加表单。
+            isAddingAnotherTextGenerationModel.value = false;
+            // 同 chat：不在加载路径上打用户的端点，拉取只在按钮后面。
+            if (n == "OpenAICompatible") refreshTextGenerationVendor();
+            else
+                textGenerationModelOptions.splice(
                     0,
-                    textGenerationProviders[i].models.length,
-                    ...r.data.map((n) => ({ label: n, value: n })),
+                    textGenerationModelOptions.length,
+                    ...textGenerationProviders[i].models,
                 );
-                if (
-                    textGenerationProviders[i].models.find(
-                        (d) =>
-                            d.value ==
-                            settings.textGenerationProvider.provider.model,
-                    ) == null
-                ) {
-                    addAnotherTextGenerationOllamaModel(
-                        settings.textGenerationProvider.provider.model,
-                    );
-                }
-            }
-            textGenerationModelOptions.splice(
-                0,
-                textGenerationModelOptions.length,
-                ...textGenerationProviders[i].models,
-            );
             break;
         }
+    }
+    // 同 chat：存量的、已从选择器移除的 provider 只保证模型名可见。
+    if (!choosedTextGenerationProvider.value)
+        ensureOption(
+            textGenerationModelOptions,
+            settings.textGenerationProvider.provider.model,
+        );
+};
+const textGenerationModelListLoading = ref(false);
+const fetchTextGenerationModelList = async () => {
+    if (!settings.textGenerationProvider.apiUrl) return;
+    textGenerationModelListLoading.value = true;
+    try {
+        const r = await httpReq(
+            "GET",
+            "management/settings/model/openai/list",
+            {
+                url: settings.textGenerationProvider.apiUrl,
+                apiKey: settings.textGenerationProvider.apiKey,
+                proxyUrl: settings.textGenerationProvider.proxyUrl,
+                connectTimeoutMillis:
+                    settings.textGenerationProvider.connectTimeoutMillis,
+                readTimeoutMillis:
+                    settings.textGenerationProvider.readTimeoutMillis,
+            },
+            null,
+            null,
+        );
+        if (r.status != 200 || !Array.isArray(r.data))
+            throw new Error(r.err?.message || "bad response");
+        // 端点返回的就是权威列表，直接替换掉厂商预设的那批候选。
+        const p = textGenerationProviders.find(
+            (d) => d.id == "OpenAICompatible",
+        );
+        p.models.splice(
+            0,
+            p.models.length,
+            ...r.data.map((m) => ({ label: m, value: m })),
+        );
+        ensureOption(p.models, settings.textGenerationProvider.provider.model);
+        textGenerationModelOptions.splice(
+            0,
+            textGenerationModelOptions.length,
+            ...p.models,
+        );
+        ElMessage.success(
+            t("botSettings.fetchModelListOk", { count: r.data.length }),
+        );
+    } catch {
+        ElMessage.error(t("botSettings.fetchModelListFailed"));
+    } finally {
+        textGenerationModelListLoading.value = false;
     }
 };
 const sentenceEmbeddingModelOptions = reactive([]);
 const sentenceEmbeddingDynamicReqUrlMap = new Map();
 const choosedSentenceEmbeddingProvider = ref("");
+const sentenceEmbeddingVendorKey = ref("");
+const refreshSentenceEmbeddingVendor = () => {
+    const p = sentenceEmbeddingProviders.find((d) => d.id == "OpenAICompatible");
+    const v = vendorByKey(
+        deriveVendorKey(settings.sentenceEmbeddingProvider.apiUrl, "embedding"),
+    );
+    sentenceEmbeddingVendorKey.value = v.key;
+    p.models.splice(
+        0,
+        p.models.length,
+        ...vendorModels(v, "embedding").map((m) => ({ label: m, value: m })),
+    );
+    ensureOption(p.models, settings.sentenceEmbeddingProvider.provider.model);
+    sentenceEmbeddingModelOptions.splice(
+        0,
+        sentenceEmbeddingModelOptions.length,
+        ...p.models,
+    );
+};
+const applySentenceEmbeddingVendorPreset = (key) => {
+    // 同 chat：「自定义」不清空地址，理由见 applyChatVendorPreset。
+    const u = vendorUrl(vendorByKey(key), "embedding");
+    if (u) settings.sentenceEmbeddingProvider.apiUrl = u;
+    refreshSentenceEmbeddingVendor();
+};
 const changeSentenceEmbeddingProvider = async (n) => {
     if (choosedSentenceEmbeddingProvider.value)
         sentenceEmbeddingDynamicReqUrlMap.set(
@@ -829,65 +1062,97 @@ const changeSentenceEmbeddingProvider = async (n) => {
                 settings.sentenceEmbeddingProvider.apiUrl =
                     sentenceEmbeddingProviders[i].apiUrl;
             else {
+                // 同 chat：看"在不在 map 里"，不看值真不真。
+                const u = sentenceEmbeddingDynamicReqUrlMap.get(n);
                 settings.sentenceEmbeddingProvider.apiUrl =
-                    sentenceEmbeddingDynamicReqUrlMap.get(
-                        settings.sentenceEmbeddingProvider.provider.id,
-                    );
-                if (!settings.sentenceEmbeddingProvider.apiUrl)
-                    settings.sentenceEmbeddingProvider.apiUrl =
-                        sentenceEmbeddingProviders[i].apiUrl;
+                    u != null ? u : sentenceEmbeddingProviders[i].apiUrl;
             }
             settings.sentenceEmbeddingProvider.apiUrlDisabled =
                 sentenceEmbeddingProviders[i].apiUrlDisabled;
             settings.sentenceEmbeddingProvider.showApiKeyInput =
                 sentenceEmbeddingProviders[i].showApiKeyInput;
             choosedSentenceEmbeddingProvider.value = n;
-            if (n == "Ollama") {
-                const r = await httpReq(
-                    "GET",
-                    "management/settings/model/ollama/list",
-                    { url: sentenceEmbeddingProviders[i].apiUrl },
-                    null,
-                    null,
-                );
-                sentenceEmbeddingProviders[i].models.splice(
+            // 同 chat：关掉可能开着的添加表单。
+            isAddingAnotherSentenceEmbeddingModel.value = false;
+            // 同 chat：不在加载路径上打用户的端点，拉取只在按钮后面。
+            if (n == "OpenAICompatible") refreshSentenceEmbeddingVendor();
+            else
+                sentenceEmbeddingModelOptions.splice(
                     0,
-                    sentenceEmbeddingProviders[i].models.length,
-                    ...r.data.map((n) => ({ label: n, value: n })),
+                    sentenceEmbeddingModelOptions.length,
+                    ...sentenceEmbeddingProviders[i].models,
                 );
-                if (
-                    sentenceEmbeddingProviders[i].models.find(
-                        (d) =>
-                            d.value ==
-                            settings.sentenceEmbeddingProvider.provider.model,
-                    ) == null
-                ) {
-                    addAnotherSentenceEmbeddingOllamaModel(
-                        settings.sentenceEmbeddingProvider.provider.model,
-                    );
-                }
-            }
-            sentenceEmbeddingModelOptions.splice(
-                0,
-                sentenceEmbeddingModelOptions.length,
-                ...sentenceEmbeddingProviders[i].models,
-            );
             break;
         }
+    }
+    // 同 chat：存量的、已从选择器移除的 provider 只保证模型名可见。
+    if (!choosedSentenceEmbeddingProvider.value)
+        ensureOption(
+            sentenceEmbeddingModelOptions,
+            settings.sentenceEmbeddingProvider.provider.model,
+        );
+};
+const sentenceEmbeddingModelListLoading = ref(false);
+const fetchSentenceEmbeddingModelList = async () => {
+    if (!settings.sentenceEmbeddingProvider.apiUrl) return;
+    sentenceEmbeddingModelListLoading.value = true;
+    try {
+        const r = await httpReq(
+            "GET",
+            "management/settings/model/openai/list",
+            {
+                url: settings.sentenceEmbeddingProvider.apiUrl,
+                apiKey: settings.sentenceEmbeddingProvider.apiKey,
+                proxyUrl: settings.sentenceEmbeddingProvider.proxyUrl,
+                connectTimeoutMillis:
+                    settings.sentenceEmbeddingProvider.connectTimeoutMillis,
+                readTimeoutMillis:
+                    settings.sentenceEmbeddingProvider.readTimeoutMillis,
+            },
+            null,
+            null,
+        );
+        if (r.status != 200 || !Array.isArray(r.data))
+            throw new Error(r.err?.message || "bad response");
+        // 端点返回的就是权威列表，直接替换掉厂商预设的那批候选。
+        const p = sentenceEmbeddingProviders.find(
+            (d) => d.id == "OpenAICompatible",
+        );
+        p.models.splice(
+            0,
+            p.models.length,
+            ...r.data.map((m) => ({ label: m, value: m })),
+        );
+        ensureOption(p.models, settings.sentenceEmbeddingProvider.provider.model);
+        sentenceEmbeddingModelOptions.splice(
+            0,
+            sentenceEmbeddingModelOptions.length,
+            ...p.models,
+        );
+        ElMessage.success(
+            t("botSettings.fetchModelListOk", { count: r.data.length }),
+        );
+    } catch {
+        ElMessage.error(t("botSettings.fetchModelListFailed"));
+    } finally {
+        sentenceEmbeddingModelListLoading.value = false;
     }
 };
 
 const sentenceEmbeddingModelSelector = ref();
-const isAddingAnotherSentenceEmbeddingOllamaModel = ref(false);
-const anotherSentenceEmbeddingOllamaModel = ref("");
-const addAnotherSentenceEmbeddingOllamaModel = (m) => {
-    const obj = { label: m, value: m };
-    sentenceEmbeddingModelOptions.unshift(obj);
-    sentenceEmbeddingProviders[2].models.unshift(obj);
-    sentenceEmbeddingModelSelector.value.blur();
-    settings.sentenceEmbeddingProvider.provider.id = "Ollama";
-    settings.sentenceEmbeddingProvider.provider.model = obj.value;
-    anotherSentenceEmbeddingOllamaModel.value = "";
+const isAddingAnotherSentenceEmbeddingModel = ref(false);
+const anotherSentenceEmbeddingModel = ref("");
+const addAnotherSentenceEmbeddingModel = (m) => {
+    if (!m || choosedSentenceEmbeddingProvider.value == "HuggingFace") return;
+    const p = sentenceEmbeddingProviders.find(
+        (d) => d.id == choosedSentenceEmbeddingProvider.value,
+    );
+    if (p == null) return;
+    ensureOption(sentenceEmbeddingModelOptions, m);
+    ensureOption(p.models, m);
+    sentenceEmbeddingModelSelector.value?.blur();
+    settings.sentenceEmbeddingProvider.provider.model = m;
+    anotherSentenceEmbeddingModel.value = "";
 };
 
 const usedByLlmChatNodeBig = [chatPic];
@@ -947,14 +1212,39 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 :key="item.id"
                                 :label="item.id"
                                 :value="item.id"
-                            />
+                            >
+                                {{ $t(item.nameKey) }}
+                            </el-radio-button>
                         </el-radio-group>
                     </el-form-item>
                     <el-form-item :label="t('botSettings.reqAddr')">
                         <el-input
                             v-model="settings.chatProvider.apiUrl"
                             :disabled="settings.chatProvider.apiUrlDisabled"
+                            @change="refreshChatVendor"
                         />
+                    </el-form-item>
+                    <el-form-item
+                        v-if="
+                            settings.chatProvider.provider.id ==
+                            'OpenAICompatible'
+                        "
+                        :label="t('botSettings.vendor')"
+                    >
+                        <el-select
+                            v-model="chatVendorKey"
+                            @change="applyChatVendorPreset"
+                        >
+                            <el-option
+                                v-for="item in vendorsFor('chat')"
+                                :key="item.key"
+                                :label="$t(item.nameKey)"
+                                :value="item.key"
+                            />
+                        </el-select>
+                        <div class="form-item-help">
+                            {{ $t("botSettings.compatibleApiHint") }}
+                        </div>
                     </el-form-item>
                     <el-form-item
                         :label="$t('botSettings.apiKey')"
@@ -970,6 +1260,14 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             ref="chatModelSelector"
                             v-model="settings.chatProvider.provider.model"
                             :placeholder="$t('botSettings.chooseModel')"
+                            :filterable="
+                                settings.chatProvider.provider.id !=
+                                'HuggingFace'
+                            "
+                            :allow-create="
+                                settings.chatProvider.provider.id !=
+                                'HuggingFace'
+                            "
                         >
                             <el-option
                                 v-for="item in chatModelOptions"
@@ -981,43 +1279,58 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             <template #footer>
                                 <el-button
                                     :disabled="
-                                        settings.chatProvider.provider.id !=
-                                        'Ollama'
+                                        settings.chatProvider.provider.id ==
+                                        'HuggingFace'
                                     "
-                                    v-if="!isAddingAnotherChatOllamaModel"
+                                    v-if="!isAddingAnotherChatModel"
                                     text
                                     bg
-                                    @click="
-                                        isAddingAnotherChatOllamaModel = true
+                                    @click="isAddingAnotherChatModel = true"
+                                >
+                                    {{ $t("botSettings.anotherModel") }}
+                                </el-button>
+                                <!-- 表单本身也要挡住 HuggingFace：只禁用按钮
+                                     不够，表单一旦开着，切到本地模型后它仍在
+                                     渲染，提交进去的模型名会让整个设置保存
+                                     被 serde 拒绝。 -->
+                                <template
+                                    v-else-if="
+                                        settings.chatProvider.provider.id !=
+                                        'HuggingFace'
                                     "
                                 >
-                                    {{ $t("botSettings.anotherOllamaModel") }}
-                                </el-button>
-                                <template v-else>
                                     <el-input
-                                        v-model="anotherChatOllamaModel"
+                                        v-model="anotherChatModel"
                                         :placeholder="$t('botSettings.inputModelName')"
                                         style="margin-bottom: 8px"
                                     />
                                     <el-button
                                         type="primary"
                                         @click="
-                                            addAnotherChatOllamaModel(
-                                                anotherChatOllamaModel,
-                                            )
+                                            addAnotherChatModel(anotherChatModel)
                                         "
                                     >
                                         {{ $t("botSettings.confirm") }}
                                     </el-button>
                                     <el-button
-                                        @click="
-                                            isAddingAnotherChatOllamaModel = false
-                                        "
+                                        @click="isAddingAnotherChatModel = false"
                                         >{{ $t("botSettings.cancelLower") }}</el-button
                                     >
                                 </template>
                             </template>
                         </el-select>
+                        <el-button
+                            v-if="
+                                settings.chatProvider.provider.id ==
+                                'OpenAICompatible'
+                            "
+                            :loading="chatModelListLoading"
+                            :disabled="!settings.chatProvider.apiUrl"
+                            style="margin-left: 8px"
+                            @click="fetchChatModelList"
+                        >
+                            {{ $t("botSettings.fetchModelList") }}
+                        </el-button>
                     </el-form-item>
                     <el-form-item :label="t('botSettings.maxResTokenLen')">
                         <el-input-number
@@ -1154,7 +1467,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 :key="item.id"
                                 :label="item.id"
                                 :value="item.id"
-                            />
+                            >
+                                {{ $t(item.nameKey) }}
+                            </el-radio-button>
                         </el-radio-group>
                     </el-form-item>
                     <el-form-item :label="t('botSettings.reqAddr')">
@@ -1163,7 +1478,30 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             :disabled="
                                 settings.textGenerationProvider.apiUrlDisabled
                             "
+                            @change="refreshTextGenerationVendor"
                         />
+                    </el-form-item>
+                    <el-form-item
+                        v-if="
+                            settings.textGenerationProvider.provider.id ==
+                            'OpenAICompatible'
+                        "
+                        :label="t('botSettings.vendor')"
+                    >
+                        <el-select
+                            v-model="textGenerationVendorKey"
+                            @change="applyTextGenerationVendorPreset"
+                        >
+                            <el-option
+                                v-for="item in vendorsFor('chat')"
+                                :key="item.key"
+                                :label="$t(item.nameKey)"
+                                :value="item.key"
+                            />
+                        </el-select>
+                        <div class="form-item-help">
+                            {{ $t("botSettings.compatibleApiHint") }}
+                        </div>
                     </el-form-item>
                     <el-form-item
                         :label="$t('botSettings.apiKey')"
@@ -1181,6 +1519,14 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 settings.textGenerationProvider.provider.model
                             "
                             :placeholder="$t('botSettings.chooseModel')"
+                            :filterable="
+                                settings.textGenerationProvider.provider.id !=
+                                'HuggingFace'
+                            "
+                            :allow-create="
+                                settings.textGenerationProvider.provider.id !=
+                                'HuggingFace'
+                            "
                         >
                             <el-option
                                 v-for="item in textGenerationModelOptions"
@@ -1193,32 +1539,34 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 <el-button
                                     :disabled="
                                         settings.textGenerationProvider
-                                            .provider.id != 'Ollama'
+                                            .provider.id == 'HuggingFace'
                                     "
-                                    v-if="
-                                        !isAddingAnotherTextGenerationOllamaModel
-                                    "
+                                    v-if="!isAddingAnotherTextGenerationModel"
                                     text
                                     bg
                                     @click="
-                                        isAddingAnotherTextGenerationOllamaModel = true
+                                        isAddingAnotherTextGenerationModel = true
                                     "
                                 >
-                                    {{ $t("botSettings.anotherOllamaModel") }}
+                                    {{ $t("botSettings.anotherModel") }}
                                 </el-button>
-                                <template v-else>
+                                <!-- 同 chat：只禁用按钮不够，表单本身也要挡住。 -->
+                                <template
+                                    v-else-if="
+                                        settings.textGenerationProvider.provider
+                                            .id != 'HuggingFace'
+                                    "
+                                >
                                     <el-input
-                                        v-model="
-                                            anotherTextGenerationOllamaModel
-                                        "
+                                        v-model="anotherTextGenerationModel"
                                         :placeholder="$t('botSettings.inputModelName')"
                                         style="margin-bottom: 8px"
                                     />
                                     <el-button
                                         type="primary"
                                         @click="
-                                            addAnotherTextGenerationOllamaModel(
-                                                anotherTextGenerationOllamaModel,
+                                            addAnotherTextGenerationModel(
+                                                anotherTextGenerationModel,
                                             )
                                         "
                                     >
@@ -1226,13 +1574,25 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                     </el-button>
                                     <el-button
                                         @click="
-                                            isAddingAnotherTextGenerationOllamaModel = false
+                                            isAddingAnotherTextGenerationModel = false
                                         "
                                         >{{ $t("botSettings.cancelLower") }}</el-button
                                     >
                                 </template>
                             </template>
                         </el-select>
+                        <el-button
+                            v-if="
+                                settings.textGenerationProvider.provider.id ==
+                                'OpenAICompatible'
+                            "
+                            :loading="textGenerationModelListLoading"
+                            :disabled="!settings.textGenerationProvider.apiUrl"
+                            style="margin-left: 8px"
+                            @click="fetchTextGenerationModelList"
+                        >
+                            {{ $t("botSettings.fetchModelList") }}
+                        </el-button>
                     </el-form-item>
                     <el-form-item :label="t('botSettings.maxResTokenLen')">
                         <el-input-number
@@ -1390,7 +1750,9 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 :key="item.id"
                                 :label="item.id"
                                 :value="item.id"
-                            />
+                            >
+                                {{ $t(item.nameKey) }}
+                            </el-radio-button>
                         </el-radio-group>
                     </el-form-item>
                     <el-form-item :label="t('botSettings.reqAddr')">
@@ -1399,7 +1761,30 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             :disabled="
                                 settings.sentenceEmbeddingProvider.apiUrlDisabled
                             "
+                            @change="refreshSentenceEmbeddingVendor"
                         />
+                    </el-form-item>
+                    <el-form-item
+                        v-if="
+                            settings.sentenceEmbeddingProvider.provider.id ==
+                            'OpenAICompatible'
+                        "
+                        :label="t('botSettings.vendor')"
+                    >
+                        <el-select
+                            v-model="sentenceEmbeddingVendorKey"
+                            @change="applySentenceEmbeddingVendorPreset"
+                        >
+                            <el-option
+                                v-for="item in vendorsFor('embedding')"
+                                :key="item.key"
+                                :label="$t(item.nameKey)"
+                                :value="item.key"
+                            />
+                        </el-select>
+                        <div class="form-item-help">
+                            {{ $t("botSettings.embeddingApiHint") }}
+                        </div>
                     </el-form-item>
                     <el-form-item
                         :label="$t('botSettings.apiKey')"
@@ -1419,6 +1804,14 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 settings.sentenceEmbeddingProvider.provider.model
                             "
                             :placeholder="$t('botSettings.chooseModel')"
+                            :filterable="
+                                settings.sentenceEmbeddingProvider.provider
+                                    .id != 'HuggingFace'
+                            "
+                            :allow-create="
+                                settings.sentenceEmbeddingProvider.provider
+                                    .id != 'HuggingFace'
+                            "
                         >
                             <el-option
                                 v-for="item in sentenceEmbeddingModelOptions"
@@ -1431,32 +1824,36 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 <el-button
                                     :disabled="
                                         settings.sentenceEmbeddingProvider
-                                            .provider.id != 'Ollama'
+                                            .provider.id == 'HuggingFace'
                                     "
                                     v-if="
-                                        !isAddingAnotherSentenceEmbeddingOllamaModel
+                                        !isAddingAnotherSentenceEmbeddingModel
                                     "
                                     text
                                     bg
                                     @click="
-                                        isAddingAnotherSentenceEmbeddingOllamaModel = true
+                                        isAddingAnotherSentenceEmbeddingModel = true
                                     "
                                 >
-                                    {{ $t("botSettings.anotherOllamaModel") }}
+                                    {{ $t("botSettings.anotherModel") }}
                                 </el-button>
-                                <template v-else>
+                                <!-- 同 chat：只禁用按钮不够，表单本身也要挡住。 -->
+                                <template
+                                    v-else-if="
+                                        settings.sentenceEmbeddingProvider
+                                            .provider.id != 'HuggingFace'
+                                    "
+                                >
                                     <el-input
-                                        v-model="
-                                            anotherSentenceEmbeddingOllamaModel
-                                        "
+                                        v-model="anotherSentenceEmbeddingModel"
                                         :placeholder="$t('botSettings.inputModelName')"
                                         style="margin-bottom: 8px"
                                     />
                                     <el-button
                                         type="primary"
                                         @click="
-                                            addAnotherSentenceEmbeddingOllamaModel(
-                                                anotherSentenceEmbeddingOllamaModel,
+                                            addAnotherSentenceEmbeddingModel(
+                                                anotherSentenceEmbeddingModel,
                                             )
                                         "
                                     >
@@ -1464,13 +1861,27 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                     </el-button>
                                     <el-button
                                         @click="
-                                            isAddingAnotherSentenceEmbeddingOllamaModel = false
+                                            isAddingAnotherSentenceEmbeddingModel = false
                                         "
                                         >{{ $t("botSettings.cancelLower") }}</el-button
                                     >
                                 </template>
                             </template>
                         </el-select>
+                        <el-button
+                            v-if="
+                                settings.sentenceEmbeddingProvider.provider
+                                    .id == 'OpenAICompatible'
+                            "
+                            :loading="sentenceEmbeddingModelListLoading"
+                            :disabled="
+                                !settings.sentenceEmbeddingProvider.apiUrl
+                            "
+                            style="margin-left: 8px"
+                            @click="fetchSentenceEmbeddingModelList"
+                        >
+                            {{ $t("botSettings.fetchModelList") }}
+                        </el-button>
                     </el-form-item>
                     <el-form-item :label="t('botSettings.simThres')">
                         <div class="threshold-row">
