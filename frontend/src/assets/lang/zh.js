@@ -322,7 +322,7 @@ export default {
     hfModelManual: "，或者手动下载后放到 ./data/model/{repo} 目录",
     downloading: "正在下载",
     modelChangedWarning: "句子向量模型已被修改，这可能引起向量维度不匹配问题<strong>（可以重新生成所有句子的向量来解决）</strong>。是否继续？",
-    apiKey: "OpenAI API 密钥",
+    apiKey: "API 密钥",
     smtp: {
       title: "邮件设置",
       host: "主机",

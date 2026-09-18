@@ -350,7 +350,7 @@ export default {
     hfModelManual: ", or you can download manually and put them in ./data/model/{repo}",
     downloading: "Downloading",
     modelChangedWarning: "Sentence embedding model has been changed, this may cause dimension mismatch issue <strong>(You can regenerate all sentences to resolve)</strong>. Continue?",
-    apiKey: "OpenAI API key",
+    apiKey: "API key",
     smtp: {
       title: "Email settings",
       host: "Host",

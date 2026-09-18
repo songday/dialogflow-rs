@@ -1217,13 +1217,6 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             </el-radio-button>
                         </el-radio-group>
                     </el-form-item>
-                    <el-form-item :label="t('botSettings.reqAddr')">
-                        <el-input
-                            v-model="settings.chatProvider.apiUrl"
-                            :disabled="settings.chatProvider.apiUrlDisabled"
-                            @change="refreshChatVendor"
-                        />
-                    </el-form-item>
                     <el-form-item
                         v-if="
                             settings.chatProvider.provider.id ==
@@ -1245,6 +1238,13 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                         <div class="form-item-help">
                             {{ $t("botSettings.compatibleApiHint") }}
                         </div>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.reqAddr')">
+                        <el-input
+                            v-model="settings.chatProvider.apiUrl"
+                            :disabled="settings.chatProvider.apiUrlDisabled"
+                            @change="refreshChatVendor"
+                        />
                     </el-form-item>
                     <el-form-item
                         :label="$t('botSettings.apiKey')"
@@ -1472,15 +1472,6 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             </el-radio-button>
                         </el-radio-group>
                     </el-form-item>
-                    <el-form-item :label="t('botSettings.reqAddr')">
-                        <el-input
-                            v-model="settings.textGenerationProvider.apiUrl"
-                            :disabled="
-                                settings.textGenerationProvider.apiUrlDisabled
-                            "
-                            @change="refreshTextGenerationVendor"
-                        />
-                    </el-form-item>
                     <el-form-item
                         v-if="
                             settings.textGenerationProvider.provider.id ==
@@ -1502,6 +1493,15 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                         <div class="form-item-help">
                             {{ $t("botSettings.compatibleApiHint") }}
                         </div>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.reqAddr')">
+                        <el-input
+                            v-model="settings.textGenerationProvider.apiUrl"
+                            :disabled="
+                                settings.textGenerationProvider.apiUrlDisabled
+                            "
+                            @change="refreshTextGenerationVendor"
+                        />
                     </el-form-item>
                     <el-form-item
                         :label="$t('botSettings.apiKey')"
@@ -1755,15 +1755,6 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             </el-radio-button>
                         </el-radio-group>
                     </el-form-item>
-                    <el-form-item :label="t('botSettings.reqAddr')">
-                        <el-input
-                            v-model="settings.sentenceEmbeddingProvider.apiUrl"
-                            :disabled="
-                                settings.sentenceEmbeddingProvider.apiUrlDisabled
-                            "
-                            @change="refreshSentenceEmbeddingVendor"
-                        />
-                    </el-form-item>
                     <el-form-item
                         v-if="
                             settings.sentenceEmbeddingProvider.provider.id ==
@@ -1785,6 +1776,15 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                         <div class="form-item-help">
                             {{ $t("botSettings.embeddingApiHint") }}
                         </div>
+                    </el-form-item>
+                    <el-form-item :label="t('botSettings.reqAddr')">
+                        <el-input
+                            v-model="settings.sentenceEmbeddingProvider.apiUrl"
+                            :disabled="
+                                settings.sentenceEmbeddingProvider.apiUrlDisabled
+                            "
+                            @change="refreshSentenceEmbeddingVendor"
+                        />
                     </el-form-item>
                     <el-form-item
                         :label="$t('botSettings.apiKey')"
