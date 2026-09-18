@@ -1,5 +1,5 @@
 rem npm run build
 pnpm build
-copy /Y src\assets\DialogFlowAiSDK.js ..\sdk\javascript\.
+copy /Y public\assets\DialogFlowAiSDK.min.js ..\sdk\javascript\.
 del /S /Q ..\src\resources\assets\*
 xcopy /S dist\* ..\src\resources\assets\.
