@@ -1,12 +1,14 @@
 //! Incremental parsing of streamed LLM answers.
 //!
-//! Both `chat.rs` (the dialog flow) and `completion.rs` (text generation) read
-//! provider responses with `bytes_stream()`. The items that stream yields are
-//! arbitrary byte fragments: they can carry several events, half an event, or a
-//! fragment that ends in the middle of a UTF-8 character. Parsing them one by
-//! one as if each were a complete JSON document is what the old code did, and
-//! it aborted the whole generation on the first fragment that did not happen to
-//! line up. Everything here is byte-buffered so chunk boundaries never matter.
+//! Every online provider is now spoken to over the OpenAI-compatible
+//! `/v1/chat/completions` shape, so this is the only framing left (Ollama's
+//! native `/api/chat` NDJSON went with its provider). The items that
+//! `bytes_stream()` yields are arbitrary byte fragments: they can carry several
+//! events, half an event, or a fragment that ends in the middle of a UTF-8
+//! character. Parsing them one by one as if each were a complete JSON document
+//! is what the old code did, and it aborted the whole generation on the first
+//! fragment that did not happen to line up. Everything here is byte-buffered so
+//! chunk boundaries never matter.
 
 use std::vec::Vec;
 
@@ -75,19 +77,9 @@ impl LineBuffer {
     }
 }
 
-/// How a provider frames its incremental answer.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum DeltaFormat {
-    /// OpenAI-compatible `/v1/chat/completions` with `stream: true`.
-    OpenAi,
-    /// Ollama `/api/chat`.
-    OllamaChat,
-}
-
 /// Turns raw response chunks into ordered text deltas.
 pub(crate) struct DeltaStream {
     lines: LineBuffer,
-    format: DeltaFormat,
     /// Payloads of the `data:` lines seen since the last blank line. SSE allows
     /// an event to span several of them; they are joined with `\n` on dispatch.
     event: String,
@@ -95,17 +87,16 @@ pub(crate) struct DeltaStream {
 }
 
 impl DeltaStream {
-    pub(crate) fn new(format: DeltaFormat) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             lines: LineBuffer::new(MAX_LINE),
-            format,
             event: String::new(),
             done: false,
         }
     }
 
-    /// Whether the provider signalled the end of the answer (`[DONE]`, or
-    /// Ollama's `done: true`), letting the caller stop reading early.
+    /// Whether the provider signalled the end of the answer (`[DONE]`), letting
+    /// the caller stop reading early.
     pub(crate) fn is_done(&self) -> bool {
         self.done
     }
@@ -129,14 +120,7 @@ impl DeltaStream {
         // A server that closes right after its last payload leaves a line with
         // no `\n` on the end. Treat it as a line anyway.
         if let Some(line) = self.lines.take_rest() {
-            match self.format {
-                DeltaFormat::OpenAi => self.open_ai_line(&line, &mut out),
-                DeltaFormat::OllamaChat => {
-                    if let Some(t) = self.payload_delta(&line) {
-                        out.push(t);
-                    }
-                }
-            }
+            self.open_ai_line(&line, &mut out);
         }
         // ...and an event whose payload lines were seen but whose closing blank
         // line never arrived.
@@ -155,17 +139,7 @@ impl DeltaStream {
             if self.done {
                 break;
             }
-            match self.format {
-                DeltaFormat::OpenAi => self.open_ai_line(&line, &mut out),
-                DeltaFormat::OllamaChat => {
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    if let Some(t) = self.payload_delta(&line) {
-                        out.push(t);
-                    }
-                }
-            }
+            self.open_ai_line(&line, &mut out);
         }
         Ok(out)
     }
@@ -227,24 +201,13 @@ impl DeltaStream {
             self.done = true;
             return None;
         }
-        if self.format != DeltaFormat::OpenAi
-            && value
-                .get("done")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        {
-            self.done = true;
-        }
-        let text = match self.format {
-            DeltaFormat::OpenAi => value
-                .get("choices")?
-                .as_array()?
-                .first()?
-                .get("delta")?
-                .get("content")?
-                .as_str()?,
-            DeltaFormat::OllamaChat => value.get("message")?.get("content")?.as_str()?,
-        };
+        let text = value
+            .get("choices")?
+            .as_array()?
+            .first()?
+            .get("delta")?
+            .get("content")?
+            .as_str()?;
         if text.is_empty() {
             return None;
         }
@@ -275,12 +238,12 @@ mod tests {
     /// Every delta produced by feeding `chunks` one at a time must equal the
     /// deltas produced by feeding the same bytes whole. Chunk boundaries are
     /// the network's choice, not ours, so this is the property that matters.
-    fn assert_chunking_is_irrelevant(format: DeltaFormat, bytes: &[u8]) -> Vec<String> {
-        let mut whole = DeltaStream::new(format);
+    fn assert_chunking_is_irrelevant(bytes: &[u8]) -> Vec<String> {
+        let mut whole = DeltaStream::new();
         let mut expected: Vec<String> = whole.push(bytes).unwrap();
         expected.extend(whole.finish().unwrap());
 
-        let mut split = DeltaStream::new(format);
+        let mut split = DeltaStream::new();
         let mut actual: Vec<String> = Vec::new();
         for b in bytes {
             actual.extend(split.push(&[*b]).unwrap());
@@ -297,7 +260,7 @@ mod tests {
 
     #[test]
     fn open_ai_reads_deltas_across_blank_lines() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         let out = s
             .push(open_ai_event("Hel").as_bytes())
             .unwrap()
@@ -312,7 +275,7 @@ mod tests {
         let bytes = open_ai_event("hi").into_bytes();
         let (a, rest) = bytes.split_at(7);
         let (b, c) = rest.split_at(9);
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         let mut out = s.push(a).unwrap();
         out.extend(s.push(b).unwrap());
         out.extend(s.push(c).unwrap());
@@ -326,7 +289,7 @@ mod tests {
         for text in ["好", "𝄞", "a好b"] {
             let bytes = open_ai_event(text).into_bytes();
             assert_eq!(
-                assert_chunking_is_irrelevant(DeltaFormat::OpenAi, &bytes),
+                assert_chunking_is_irrelevant(&bytes),
                 vec![text],
             );
         }
@@ -334,7 +297,7 @@ mod tests {
 
     #[test]
     fn carriage_return_and_newline_in_different_chunks() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         let a = b"data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\r";
         let b = b"\n\r\n";
         assert!(s.push(a).unwrap().is_empty());
@@ -344,7 +307,7 @@ mod tests {
     /// SSE permits an event to span several `data:` lines, joined with `\n`.
     #[test]
     fn multiple_data_lines_form_one_event() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         let out = s
             .push(b"data: {\"choices\":[{\"delta\":\ndata: {\"content\":\"x\"}}]}\n\n")
             .unwrap();
@@ -354,7 +317,7 @@ mod tests {
     /// Comments are keep-alives, often sent while a reasoning model is silent.
     #[test]
     fn comment_lines_are_ignored() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         let mut out = s.push(b": OPENROUTER PROCESSING\n\n").unwrap();
         out.extend(s.push(open_ai_event("x").as_bytes()).unwrap());
         assert_eq!(out, vec!["x"]);
@@ -362,7 +325,7 @@ mod tests {
 
     #[test]
     fn done_marker_ends_the_stream() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         let out = s
             .push(b"data: [DONE]\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"late\"}}]}\n\n")
             .unwrap();
@@ -375,7 +338,7 @@ mod tests {
     fn bare_ndjson_objects_are_accepted() {
         let bytes = b"{\"choices\":[{\"delta\":{\"content\":\"a\"}}]}\n{\"choices\":[{\"delta\":{\"content\":\"b\"}}]}\n";
         assert_eq!(
-            assert_chunking_is_irrelevant(DeltaFormat::OpenAi, bytes),
+            assert_chunking_is_irrelevant(bytes),
             vec!["a", "b"],
         );
     }
@@ -383,7 +346,7 @@ mod tests {
     /// The old code returned an error here and lost the entire answer.
     #[test]
     fn unparseable_line_is_skipped_not_fatal() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         let mut out = s.push(b"data: not json at all\n\n").unwrap();
         out.extend(s.push(open_ai_event("kept").as_bytes()).unwrap());
         assert_eq!(out, vec!["kept"]);
@@ -391,26 +354,11 @@ mod tests {
 
     #[test]
     fn provider_error_stops_the_stream() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         let out = s
             .push(b"data: {\"error\":{\"message\":\"invalid api key\"}}\n\n")
             .unwrap();
         assert!(out.is_empty());
-        assert!(s.is_done());
-    }
-
-    /// Ollama ends with a `done: true` object whose content is empty; that
-    /// must terminate the stream rather than produce an empty delta.
-    #[test]
-    fn ollama_chat_reads_content_and_stops_on_done() {
-        let mut s = DeltaStream::new(DeltaFormat::OllamaChat);
-        let mut out = s.push(b"{\"message\":{\"content\":\"Hel\"},\"done\":false}\n").unwrap();
-        out.extend(s.push(b"{\"message\":{\"content\":\"lo\"},\"done\":false}\n").unwrap());
-        out.extend(
-            s.push(b"{\"message\":{\"content\":\"\"},\"done\":true}\n")
-                .unwrap(),
-        );
-        assert_eq!(out, vec!["Hel", "lo"]);
         assert!(s.is_done());
     }
 
@@ -419,7 +367,7 @@ mod tests {
     /// newline at all.
     #[test]
     fn finish_flushes_an_unterminated_final_event() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         assert!(
             s.push(b"data: {\"choices\":[{\"delta\":{\"content\":\"half\"}}]}\n")
                 .unwrap()
@@ -428,7 +376,7 @@ mod tests {
         assert_eq!(s.finish().unwrap(), vec!["half"]);
         assert!(s.finish().unwrap().is_empty(), "finish must be idempotent");
 
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         assert!(
             s.push(b"data: {\"choices\":[{\"delta\":{\"content\":\"tail\"}}]}")
                 .unwrap()
@@ -442,7 +390,7 @@ mod tests {
     /// leave anything behind for the next `finish`.
     #[test]
     fn finish_tolerates_a_truncated_final_line() {
-        let mut s = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut s = DeltaStream::new();
         assert!(s.push(b"data: {\"choices\":[{\"delta\":{\"conte").unwrap().is_empty());
         assert!(s.finish().unwrap().is_empty());
         assert!(s.finish().unwrap().is_empty());

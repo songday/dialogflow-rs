@@ -294,7 +294,7 @@ export default {
     anotherModel: "添加自定义模型名",
     vendor: "厂商",
     compatibleApiHint:
-        "填写 OpenAI 兼容的完整接口地址，形如 https://…/v1/chat/completions（Ollama 用原生的 http://localhost:11434/api/chat）。下方可直接选择常见厂商并自动填入地址。API Key 以明文保存在本地，切换厂商时不会自动清除。",
+        "填写 OpenAI 兼容的完整接口地址，形如 https://…/v1/chat/completions（本机 Ollama 是 http://localhost:11434/v1/chat/completions）。下方可直接选择常见厂商并自动填入地址。API Key 以明文保存在本地，切换厂商时不会自动清除。",
     embeddingApiHint:
         "填写 OpenAI 兼容的 Embeddings 接口地址，形如 https://…/v1/embeddings。",
     fetchModelList: "获取模型列表",

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::stream::{DeltaFormat, DeltaStream};
+use super::stream::DeltaStream;
 use crate::ai::huggingface::{HuggingFaceModel, LoadedHuggingFaceModel};
 use crate::flow::rt::dto::StreamingResponseData;
 use crate::man::settings;
@@ -100,10 +100,10 @@ pub(crate) enum ChatProvider {
     HuggingFace(HuggingFaceModel),
     /// 兼容老记录的两个名字：
     /// - `OpenAI`：2026-09-17 之前这个变体叫这个名字；
-    /// - `Ollama`：UI 里曾经有第三个"Ollama"选项，它对应的是**原生**端点，
-    ///   那条路现在由 `api_url` 选中（`is_ollama_chat_url`），不再需要一个
-    ///   单独的变体。老记录的 `apiUrl` 就是 `http://localhost:11434/api/chat`，
-    ///   所以别名过来之后照样走原生实现。
+    /// - `Ollama`：UI 里曾经有第三个"Ollama"选项，它指向 Ollama 的原生端点
+    ///   （`/api/chat`）。原生路径已经并进这条统一的 OpenAI 兼容路径，老记录里
+    ///   的那种地址由 `settings::unify_legacy_api_url` 在读写设置时挪到同一个
+    ///   host 上的 `/v1/chat/completions`，所以请求形状仍然正确。
     ///
     /// 两个别名都可以在所有实例保存过一次设置后删掉。
     #[serde(alias = "OpenAI", alias = "Ollama")]
@@ -141,44 +141,19 @@ pub(crate) async fn chat(
                 Ok(())
             }
             ChatProvider::OpenAICompatible(m) => {
-                let connect_timeout =
-                    connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis);
-                let read_timeout =
-                    read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis);
-                // Ollama 的原生对话端点和 OpenAI 协议不是一套东西：token 上限在
-                // `options.num_predict` 而不是 `max_tokens`，图片是裸 base64 而不是
-                // content parts，回来的是 NDJSON 而不是 SSE。所以按**地址**决定走哪条
-                // 实现——UI 里的厂商本来就是从地址反查的，两者不可能不一致，老记录
-                // 里指向 `.../v1/chat/completions` 的 Ollama 也照旧走 OpenAI 兼容分支。
-                if is_ollama_chat_url(&settings.chat_provider.api_url) {
-                    ollama(
-                        &settings.chat_provider.api_url,
-                        &m,
-                        chat_history,
-                        media,
-                        &settings.chat_provider.api_key,
-                        connect_timeout,
-                        read_timeout,
-                        &settings.chat_provider.proxy_url,
-                        settings.chat_provider.max_response_token_length,
-                        result_sender,
-                    )
-                    .await?;
-                } else {
-                    open_ai_compatible(
-                        &m,
-                        chat_history,
-                        media,
-                        &settings.chat_provider.api_url,
-                        &settings.chat_provider.api_key,
-                        settings.chat_provider.max_response_token_length,
-                        connect_timeout,
-                        read_timeout,
-                        &settings.chat_provider.proxy_url,
-                        result_sender,
-                    )
-                    .await?;
-                }
+                open_ai_compatible(
+                    &m,
+                    chat_history,
+                    media,
+                    &settings.chat_provider.api_url,
+                    &settings.chat_provider.api_key,
+                    settings.chat_provider.max_response_token_length,
+                    connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis),
+                    read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis),
+                    &settings.chat_provider.proxy_url,
+                    result_sender,
+                )
+                .await?;
                 Ok(())
             }
         }
@@ -231,14 +206,6 @@ fn parse_prompt(s: &str) -> Vec<Prompt> {
     // `sort_by_key` 是稳定排序，system 之间的相对顺序不变。
     prompts.sort_by_key(|p| !p.role.eq("system"));
     prompts
-}
-
-/// 地址是不是 Ollama 的原生对话端点。
-///
-/// 只看路径不看主机：远程 Ollama（`http://192.168.x.x:11434/api/chat`）和本机
-/// 一样常见，而 `/api/chat` 这个路径是 Ollama 特有的。
-fn is_ollama_chat_url(u: &str) -> bool {
-    u.trim().trim_end_matches('/').ends_with("/api/chat")
 }
 
 fn huggingface(
@@ -460,7 +427,7 @@ async fn open_ai_compatible(
         // `bytes_stream()` yields arbitrary fragments: several events, half an
         // event, or one ending mid-character. DeltaStream buffers them so only
         // complete payloads are dispatched.
-        let mut deltas = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut deltas = DeltaStream::new();
         let mut stream = res.bytes_stream();
         while let Some(item) = stream.next().await {
             for delta in deltas.push(item?.as_ref())? {
@@ -489,125 +456,6 @@ async fn open_ai_compatible(
             .and_then(Value::as_str)
         {
             log::info!("OpenAI returned {content}");
-            result_sender.push_delta(String::from(content));
-        }
-    }
-    Ok(())
-}
-
-async fn ollama(
-    u: &str,
-    m: &str,
-    // s: &str,
-    chat_history: Option<Vec<Prompt>>,
-    media: Option<&crate::ai::dto::UserMediaData>,
-    api_key: &str,
-    connect_timeout_millis: u32,
-    read_timeout_millis: u32,
-    proxy_url: &str,
-    sample_len: u32,
-    mut result_sender: ResultSender<'_, StreamingResponseData>,
-) -> Result<()> {
-    let client = crate::external::http::get_client(
-        connect_timeout_millis.into(),
-        read_timeout_millis.into(),
-        proxy_url,
-    )?;
-    let mut req_body = Map::new();
-    req_body.insert(String::from("model"), Value::String(String::from(m)));
-    req_body.insert(
-        String::from("stream"),
-        Value::Bool(result_sender.is_streaming()),
-    );
-
-    let empty_media = crate::ai::dto::UserMediaData::default();
-    let media = media.unwrap_or(&empty_media);
-    let messages: Vec<Value> = match chat_history {
-        Some(h) if !h.is_empty() => {
-            let mut d = Vec::with_capacity(h.len() + 1);
-            let mut seen_user = false;
-            for p in h.into_iter() {
-                let is_user = p.role.eq("user");
-                if p.content.is_empty() && !(is_user && !media.is_empty() && !seen_user) {
-                    continue;
-                }
-                let mut map = Map::new();
-                map.insert("role".into(), Value::String(p.role.clone()));
-                map.insert("content".into(), Value::String(p.content));
-                // Ollama expects raw base64 (no data URI prefix) in "images",
-                // attached to the last user message.
-                if is_user && !media.is_empty() && !seen_user {
-                    seen_user = true;
-                    let images: Vec<Value> = media
-                        .images
-                        .iter()
-                        .map(|img| {
-                            Value::String(match img.split_once(",") {
-                                Some((prefix, rest)) if prefix.starts_with("data:") => {
-                                    String::from(rest)
-                                }
-                                _ => img.clone(),
-                            })
-                        })
-                        .collect();
-                    map.insert("images".into(), Value::Array(images));
-                }
-                d.push(Value::from(map));
-            }
-            d
-        }
-        _ => Vec::with_capacity(1),
-    };
-    req_body.insert(String::from("messages"), Value::Array(messages));
-
-    let mut num_predict = Map::new();
-    num_predict.insert(String::from("num_predict"), Value::from(sample_len));
-    req_body.insert(String::from("options"), Value::from(num_predict));
-
-    let obj = Value::Object(req_body);
-    let body = serde_json::to_string(&obj)?;
-    log::info!("Request Ollama body {}", &body);
-    let mut req = client.post(u).header("Content-Type", "application/json");
-    // Ollama 自己不看这个头，但把模型放在网关/鉴权代理后面的（以及 Ollama 云）
-    // 需要它；界面上的 API Key 输入框就在这一项下面，配了却不发等于骗人。
-    if !api_key.is_empty() {
-        req = req.header("Authorization", format!("Bearer {api_key}"));
-    }
-    let res = req.body(body).send().await?;
-    let status = res.status();
-    if !status.is_success() {
-        let body = res.text().await.unwrap_or_default();
-        return Err(Error::WithMessage(format!(
-            "Ollama endpoint {u} returned {status}: {body}"
-        )));
-    }
-    if result_sender.is_streaming() {
-        let mut deltas = DeltaStream::new(DeltaFormat::OllamaChat);
-        let mut stream = res.bytes_stream();
-        while let Some(item) = stream.next().await {
-            for delta in deltas.push(item?.as_ref())? {
-                if !result_sender.push_delta(delta) {
-                    log::warn!("Ollama stream receiver is gone, stopping generation.");
-                    return Ok(());
-                }
-            }
-            if deltas.is_done() {
-                break;
-            }
-        }
-        for delta in deltas.finish()? {
-            if !result_sender.push_delta(delta) {
-                return Ok(());
-            }
-        }
-    } else {
-        let v: Value = serde_json::from_slice(res.bytes().await?.as_ref())?;
-        if let Some(content) = v
-            .get("message")
-            .and_then(|m| m.get("content"))
-            .and_then(Value::as_str)
-        {
-            log::info!("Ollama returned {content}");
             result_sender.push_delta(String::from(content));
         }
     }
@@ -817,85 +665,59 @@ mod tests {
         );
     }
 
-    /// 走 Ollama 原生端点时线上的形状和 OpenAI 兼容那条完全不同：token 上限在
-    /// `options.num_predict`，图片是裸 base64。这条实现由地址（`/api/chat`）选中，
-    /// 所以这个测试同时锁住了"为什么值得为它分一条路"。
+    /// 视觉消息的形状：OpenAI 的 content parts，图片是 `data:` URI。
+    ///
+    /// 这是我们和 Ollama 兼容端点之间唯一的"非默认"约定，所以值得锁住：官方
+    /// 兼容性文档标明 Vision ✓ 且只支持 base64（不支持图片 URL），上游
+    /// `openai/openai.go` 的 `decodeImageURL` 也只认
+    /// `data:image/{png,jpg,jpeg,webp};base64,`。
     #[tokio::test]
-    async fn ollama_native_endpoint_sends_options_and_raw_base64_images() {
-        let body = "{\"message\":{\"content\":\"hi\"},\"done\":false}\n\
-                    {\"message\":{\"content\":\"\"},\"done\":true}\n";
-        let head = String::from(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n",
-        );
-        let (url, request) = serve_capturing("/api/chat", head, body).await;
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    async fn vision_goes_out_as_content_parts_with_a_data_uri() {
+        let body = format!("{}data: [DONE]\n\n", sse_event("ok"));
+        let (url, request) = serve_capturing("/v1/chat/completions", sse_head(), &body).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut answer = String::new();
-        // `UserMediaData` 存的可能是 data URI，Ollama 只吃逗号后面那段。
         let media = crate::ai::dto::UserMediaData {
             images: vec![String::from("data:image/png;base64,QUJD")],
         };
-        ollama(
-            &url,
-            "llava",
+        open_ai_compatible(
+            "qwen3-vl:8b",
             prompt(),
             Some(&media),
+            &url,
             "test-key",
-            3_331,
-            9_991,
+            1_000,
+            3_339,
+            9_939,
             "",
-            4_242,
             ResultSender::ChannelSender(SenderWrapper::new(tx, 0), &mut answer),
         )
         .await
         .unwrap();
-        assert_eq!(answer, "hi");
-        assert_eq!(drain(&mut rx), vec!["hi"]);
 
         let request = request.await.unwrap();
-        assert!(
-            request.starts_with("POST /api/chat "),
-            "the configured path must be used: {request}"
-        );
-        // Ollama 本身不校验这个头，但网关/鉴权代理和 Ollama 云需要它。
-        assert!(
-            request.to_lowercase().contains("authorization: bearer test-key"),
-            "the configured key must be sent: {request}"
-        );
         let body = request.split("\r\n\r\n").nth(1).unwrap_or_default();
         assert!(
-            body.contains("\"num_predict\":4242"),
-            "Ollama takes the cap in options.num_predict: {body}"
+            body.contains(r#""image_url":{"url":"data:image/png;base64,QUJD"}"#),
+            "the image must be an OpenAI content part carrying a data URI: {body}"
         );
         assert!(
-            !body.contains("max_tokens"),
-            "max_tokens is an OpenAI field and Ollama ignores it: {body}"
+            body.contains(r#""type":"text""#),
+            "the text must stay next to the image: {body}"
         );
         assert!(
-            body.contains("\"images\":[\"QUJD\"]"),
-            "Ollama wants bare base64 without the data URI prefix: {body}"
+            !body.contains(r#""images""#),
+            "the native Ollama `images` array is gone with its provider: {body}"
         );
-    }
-
-    /// 只有 Ollama 的原生对话地址才选中那条实现；`/v1/chat/completions`
-    /// （Ollama 的兼容端点，以及所有别的厂商）继续走 OpenAI 兼容分支。
-    #[test]
-    fn only_ollama_native_urls_select_the_ollama_path() {
-        assert!(is_ollama_chat_url("http://localhost:11434/api/chat"));
-        assert!(is_ollama_chat_url("http://192.168.1.9:11434/api/chat/"));
-        assert!(is_ollama_chat_url("  http://localhost:11434/api/chat  "));
-        assert!(!is_ollama_chat_url(
-            "http://localhost:11434/v1/chat/completions"
-        ));
-        assert!(!is_ollama_chat_url("https://api.deepseek.com/v1/chat/completions"));
-        assert!(!is_ollama_chat_url(""));
     }
 
     /// 老记录必须还能读进来：反序列化失败不是"少一个选项"，而是 `get_settings`
     /// 直接返回 Err、设置页整个打不开（老 `OpenAI` 那个坑就是这么来的）。
     ///
     /// `Ollama` 这条尤其要紧：UI 里已经没有这个选项，但历史记录存的是
-    /// `{"id":"Ollama"}` 加上 `apiUrl = http://localhost:11434/api/chat`，
-    /// 别名接过来之后由**地址**选中原生实现，行为不变。
+    /// `{"id":"Ollama"}` 加上 `apiUrl = http://localhost:11434/api/chat`。
+    /// 别名接过来之后，地址由 `settings::unify_legacy_api_url` 在读写设置时
+    /// 挪到同一个 host 上的 `/v1/chat/completions`，所以请求形状仍然正确。
     #[test]
     fn legacy_provider_ids_still_deserialize() {
         let p: ChatProvider = serde_json::from_str(r#"{"id":"Ollama","model":"llama3"}"#).unwrap();

@@ -428,14 +428,14 @@ const compatibleVendors = [
         chatUrl: "https://openrouter.ai/api/v1/chat/completions",
         chatModels: ["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet"],
     },
-    // 对话走 Ollama 的**原生**端点 `/api/chat`：后端按地址选实现，这条路上的
-    // token 上限用 `options.num_predict`、图片是裸 base64，比兼容端点更贴 Ollama。
-    // 向量仍然用 `/v1/embeddings`（那边是标准形状，且本区块没做过原生分支）。
-    // 老记录里指向 `.../v1/chat/completions` 的 Ollama 也照常能用——同样是按地址分的。
+    // Ollama 从 v0.1.24 起提供 OpenAI 兼容端点，官方文档明确支持流式、`max_tokens`
+    // 和 base64 图片（`image_url` 的字符串和对象两种写法都收），所以我们走统一的
+    // `/v1/chat/completions`，不再单开一条原生 `/api/chat` 的路径。
+    // 向量同理走 `/v1/embeddings`。
     {
         key: "ollama",
         nameKey: "botSettings.vendorOllama",
-        chatUrl: "http://localhost:11434/api/chat",
+        chatUrl: "http://localhost:11434/v1/chat/completions",
         chatModels: [],
         embedUrl: "http://localhost:11434/v1/embeddings",
         embedModels: ["nomic-embed-text", "bge-m3", "mxbai-embed-large"],

@@ -322,7 +322,7 @@ export default {
     anotherModel: "Add a custom model name",
     vendor: "Vendor",
     compatibleApiHint:
-        "Enter the full OpenAI-compatible endpoint, e.g. https://…/v1/chat/completions (Ollama uses its native http://localhost:11434/api/chat). Pick a vendor below to fill the address in. The API key is stored locally in plain text and is not cleared when you switch vendors.",
+        "Enter the full OpenAI-compatible endpoint, e.g. https://…/v1/chat/completions (a local Ollama is http://localhost:11434/v1/chat/completions). Pick a vendor below to fill the address in. The API key is stored locally in plain text and is not cleared when you switch vendors.",
     embeddingApiHint:
         "Enter the full OpenAI-compatible embeddings endpoint, e.g. https://…/v1/embeddings.",
     fetchModelList: "Fetch models",

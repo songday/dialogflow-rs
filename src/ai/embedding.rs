@@ -17,40 +17,33 @@ use crate::result::{Error, Result};
 #[serde(tag = "id", content = "model")]
 pub(crate) enum SentenceEmbeddingProvider {
     HuggingFace(HuggingFaceModel),
-    /// 兼容 2026-09-17 之前存的记录（那时这个变体叫 `OpenAI`）。
-    /// 等所有实例都保存过一次设置后即可删掉这行。
-    #[serde(alias = "OpenAI")]
+    /// 兼容老记录的两个名字：
+    /// - `OpenAI`：2026-09-17 之前这个变体叫这个名字；
+    /// - `Ollama`：UI 里曾经有第三个"Ollama"选项，指向 Ollama 的原生
+    ///   `/api/embeddings`。原生路径已经并进这条统一的兼容路径，老记录里的那种
+    ///   地址由 `settings::unify_legacy_api_url` 在读写设置时挪到同一个 host 上的
+    ///   `/v1/embeddings`（形状也不同：`prompt` + `embedding` vs
+    ///   `input` + `data[].embedding`）。
+    ///
+    /// 两个别名都可以在所有实例保存过一次设置后删掉。
+    #[serde(alias = "OpenAI", alias = "Ollama")]
     OpenAICompatible(String),
-    Ollama(String),
 }
 
 pub(crate) async fn embedding(robot_id: &str, s: &str) -> Result<(Vec<f32>, f32)> {
     if let Some(settings) = settings::get_settings(robot_id).await? {
         let v = match settings.sentence_embedding_provider.provider {
             SentenceEmbeddingProvider::HuggingFace(m) => hugging_face(robot_id, &m.get_info(), s),
-            SentenceEmbeddingProvider::OpenAICompatible(m) => {
-                open_ai_compatible(
-                    &m,
-                    s,
-                    &settings.sentence_embedding_provider.api_url,
-                    &settings.sentence_embedding_provider.api_key,
-                    settings.sentence_embedding_provider.connect_timeout_millis,
-                    settings.sentence_embedding_provider.read_timeout_millis,
-                    &settings.sentence_embedding_provider.proxy_url,
-                )
-                .await
-            }
-            SentenceEmbeddingProvider::Ollama(m) => {
-                ollama(
-                    &settings.sentence_embedding_provider.api_url,
-                    &m,
-                    s,
-                    settings.sentence_embedding_provider.connect_timeout_millis,
-                    settings.sentence_embedding_provider.read_timeout_millis,
-                    &settings.sentence_embedding_provider.proxy_url,
-                )
-                .await
-            }
+            SentenceEmbeddingProvider::OpenAICompatible(m) => open_ai_compatible(
+                &m,
+                s,
+                &settings.sentence_embedding_provider.api_url,
+                &settings.sentence_embedding_provider.api_key,
+                settings.sentence_embedding_provider.connect_timeout_millis,
+                settings.sentence_embedding_provider.read_timeout_millis,
+                &settings.sentence_embedding_provider.proxy_url,
+            )
+            .await,
         }?;
         Ok((v, settings.sentence_embedding_provider.similarity_threshold))
     } else {
@@ -185,57 +178,6 @@ async fn open_ai_compatible(
             }
         }
     }
-    Ok(embedding_result)
-}
-
-async fn ollama(
-    u: &str,
-    m: &str,
-    s: &str,
-    connect_timeout_millis: u32,
-    read_timeout_millis: u32,
-    proxy_url: &str,
-) -> Result<Vec<f32>> {
-    let client = crate::external::http::get_client(
-        connect_timeout_millis.into(),
-        read_timeout_millis.into(),
-        proxy_url,
-    )?;
-    let mut map = Map::new();
-    map.insert(String::from("prompt"), Value::String(String::from(s)));
-    map.insert(String::from("model"), Value::String(String::from(m)));
-    let obj = Value::Object(map);
-    let body = serde_json::to_string(&obj)?;
-    // log::info!("Url {} Body {}", &u, &body);
-    let req = client
-        .post(u)
-        .header("Content-Type", "application/json")
-        .body(body);
-    let r = req.send().await?.text().await?;
-    if r.len() < 10 {
-        // log::info!("Response {}",&r);
-        return Err(Error::WithMessage(String::from("Invalid Ollama response.")));
-    }
-    // log::info!("Ollama embedding result {}", &r[0..50]);
-    // log::info!("Ollama embedding result {}", &r);
-    let v: Value = serde_json::from_str(&r)?;
-    let mut embedding_result: Vec<f32> = Vec::with_capacity(3072);
-    if let Some(embedding) = v["embedding"].as_array() {
-        for e in embedding.iter() {
-            if let Some(n) = e.as_number() {
-                if let Some(num) = n.as_f64() {
-                    // let s = format!("{:.9}", num);
-                    // embedding_result.push(s.parse::<f32>()?);
-                    embedding_result.push(num as f32);
-                }
-            }
-        }
-    }
-    // log::info!(
-    //     "Ollama embedding result {:?} {:?}",
-    //     embedding_result.get(0),
-    //     embedding_result.get(1)
-    // );
     Ok(embedding_result)
 }
 
