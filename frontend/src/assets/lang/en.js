@@ -333,6 +333,7 @@ export default {
     vendorZhipu: "Zhipu GLM",
     vendorQwen: "Qwen",
     vendorMoonshot: "Moonshot Kimi",
+    vendorMinimax: "MiniMax",
     vendorSiliconFlow: "SiliconFlow",
     vendorGroq: "Groq",
     vendorOpenRouter: "OpenRouter",

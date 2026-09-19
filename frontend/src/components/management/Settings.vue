@@ -408,6 +408,29 @@ const compatibleVendors = [
         chatUrl: "https://api.moonshot.cn/v1/chat/completions",
         chatModels: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
     },
+    // MiniMax 的 OpenAI 兼容端点在 api.minimax.io（国际版）/ api.minimaxi.com
+    // （中国大陆版，注意域名末尾多一个 i），两者按账号区域划分，密钥不通用。
+    // 这里填国际版；国内账号把域名换成 api.minimaxi.com 即可，路径不变。
+    //
+    // 只有对话端点，**没有 embeddings**：MiniMax 没有 OpenAI 兼容的向量接口
+    // （它的 embedding 走原生 /v1/embeddings，请求体是 texts 而不是 input）。
+    // 于是这里不写 embedUrl，向量区块的厂商列表里自然就不会出现 MiniMax，
+    // 与 moonshot / groq / openrouter 一致。
+    {
+        key: "minimax",
+        nameKey: "botSettings.vendorMinimax",
+        chatUrl: "https://api.minimax.io/v1/chat/completions",
+        chatModels: [
+            "MiniMax-M3",
+            "MiniMax-M2.7",
+            "MiniMax-M2.7-highspeed",
+            "MiniMax-M2.5",
+            "MiniMax-M2.5-highspeed",
+            "MiniMax-M2.1",
+            "MiniMax-M2.1-highspeed",
+            "MiniMax-M2",
+        ],
+    },
     {
         key: "siliconflow",
         nameKey: "botSettings.vendorSiliconFlow",
@@ -771,6 +794,7 @@ const fetchChatModelList = async () => {
             t("botSettings.fetchModelListOk", { count: r.data.length }),
         );
     } catch {
+        console.error("拉取模型列表失败", r.err?.message || "bad response");
         // 只提示失败，**不动**用户已经手输的模型名：拉取不到的端点照样能用。
         ElMessage.error(t("botSettings.fetchModelListFailed"));
     } finally {
