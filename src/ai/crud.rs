@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::ai::completion;
+use crate::ai::chat;
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct Request {
@@ -49,8 +49,9 @@ pub(crate) async fn gen_text(bytes: Bytes) -> Sse<impl Stream<Item = Result<Even
             Ok::<Event, Infallible>(event)
         });
         tokio::spawn(async move {
-            // let borrowed_sender = &sender;
-            if let Err(e) = completion::completion(&q.robot_id, &q.prompt, sender).await {
+            // 走 chat 那条路径，用对话模型那一份配置（`chat::gen_text` 里
+            // 说明了为什么）。路由本身保持不变，前端仍在调 `/ai/text/generation`。
+            if let Err(e) = chat::gen_text(&q.robot_id, &q.prompt, sender).await {
                 log::error!("{:?}", &e);
             }
         });

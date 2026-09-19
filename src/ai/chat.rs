@@ -7,12 +7,26 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::completion::Prompt;
-use super::stream::{DeltaFormat, DeltaStream};
+use super::stream::DeltaStream;
 use crate::ai::huggingface::{HuggingFaceModel, LoadedHuggingFaceModel};
 use crate::flow::rt::dto::StreamingResponseData;
 use crate::man::settings;
 use crate::result::{Error, Result};
+
+/// 一条对话消息。历史、单个提示词、以及 `/ai/text/generation` 收上来的
+/// JSON 提示词数组都是这个形状。
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(crate) struct Prompt {
+    pub(crate) role: String,
+    pub(crate) content: String,
+}
+
+/// 本地 HuggingFace 模型的采样参数。原来住在 `completion.rs`——那个模块是
+/// 给"文本生成"用的第二套 provider 配置，现在并进了这里，所以这几个常量也
+/// 跟着搬（`gemma` / `llama` / `phi3` / `moondream` 都在用）。
+pub(crate) const TEMPERATURE: f64 = 0.7;
+pub(crate) const REPEAT_PENALTY: f32 = 1.1;
+pub(crate) const REPEAT_LAST_N: usize = 64;
 
 static LOADED_MODELS: LazyLock<Mutex<HashMap<String, LoadedHuggingFaceModel>>> =
     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
@@ -84,11 +98,16 @@ impl ResultSender<'_, StreamingResponseData> {
 #[serde(tag = "id", content = "model")]
 pub(crate) enum ChatProvider {
     HuggingFace(HuggingFaceModel),
-    /// 兼容 2026-09-17 之前存的记录（那时这个变体叫 `OpenAI`）。
-    /// 等所有实例都保存过一次设置后即可删掉这行。
-    #[serde(alias = "OpenAI")]
+    /// 兼容老记录的两个名字：
+    /// - `OpenAI`：2026-09-17 之前这个变体叫这个名字；
+    /// - `Ollama`：UI 里曾经有第三个"Ollama"选项，它指向 Ollama 的原生端点
+    ///   （`/api/chat`）。原生路径已经并进这条统一的 OpenAI 兼容路径，老记录里
+    ///   的那种地址由 `settings::unify_legacy_api_url` 在读写设置时挪到同一个
+    ///   host 上的 `/v1/chat/completions`，所以请求形状仍然正确。
+    ///
+    /// 两个别名都可以在所有实例保存过一次设置后删掉。
+    #[serde(alias = "OpenAI", alias = "Ollama")]
     OpenAICompatible(String),
-    Ollama(String),
 }
 
 pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
@@ -137,27 +156,56 @@ pub(crate) async fn chat(
                 .await?;
                 Ok(())
             }
-            ChatProvider::Ollama(m) => {
-                ollama(
-                    &settings.chat_provider.api_url,
-                    &m,
-                    chat_history,
-                    media,
-                    connect_timeout.unwrap_or(settings.chat_provider.connect_timeout_millis),
-                    read_timeout.unwrap_or(settings.chat_provider.read_timeout_millis),
-                    &settings.chat_provider.proxy_url,
-                    settings.chat_provider.max_response_token_length,
-                    result_sender,
-                )
-                .await?;
-                Ok(())
-            }
         }
     } else {
         Err(Error::WithMessage(format!(
             "Can NOT retrieve settings from robot_id: {robot_id}"
         )))
     }
+}
+
+/// `/ai/text/generation` 的实现：对话节点里那个"生成文本"按钮。
+///
+/// 它原来走 `completion.rs`——一份独立的 provider 配置加一套独立的请求构造，
+/// 于是同一个机器人要在设置页配两遍模型；而在线模型那条分支把调用方给过来的
+/// JSON 提示词数组当成纯文本塞进一条 user 消息，界面里填的 system 提示词根本
+/// 到不了模型。现在它和对话节点走**完全相同**的路径、用同一份配置。
+pub(crate) async fn gen_text(
+    robot_id: &str,
+    prompt: &str,
+    sender: UnboundedSender<StreamingResponseData>,
+) -> Result<()> {
+    let history = parse_prompt(prompt);
+    // 这里的应答只往通道里推，没人读累积的文本，但 `ResultSender` 两种变体都
+    // 需要一块缓冲，就随它留着。
+    let mut answer = String::with_capacity(1024);
+    chat(
+        robot_id,
+        Some(history),
+        None,
+        None,
+        None,
+        ResultSender::ChannelSender(SenderWrapper::new(sender, 0), &mut answer),
+    )
+    .await
+}
+
+/// 调用方发来的提示词：`[{"role":"user","content":"…"}]`。不是 JSON 就当成
+/// 一条 user 消息，纯文本的老调用方也不至于直接失败。
+///
+/// system 消息统一提到最前。调用方是按 `[user, system]` 拼的（`DialogNode.vue`
+/// 先 push user 再 push system），而 system 落在 user 之后对部分端点是非法顺序；
+/// 本地 HF 那条路径本来也是把它拆出来放最前的，这样三个后端行为才一致。
+fn parse_prompt(s: &str) -> Vec<Prompt> {
+    let mut prompts: Vec<Prompt> = serde_json::from_str(s).unwrap_or_else(|_| {
+        vec![Prompt {
+            role: String::from("user"),
+            content: String::from(s),
+        }]
+    });
+    // `sort_by_key` 是稳定排序，system 之间的相对顺序不变。
+    prompts.sort_by_key(|p| !p.role.eq("system"));
+    prompts
 }
 
 fn huggingface(
@@ -289,9 +337,14 @@ async fn open_ai_compatible(
     messages.push(Value::Object(sys_message));
     if let Some(h) = chat_history {
         for p in h.into_iter() {
+            // 键必须是 `role` 和 `content`。这里原来写的是
+            // `map.insert(p.role, Value::String(p.content))`，即把角色名当成了
+            // 键（`{"user":"hi"}`），任何端点都会以"缺少 role"驳回；视觉那段
+            // 靠 `get("role")` 找最后一条 user 消息，也因此永远找不到。
             let mut map = Map::new();
-            map.insert(p.role, Value::String(p.content));
-            messages.push(Value::from(map));
+            map.insert(String::from("role"), Value::String(p.role));
+            map.insert(String::from("content"), Value::String(p.content));
+            messages.push(Value::Object(map));
         }
     }
     // OpenAI-compatible vision format: the last user message's content becomes
@@ -374,7 +427,7 @@ async fn open_ai_compatible(
         // `bytes_stream()` yields arbitrary fragments: several events, half an
         // event, or one ending mid-character. DeltaStream buffers them so only
         // complete payloads are dispatched.
-        let mut deltas = DeltaStream::new(DeltaFormat::OpenAi);
+        let mut deltas = DeltaStream::new();
         let mut stream = res.bytes_stream();
         while let Some(item) = stream.next().await {
             for delta in deltas.push(item?.as_ref())? {
@@ -403,119 +456,6 @@ async fn open_ai_compatible(
             .and_then(Value::as_str)
         {
             log::info!("OpenAI returned {content}");
-            result_sender.push_delta(String::from(content));
-        }
-    }
-    Ok(())
-}
-
-async fn ollama(
-    u: &str,
-    m: &str,
-    // s: &str,
-    chat_history: Option<Vec<Prompt>>,
-    media: Option<&crate::ai::dto::UserMediaData>,
-    connect_timeout_millis: u32,
-    read_timeout_millis: u32,
-    proxy_url: &str,
-    sample_len: u32,
-    mut result_sender: ResultSender<'_, StreamingResponseData>,
-) -> Result<()> {
-    let client = crate::external::http::get_client(
-        connect_timeout_millis.into(),
-        read_timeout_millis.into(),
-        proxy_url,
-    )?;
-    let mut req_body = Map::new();
-    req_body.insert(String::from("model"), Value::String(String::from(m)));
-    req_body.insert(
-        String::from("stream"),
-        Value::Bool(result_sender.is_streaming()),
-    );
-
-    let empty_media = crate::ai::dto::UserMediaData::default();
-    let media = media.unwrap_or(&empty_media);
-    let messages: Vec<Value> = match chat_history {
-        Some(h) if !h.is_empty() => {
-            let mut d = Vec::with_capacity(h.len() + 1);
-            let mut seen_user = false;
-            for p in h.into_iter() {
-                let is_user = p.role.eq("user");
-                if p.content.is_empty() && !(is_user && !media.is_empty() && !seen_user) {
-                    continue;
-                }
-                let mut map = Map::new();
-                map.insert("role".into(), Value::String(p.role.clone()));
-                map.insert("content".into(), Value::String(p.content));
-                // Ollama expects raw base64 (no data URI prefix) in "images",
-                // attached to the last user message.
-                if is_user && !media.is_empty() && !seen_user {
-                    seen_user = true;
-                    let images: Vec<Value> = media
-                        .images
-                        .iter()
-                        .map(|img| {
-                            Value::String(match img.split_once(",") {
-                                Some((prefix, rest)) if prefix.starts_with("data:") => {
-                                    String::from(rest)
-                                }
-                                _ => img.clone(),
-                            })
-                        })
-                        .collect();
-                    map.insert("images".into(), Value::Array(images));
-                }
-                d.push(Value::from(map));
-            }
-            d
-        }
-        _ => Vec::with_capacity(1),
-    };
-    req_body.insert(String::from("messages"), Value::Array(messages));
-
-    let mut num_predict = Map::new();
-    num_predict.insert(String::from("num_predict"), Value::from(sample_len));
-    req_body.insert(String::from("options"), Value::from(num_predict));
-
-    let obj = Value::Object(req_body);
-    let body = serde_json::to_string(&obj)?;
-    log::info!("Request Ollama body {}", &body);
-    let req = client.post(u).body(body);
-    let res = req.send().await?;
-    let status = res.status();
-    if !status.is_success() {
-        let body = res.text().await.unwrap_or_default();
-        return Err(Error::WithMessage(format!(
-            "Ollama endpoint returned {status}: {body}"
-        )));
-    }
-    if result_sender.is_streaming() {
-        let mut deltas = DeltaStream::new(DeltaFormat::OllamaChat);
-        let mut stream = res.bytes_stream();
-        while let Some(item) = stream.next().await {
-            for delta in deltas.push(item?.as_ref())? {
-                if !result_sender.push_delta(delta) {
-                    log::warn!("Ollama stream receiver is gone, stopping generation.");
-                    return Ok(());
-                }
-            }
-            if deltas.is_done() {
-                break;
-            }
-        }
-        for delta in deltas.finish()? {
-            if !result_sender.push_delta(delta) {
-                return Ok(());
-            }
-        }
-    } else {
-        let v: Value = serde_json::from_slice(res.bytes().await?.as_ref())?;
-        if let Some(content) = v
-            .get("message")
-            .and_then(|m| m.get("content"))
-            .and_then(Value::as_str)
-        {
-            log::info!("Ollama returned {content}");
             result_sender.push_delta(String::from(content));
         }
     }
@@ -570,6 +510,37 @@ mod tests {
             body.contains("\"max_tokens\":4242"),
             "the configured token cap must be sent: {body}"
         );
+        // 消息必须是 `{"role":…,"content":…}`。这里曾经写成 `{"user":"hi"}`——
+        // 把角色名当成了键，任何端点都会以"缺少 role"驳回，视觉那段靠
+        // `get("role")` 找最后一条 user 消息也因此永远找不到。
+        assert!(
+            body.contains("\"role\":\"user\"") && body.contains("\"content\":\"hi\""),
+            "every message needs role and content keys: {body}"
+        );
+        assert!(
+            !body.contains("\"hi\":") && !body.contains("\"user\":\"hi\""),
+            "the role must not be used as the key: {body}"
+        );
+    }
+
+    /// `/ai/text/generation` 收到的提示词是 JSON 数组，且调用方按
+    /// `[user, system]` 的顺序拼（`DialogNode.vue`）。system 必须被提到最前，
+    /// 否则部分端点会直接拒绝这个顺序；纯文本则退化成一条 user 消息。
+    #[test]
+    fn parse_prompt_puts_system_first_and_accepts_plain_text() {
+        let p = parse_prompt(
+            r#"[{"role":"user","content":"写一句问候"},{"role":"system","content":"你是客服"}]"#,
+        );
+        assert_eq!(p.len(), 2);
+        assert_eq!(p[0].role, "system");
+        assert_eq!(p[0].content, "你是客服");
+        assert_eq!(p[1].role, "user");
+        assert_eq!(p[1].content, "写一句问候");
+
+        let p = parse_prompt("hello");
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].role, "user");
+        assert_eq!(p[0].content, "hello");
     }
 
     /// The point of the streaming path: provider output arrives as arbitrary
@@ -691,6 +662,77 @@ mod tests {
         assert!(
             format!("{e:?}").contains("URL is empty"),
             "the error should say what is missing: {e:?}"
+        );
+    }
+
+    /// 视觉消息的形状：OpenAI 的 content parts，图片是 `data:` URI。
+    ///
+    /// 这是我们和 Ollama 兼容端点之间唯一的"非默认"约定，所以值得锁住：官方
+    /// 兼容性文档标明 Vision ✓ 且只支持 base64（不支持图片 URL），上游
+    /// `openai/openai.go` 的 `decodeImageURL` 也只认
+    /// `data:image/{png,jpg,jpeg,webp};base64,`。
+    #[tokio::test]
+    async fn vision_goes_out_as_content_parts_with_a_data_uri() {
+        let body = format!("{}data: [DONE]\n\n", sse_event("ok"));
+        let (url, request) = serve_capturing("/v1/chat/completions", sse_head(), &body).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut answer = String::new();
+        let media = crate::ai::dto::UserMediaData {
+            images: vec![String::from("data:image/png;base64,QUJD")],
+        };
+        open_ai_compatible(
+            "qwen3-vl:8b",
+            prompt(),
+            Some(&media),
+            &url,
+            "test-key",
+            1_000,
+            3_339,
+            9_939,
+            "",
+            ResultSender::ChannelSender(SenderWrapper::new(tx, 0), &mut answer),
+        )
+        .await
+        .unwrap();
+
+        let request = request.await.unwrap();
+        let body = request.split("\r\n\r\n").nth(1).unwrap_or_default();
+        assert!(
+            body.contains(r#""image_url":{"url":"data:image/png;base64,QUJD"}"#),
+            "the image must be an OpenAI content part carrying a data URI: {body}"
+        );
+        assert!(
+            body.contains(r#""type":"text""#),
+            "the text must stay next to the image: {body}"
+        );
+        assert!(
+            !body.contains(r#""images""#),
+            "the native Ollama `images` array is gone with its provider: {body}"
+        );
+    }
+
+    /// 老记录必须还能读进来：反序列化失败不是"少一个选项"，而是 `get_settings`
+    /// 直接返回 Err、设置页整个打不开（老 `OpenAI` 那个坑就是这么来的）。
+    ///
+    /// `Ollama` 这条尤其要紧：UI 里已经没有这个选项，但历史记录存的是
+    /// `{"id":"Ollama"}` 加上 `apiUrl = http://localhost:11434/api/chat`。
+    /// 别名接过来之后，地址由 `settings::unify_legacy_api_url` 在读写设置时
+    /// 挪到同一个 host 上的 `/v1/chat/completions`，所以请求形状仍然正确。
+    #[test]
+    fn legacy_provider_ids_still_deserialize() {
+        let p: ChatProvider = serde_json::from_str(r#"{"id":"Ollama","model":"llama3"}"#).unwrap();
+        assert!(
+            matches!(p, ChatProvider::OpenAICompatible(ref m) if m == "llama3"),
+            "the old Ollama id must land on the URL-selected variant"
+        );
+        let p: ChatProvider = serde_json::from_str(r#"{"id":"OpenAI","model":"gpt-4o"}"#).unwrap();
+        assert!(matches!(p, ChatProvider::OpenAICompatible(ref m) if m == "gpt-4o"));
+
+        // 别名只影响读；再存一次就写成新名字，这是别名将来可以删掉的前提。
+        let p = ChatProvider::OpenAICompatible(String::from("x"));
+        assert_eq!(
+            serde_json::to_string(&p).unwrap(),
+            r#"{"id":"OpenAICompatible","model":"x"}"#
         );
     }
 }

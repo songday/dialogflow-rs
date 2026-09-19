@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::ai::huggingface::HuggingFaceModel;
-use crate::ai::{asr, chat, completion, embedding, huggingface, tts};
+use crate::ai::{asr, chat, embedding, huggingface, tts};
 use crate::db;
 use crate::db_executor;
 use crate::result::{Error, Result};
@@ -61,8 +61,6 @@ pub(crate) struct Settings {
     pub(crate) max_session_idle_sec: u32,
     #[serde(rename = "chatProvider")]
     pub(crate) chat_provider: ChatProvider,
-    #[serde(rename = "textGenerationProvider")]
-    pub(crate) text_generation_provider: TextGenerationProvider,
     #[serde(rename = "sentenceEmbeddingProvider")]
     pub(crate) sentence_embedding_provider: SentenceEmbeddingProvider,
     #[serde(rename = "asrProvider")]
@@ -117,24 +115,6 @@ pub(crate) struct Settings {
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct ChatProvider {
     pub(crate) provider: chat::ChatProvider,
-    #[serde(rename = "apiUrl")]
-    pub(crate) api_url: String,
-    #[serde(rename = "apiKey")]
-    pub(crate) api_key: String,
-    pub(crate) model: String,
-    #[serde(rename = "connectTimeoutMillis")]
-    pub(crate) connect_timeout_millis: u32,
-    #[serde(rename = "readTimeoutMillis")]
-    pub(crate) read_timeout_millis: u32,
-    #[serde(rename = "maxResponseTokenLength")]
-    pub(crate) max_response_token_length: u32,
-    #[serde(rename = "proxyUrl")]
-    pub(crate) proxy_url: String,
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-pub(crate) struct TextGenerationProvider {
-    pub(crate) provider: completion::TextGenerationProvider,
     #[serde(rename = "apiUrl")]
     pub(crate) api_url: String,
     #[serde(rename = "apiKey")]
@@ -222,18 +202,6 @@ impl Default for Settings {
             max_session_idle_sec: 1800,
             chat_provider: ChatProvider {
                 provider: chat::ChatProvider::HuggingFace(
-                    huggingface::HuggingFaceModel::TinyLlama1_1bChatV1_0,
-                ),
-                api_url: String::new(),
-                api_key: String::new(),
-                model: String::new(),
-                connect_timeout_millis: 5000,
-                read_timeout_millis: 10000,
-                max_response_token_length: 1000,
-                proxy_url: String::new(),
-            },
-            text_generation_provider: TextGenerationProvider {
-                provider: completion::TextGenerationProvider::HuggingFace(
                     huggingface::HuggingFaceModel::TinyLlama1_1bChatV1_0,
                 ),
                 api_url: String::new(),
@@ -337,7 +305,36 @@ pub(crate) async fn get_settings(robot_id: &str) -> Result<Option<Settings>> {
             return Ok(Some(s.clone()));
         }
     }
-    db_executor!(db::query, robot_id, TABLE_SUFFIX, robot_id)
+    let r: Option<Settings> = db_executor!(db::query, robot_id, TABLE_SUFFIX, robot_id)?;
+    Ok(r.map(unify_legacy_api_urls))
+}
+
+/// 老记录里指向 Ollama **原生**端点的地址。
+///
+/// 原生路径这次并进了统一的 OpenAI 兼容路径，所以这些地址要挪到同一个 host 上的
+/// 兼容端点：不挪的话，老记录会把 OpenAI 形状的请求发到原生端点，回来的是 NDJSON
+/// 或 `{"embedding":[...]}`，表现为"应答是空的"，比报错更难查。
+///
+/// 只在读写设置时归一化（[`get_settings`] / [`save_settings`]），所以设置页里显示
+/// 的就是真正会被使用的地址，用户下一次保存就落库。等所有实例都保存过一次之后，
+/// 这个函数可以连同两个 serde 别名一起删掉。
+fn unify_legacy_api_url(u: &str) -> String {
+    let t = u.trim().trim_end_matches('/');
+    let rewritten = ["/api/chat", "/api/embed", "/api/embeddings"]
+        .iter()
+        .find_map(|suffix| t.strip_suffix(suffix).map(|base| (suffix, base)));
+    match rewritten {
+        Some((suffix, base)) if *suffix == "/api/chat" => format!("{base}/v1/chat/completions"),
+        Some((_, base)) => format!("{base}/v1/embeddings"),
+        None => String::from(u),
+    }
+}
+
+fn unify_legacy_api_urls(mut s: Settings) -> Settings {
+    s.chat_provider.api_url = unify_legacy_api_url(&s.chat_provider.api_url);
+    s.sentence_embedding_provider.api_url =
+        unify_legacy_api_url(&s.sentence_embedding_provider.api_url);
+    s
 }
 
 pub(crate) async fn get(Query(q): Query<RobotQuery>) -> impl IntoResponse {
@@ -374,23 +371,19 @@ pub(crate) async fn rest_save_global_settings(
 }
 
 pub(crate) async fn save_settings(robot_id: &str, data: Settings) -> Result<()> {
-    if let completion::TextGenerationProvider::HuggingFace(m) =
-        &data.text_generation_provider.provider
-    {
-        if let Err(e) = crate::ai::chat::replace_model_cache(robot_id, m) {
+    // 保存时也归一化，这样老地址会被真正写掉（读时归一化只保证运行期正确，
+    // 存储里的旧值要等一次保存才能收敛）。
+    let data = unify_legacy_api_urls(data);
+    // 本地 HF 模型在这里就装进缓存，免得第一次对话时才现装。
+    //
+    // 这里原来有**两段**长得一样的代码，都去匹配 `text_generation_provider` 的
+    // 本地模型：第一段把模型塞进 chat 的缓存，第二段（已经不存在的）
+    // `completion::replace_model_cache`。也就是说对话模型自己反而从来没在保存时
+    // 进过缓存，全靠第一次调用时懒加载。文本生成并入对话之后只剩这一段。
+    if let chat::ChatProvider::HuggingFace(m) = &data.chat_provider.provider {
+        if let Err(e) = chat::replace_model_cache(robot_id, m) {
             log::warn!(
                 "Hugging face model files for chat were incorrect. Err: {:?}",
-                &e
-            );
-        }
-    }
-
-    if let completion::TextGenerationProvider::HuggingFace(m) =
-        &data.text_generation_provider.provider
-    {
-        if let Err(e) = completion::replace_model_cache(robot_id, m) {
-            log::warn!(
-                "Hugging face model files for completion were incorrect. Err: {:?}",
                 &e
             );
         }
@@ -528,7 +521,6 @@ pub(crate) async fn check_embedding_model(Query(q): Query<RobotQuery>) -> impl I
                         Ok(())
                     }
                 }
-                embedding::SentenceEmbeddingProvider::Ollama(_) => Ok(()),
             }
         } else {
             Err(Error::WithMessage(String::from(
@@ -541,25 +533,6 @@ pub(crate) async fn check_embedding_model(Query(q): Query<RobotQuery>) -> impl I
         )))
     };
     to_res(r)
-}
-
-pub(crate) async fn list_ollama_models(
-    Query(q): Query<HashMap<String, String>>,
-) -> impl IntoResponse {
-    if !q.contains_key("url") {
-        return to_res(Err(Error::WithMessage(String::from(
-            "Ollama URL parameter not found",
-        ))));
-    }
-    let url = q.get("url").unwrap();
-    let end_pos = url.rfind('/');
-    if end_pos.is_none() {
-        return to_res(Err(Error::WithMessage(String::from(
-            "Invalid Ollama URL parameter",
-        ))));
-    }
-    let new_url = format!("{}/tags", &url[0..end_pos.unwrap()]);
-    to_res(retrieve_ollama_models(&new_url).await)
 }
 
 /// 列出 OpenAI 兼容端点的模型，供前端"获取模型列表"按钮使用。
@@ -604,8 +577,14 @@ pub(crate) async fn list_openai_models(
 /// 模型列表就在用户配置的那个端点隔壁：`.../v1/chat/completions` 和
 /// `.../v1/embeddings` 都在 `.../v1/models` 下。Ollama 的兼容端点形状相同，
 /// 所以原生 `/api/tags` 那套 `rfind('/')` 派生方式在这里不适用。
+///
+/// 例外是 Ollama 的原生对话端点 `/api/chat`：它的模型列表在 `/api/tags`，
+/// 不带 `/v1`（形状也不同，`retrieve_openai_models` 两种都认）。
 fn models_url(u: &str) -> String {
     let base = u.trim().trim_end_matches('/');
+    if let Some(base) = base.strip_suffix("/api/chat") {
+        return format!("{}/api/tags", base.trim_end_matches('/'));
+    }
     let base = ["/chat/completions", "/completions", "/embeddings"]
         .iter()
         .find_map(|suffix| base.strip_suffix(suffix))
@@ -684,6 +663,15 @@ mod tests {
             models_url("http://localhost:11434/v1/chat/completions"),
             "http://localhost:11434/v1/models"
         );
+        // Ollama's native chat endpoint instead: the model list is `/api/tags`.
+        assert_eq!(
+            models_url("http://localhost:11434/api/chat"),
+            "http://localhost:11434/api/tags"
+        );
+        assert_eq!(
+            models_url("http://192.168.1.9:11434/api/chat/"),
+            "http://192.168.1.9:11434/api/tags"
+        );
         // Trailing slashes and stray whitespace are the common paste accidents.
         assert_eq!(
             models_url("  https://api.moonshot.cn/v1/chat/completions/  "),
@@ -695,24 +683,42 @@ mod tests {
             "https://api.deepseek.com/models"
         );
     }
-}
 
-async fn retrieve_ollama_models(url: &str) -> Result<Vec<String>> {
-    let mut result: Vec<String> = Vec::with_capacity(10);
-    let bytes = reqwest::get(url).await?.bytes().await?;
-    let json: serde_json::Value = serde_json::from_slice(bytes.as_ref())?;
-    if let Some(models) = json.get("models")
-        && models.is_array()
-    {
-        if let Some(arr) = models.as_array() {
-            for item in arr {
-                if let Some(model) = item.get("model")
-                    && model.is_string()
-                {
-                    result.push(String::from(model.as_str().unwrap()));
-                }
-            }
+    /// 老记录里指向 Ollama 原生端点的地址必须被挪到兼容端点，否则老机器人会在
+    /// 运行期把 OpenAI 形状的请求打过去，表现为"应答是空的"。
+    #[test]
+    fn legacy_ollama_urls_are_moved_to_the_compatible_endpoints() {
+        assert_eq!(
+            unify_legacy_api_url("http://localhost:11434/api/chat"),
+            "http://localhost:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            unify_legacy_api_url("  http://192.168.1.9:11434/api/chat/  "),
+            "http://192.168.1.9:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            unify_legacy_api_url("http://localhost:11434/api/embeddings"),
+            "http://localhost:11434/v1/embeddings"
+        );
+        // `/api/embed` 是同一个原生端点的较新名字（请求体是 `input`）。
+        assert_eq!(
+            unify_legacy_api_url("http://localhost:11434/api/embed"),
+            "http://localhost:11434/v1/embeddings"
+        );
+
+        // 已经是兼容端点、别的厂商、以及空地址都原样不动。
+        for u in [
+            "http://localhost:11434/v1/chat/completions",
+            "https://api.deepseek.com/v1/chat/completions",
+            "http://localhost:11434/v1/embeddings",
+            "",
+        ] {
+            assert_eq!(unify_legacy_api_url(u), u, "{u} must be left alone");
         }
+        // 只有**结尾**是那个路径才动；带查询串的不猜。
+        assert_eq!(
+            unify_legacy_api_url("http://localhost:11434/api/chat?x=1"),
+            "http://localhost:11434/api/chat?x=1"
+        );
     }
-    Ok(result)
 }

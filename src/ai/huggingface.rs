@@ -110,12 +110,12 @@ impl HuggingFaceModelInfo {
     pub(super) fn convert_prompt(
         &self,
         s: &str,
-        history: Option<Vec<crate::ai::completion::Prompt>>,
+        history: Option<Vec<crate::ai::chat::Prompt>>,
     ) -> Result<String> {
         let mut system = String::new();
         let mut user = String::new();
         if !s.is_empty() && s.starts_with("[") {
-            let mut prompts: Vec<super::completion::Prompt> = serde_json::from_str(s)?;
+            let mut prompts: Vec<super::chat::Prompt> = serde_json::from_str(s)?;
             for p in prompts.iter_mut() {
                 if p.role.eq("system") {
                     std::mem::swap(&mut system, &mut p.content);

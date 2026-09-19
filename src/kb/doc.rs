@@ -577,7 +577,7 @@ pub(crate) async fn search_doc(
     };
     if !chunks.is_empty() {
         let prompts = vec![
-            crate::ai::completion::Prompt {
+            crate::ai::chat::Prompt {
                 role: String::from("system"),
                 content: String::from(
                     "你是一个专业的文档助手。请根据提供的文档内容回答问题。\
@@ -585,7 +585,7 @@ pub(crate) async fn search_doc(
                                 回答要基于文档内容，不要编造信息。",
                 ),
             },
-            crate::ai::completion::Prompt {
+            crate::ai::chat::Prompt {
                 role: String::from("user"),
                 content: format!("文档内容：\n{}\n\n问题：{}", chunks.join("\n\n"), query),
             },

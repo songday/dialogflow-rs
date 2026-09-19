@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::{Duration, interval};
 
 use super::node::RuntimeNodeEnum;
-use crate::ai::completion::Prompt;
+use crate::ai::chat::Prompt;
 use crate::db;
 use crate::db_executor;
 use crate::man::settings;

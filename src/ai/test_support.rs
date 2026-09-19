@@ -1,13 +1,13 @@
 //! Helpers shared by the OpenAI-compatible provider tests.
 //!
-//! `chat.rs`, `completion.rs` and `embedding.rs` all assert the same thing
-//! about the request that leaves the process, so they share one local HTTP
-//! server rather than three copies that drift apart. Every helper here is
-//! `pub(crate)` and compiled only under `cfg(test)`.
+//! `chat.rs` and `embedding.rs` both assert the same thing about the request
+//! that leaves the process, so they share one local HTTP server rather than two
+//! copies that drift apart. Every helper here is `pub(crate)` and compiled only
+//! under `cfg(test)`.
 
 use std::vec::Vec;
 
-use super::completion::Prompt;
+use super::chat::Prompt;
 use crate::flow::rt::dto::StreamingResponseData;
 
 /// Serves one canned response, written in the given pieces so the write

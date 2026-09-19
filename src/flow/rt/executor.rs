@@ -4,7 +4,7 @@ use regex::Regex;
 
 use super::context::Context;
 use super::dto::{Request, ResponseChannelWrapper, ResponseData};
-use crate::ai::completion::Prompt;
+use crate::ai::chat::Prompt;
 use crate::flow::rt::node::RuntimeNode;
 use crate::result::{Error, Result};
 use crate::web::server::envelope_json;

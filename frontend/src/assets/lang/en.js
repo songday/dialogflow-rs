@@ -309,11 +309,9 @@ export default {
     connTimeout: "Connection timeout",
     readTimeout: "Read timeout",
     proxy: "Proxy",
-    txtGen: "Text generation",
     sentenceEmbedding: "Sentence embedding",
     simThres: "Similarity threshold",
     chatModelUsage: "This is used by LLM chat node.",
-    txtGenUsage: "This is used by dialog node.",
     sentenceEmbeddingUsage: "This is used by intention similar sentences.",
     inputModelName: "input model name",
     confirm: "confirm",
@@ -324,7 +322,7 @@ export default {
     anotherModel: "Add a custom model name",
     vendor: "Vendor",
     compatibleApiHint:
-        "Enter the full OpenAI-compatible endpoint, e.g. https://…/v1/chat/completions. Pick a vendor below to fill the address in. The API key is stored locally in plain text and is not cleared when you switch vendors.",
+        "Enter the full OpenAI-compatible endpoint, e.g. https://…/v1/chat/completions (a local Ollama is http://localhost:11434/v1/chat/completions). Pick a vendor below to fill the address in. The API key is stored locally in plain text and is not cleared when you switch vendors.",
     embeddingApiHint:
         "Enter the full OpenAI-compatible embeddings endpoint, e.g. https://…/v1/embeddings.",
     fetchModelList: "Fetch models",
@@ -350,7 +348,7 @@ export default {
     hfModelManual: ", or you can download manually and put them in ./data/model/{repo}",
     downloading: "Downloading",
     modelChangedWarning: "Sentence embedding model has been changed, this may cause dimension mismatch issue <strong>(You can regenerate all sentences to resolve)</strong>. Continue?",
-    apiKey: "OpenAI API key",
+    apiKey: "API key",
     smtp: {
       title: "Email settings",
       host: "Host",
