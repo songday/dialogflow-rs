@@ -106,7 +106,14 @@ impl ResponseChannelWrapper {
     }
     fn send(&self, frame: StreamingResponseData) -> bool {
         match &self.sender {
-            Some(s) => s.send(frame).is_ok(),
+            Some(s) => {
+                if let Err(e) = s.send(frame) {
+                    log::warn!("Failed to send frame: {e:?}");
+                    false
+                } else {
+                    true
+                }
+            },
             None => false,
         }
     }
