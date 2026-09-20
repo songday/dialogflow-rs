@@ -12,9 +12,11 @@ use dialogflowai::web::server::start_app;
 
 // Avoid musl's default allocator due to lackluster performance
 // https://nickb.dev/blog/default-musl-allocator-considered-harmful-to-performance
-#[cfg(target_env = "musl")]
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+// Following were commented out because turso 0.7.2 already uses mimalloc, and this line will cause a err: error: the `#[global_allocator]` in this crate conflicts with global allocator in: turso
+// Detail: https://github.com/tursodatabase/turso/issues/9147
+// #[cfg(target_env = "musl")]
+// #[global_allocator]
+// static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<(), std::io::Error> {
     // dialogflow::web::t1();
