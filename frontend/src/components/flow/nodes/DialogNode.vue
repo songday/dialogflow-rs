@@ -599,6 +599,7 @@ export default defineComponent({
                 if (done) {
                     console.log("Connection finished.");
                     this.textGenerating = false;
+                    this.genTextBtnText = "Generate text";
                     this.genTextVisible = false;
                     if (this.editor) {
                         const endPos = this.editor.state.doc.content.size;

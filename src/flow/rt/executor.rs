@@ -159,5 +159,8 @@ pub(in crate::flow::rt) async fn process_streaming(
     if let Err(e) = &r {
         log::error!("Streamed flow failed: {e:?}");
     }
-    channel.push_terminal(envelope_json(r));
+    let r = channel.push_terminal(envelope_json(r));
+    if !r {
+        log::warn!("Terminal frame dropped, the client is gone.");
+    }
 }

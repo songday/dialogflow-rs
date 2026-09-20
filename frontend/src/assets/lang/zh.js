@@ -305,6 +305,7 @@ export default {
     vendorZhipu: "智谱 GLM",
     vendorQwen: "通义千问",
     vendorMoonshot: "月之暗面 Kimi",
+    vendorMinimax: "MiniMax 海螺",
     vendorSiliconFlow: "硅基流动",
     vendorGroq: "Groq",
     vendorOpenRouter: "OpenRouter",

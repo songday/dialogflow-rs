@@ -940,6 +940,7 @@ async function dryrunClear() {
     pendingImages.value.splice(0, pendingImages.value.length);
     // sessionId = '';
     dryrunDisabled.value = false;
+    waitingResponse.value = false;
     await dryrun();
 }
 

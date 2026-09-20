@@ -762,7 +762,7 @@ impl LlmChatNode {
             )
             .await
             {
-                log::error!("LlmChatNode response failed, err: {e:?}");
+                log::error!("LlmChatNode response failed, branch 1, err: {e:?}");
                 match &self.answer_timeout_then {
                     LlmChatAnswerTimeoutThen::GotoAnotherNode => {
                         ctx.discard_answer_history(slot);
@@ -812,7 +812,7 @@ impl LlmChatNode {
             )
             .await
             {
-                log::error!("LlmChatNode response failed, err: {e:?}");
+                log::error!("LlmChatNode response failed, branch 2, err: {e:?}");
                 match &self.answer_timeout_then {
                     LlmChatAnswerTimeoutThen::GotoAnotherNode => return false,
                     LlmChatAnswerTimeoutThen::ResponseAlternateText(t) => answer.push_str(t),
@@ -846,7 +846,7 @@ impl LlmChatNode {
             )
             .await
             {
-                log::error!("LlmChatNode response failed, err: {:?}", &e);
+                log::error!("LlmChatNode response failed, branch 3, err: {:?}", &e);
                 match &self.answer_timeout_then {
                     LlmChatAnswerTimeoutThen::GotoAnotherNode => {
                         return false;

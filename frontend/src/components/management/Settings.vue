@@ -408,6 +408,29 @@ const compatibleVendors = [
         chatUrl: "https://api.moonshot.cn/v1/chat/completions",
         chatModels: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
     },
+    // MiniMax 的 OpenAI 兼容端点在 api.minimax.io（国际版）/ api.minimaxi.com
+    // （中国大陆版，注意域名末尾多一个 i），两者按账号区域划分，密钥不通用。
+    // 这里填国际版；国内账号把域名换成 api.minimaxi.com 即可，路径不变。
+    //
+    // 只有对话端点，**没有 embeddings**：MiniMax 没有 OpenAI 兼容的向量接口
+    // （它的 embedding 走原生 /v1/embeddings，请求体是 texts 而不是 input）。
+    // 于是这里不写 embedUrl，向量区块的厂商列表里自然就不会出现 MiniMax，
+    // 与 moonshot / groq / openrouter 一致。
+    {
+        key: "minimax",
+        nameKey: "botSettings.vendorMinimax",
+        chatUrl: "https://api.minimax.io/v1/chat/completions",
+        chatModels: [
+            "MiniMax-M3",
+            "MiniMax-M2.7",
+            "MiniMax-M2.7-highspeed",
+            "MiniMax-M2.5",
+            "MiniMax-M2.5-highspeed",
+            "MiniMax-M2.1",
+            "MiniMax-M2.1-highspeed",
+            "MiniMax-M2",
+        ],
+    },
     {
         key: "siliconflow",
         nameKey: "botSettings.vendorSiliconFlow",
@@ -490,6 +513,24 @@ const deriveVendorKey = (apiUrl, kind) => {
     const k = vendorUrlKey(kind);
     const hit = compatibleVendors.find((v) => v[k] && normalizeUrl(v[k]) == u);
     return hit ? hit.key : "custom";
+};
+// 选中「自定义」时调用：把地址框里的**厂商预设地址**清掉。
+//
+// 为什么必须清：下拉的值不是用户状态，而是每次从地址反查出来的（deriveVendorKey）。
+// 不清的话 refresh*Vendor 会拿框里那个旧厂商的地址回查，把下拉改回旧厂商——表现就是
+// "选自定义完全没反应"（「自定义」没有预设地址，else 分支什么都不写，于是反查结果必是
+// 旧厂商）。清掉之后反查得到空串，归属自然是「自定义」，下拉显示、模型候选、保存后
+// 重新加载三者才一致。
+//
+// 为什么可以清：onMounted 在 change*Provider 之前就把已存地址种进了 map，空地址在
+// map 里是 "" 而不是 undefined，重载时走 `u != null` 分支原样保留，不会被
+// OpenAICompatible 的预设地址覆盖回来（详见 onMounted 里那段注释）。
+//
+// 为什么只清预设：反查为空串说明本来就是「自定义」，没什么可清；反查为 custom 说明
+// 那是用户自己手输的地址，绝不能动。只有"再点一下另一边就能选回来的厂商预设"才清。
+const clearPresetApiUrl = (provider, kind) => {
+    const derived = deriveVendorKey(provider.apiUrl, kind);
+    if (derived && derived != "custom") provider.apiUrl = "";
 };
 // 值非空且不在候选里就补一个选项。**必要**，不是可选：Element Plus 关闭态
 // 显示的是匹配到的 option 的 label，缺了它，重载后的自定义模型名会显示成
@@ -683,15 +724,11 @@ const refreshChatVendor = () => {
     ensureOption(p.models, settings.chatProvider.provider.model);
     chatModelOptions.splice(0, chatModelOptions.length, ...p.models);
 };
-// 选厂商 = 填它的地址，然后照常刷新。
-//
-// 「自定义」没有预设地址，这里**刻意不清空**地址框：清空之后，一条"故意留空的
-// 自定义地址"和一条"从没配过地址"的记录在存储里长得一模一样（厂商不持久化），
-// 加载时的空值兜底就会把 OpenAI 的地址给你写回来——正是后端刚去掉的那个行为。
-// 用户选它就是想自己填，地址框就在旁边，直接改就行。
+// 选厂商 = 填它的地址（没有预设的「自定义」则清掉预设地址），然后照常刷新。
 const applyChatVendorPreset = (key) => {
     const u = vendorUrl(vendorByKey(key), "chat");
     if (u) settings.chatProvider.apiUrl = u;
+    else if (key == "custom") clearPresetApiUrl(settings.chatProvider, "chat");
     refreshChatVendor();
 };
 const changeChatProvider = async (n) => {
@@ -771,6 +808,7 @@ const fetchChatModelList = async () => {
             t("botSettings.fetchModelListOk", { count: r.data.length }),
         );
     } catch {
+        console.error("拉取模型列表失败", r.err?.message || "bad response");
         // 只提示失败，**不动**用户已经手输的模型名：拉取不到的端点照样能用。
         ElMessage.error(t("botSettings.fetchModelListFailed"));
     } finally {
@@ -801,9 +839,11 @@ const refreshSentenceEmbeddingVendor = () => {
     );
 };
 const applySentenceEmbeddingVendorPreset = (key) => {
-    // 同 chat：「自定义」不清空地址，理由见 applyChatVendorPreset。
+    // 同 chat：没有预设的「自定义」清掉厂商预设地址，理由和边界见 clearPresetApiUrl。
     const u = vendorUrl(vendorByKey(key), "embedding");
     if (u) settings.sentenceEmbeddingProvider.apiUrl = u;
+    else if (key == "custom")
+        clearPresetApiUrl(settings.sentenceEmbeddingProvider, "embedding");
     refreshSentenceEmbeddingVendor();
 };
 const changeSentenceEmbeddingProvider = async (n) => {
