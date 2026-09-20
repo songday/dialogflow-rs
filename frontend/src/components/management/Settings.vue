@@ -514,6 +514,24 @@ const deriveVendorKey = (apiUrl, kind) => {
     const hit = compatibleVendors.find((v) => v[k] && normalizeUrl(v[k]) == u);
     return hit ? hit.key : "custom";
 };
+// 选中「自定义」时调用：把地址框里的**厂商预设地址**清掉。
+//
+// 为什么必须清：下拉的值不是用户状态，而是每次从地址反查出来的（deriveVendorKey）。
+// 不清的话 refresh*Vendor 会拿框里那个旧厂商的地址回查，把下拉改回旧厂商——表现就是
+// "选自定义完全没反应"（「自定义」没有预设地址，else 分支什么都不写，于是反查结果必是
+// 旧厂商）。清掉之后反查得到空串，归属自然是「自定义」，下拉显示、模型候选、保存后
+// 重新加载三者才一致。
+//
+// 为什么可以清：onMounted 在 change*Provider 之前就把已存地址种进了 map，空地址在
+// map 里是 "" 而不是 undefined，重载时走 `u != null` 分支原样保留，不会被
+// OpenAICompatible 的预设地址覆盖回来（详见 onMounted 里那段注释）。
+//
+// 为什么只清预设：反查为空串说明本来就是「自定义」，没什么可清；反查为 custom 说明
+// 那是用户自己手输的地址，绝不能动。只有"再点一下另一边就能选回来的厂商预设"才清。
+const clearPresetApiUrl = (provider, kind) => {
+    const derived = deriveVendorKey(provider.apiUrl, kind);
+    if (derived && derived != "custom") provider.apiUrl = "";
+};
 // 值非空且不在候选里就补一个选项。**必要**，不是可选：Element Plus 关闭态
 // 显示的是匹配到的 option 的 label，缺了它，重载后的自定义模型名会显示成
 // 一个空白框（值其实是对的）。
@@ -706,15 +724,11 @@ const refreshChatVendor = () => {
     ensureOption(p.models, settings.chatProvider.provider.model);
     chatModelOptions.splice(0, chatModelOptions.length, ...p.models);
 };
-// 选厂商 = 填它的地址，然后照常刷新。
-//
-// 「自定义」没有预设地址，这里**刻意不清空**地址框：清空之后，一条"故意留空的
-// 自定义地址"和一条"从没配过地址"的记录在存储里长得一模一样（厂商不持久化），
-// 加载时的空值兜底就会把 OpenAI 的地址给你写回来——正是后端刚去掉的那个行为。
-// 用户选它就是想自己填，地址框就在旁边，直接改就行。
+// 选厂商 = 填它的地址（没有预设的「自定义」则清掉预设地址），然后照常刷新。
 const applyChatVendorPreset = (key) => {
     const u = vendorUrl(vendorByKey(key), "chat");
     if (u) settings.chatProvider.apiUrl = u;
+    else if (key == "custom") clearPresetApiUrl(settings.chatProvider, "chat");
     refreshChatVendor();
 };
 const changeChatProvider = async (n) => {
@@ -825,9 +839,11 @@ const refreshSentenceEmbeddingVendor = () => {
     );
 };
 const applySentenceEmbeddingVendorPreset = (key) => {
-    // 同 chat：「自定义」不清空地址，理由见 applyChatVendorPreset。
+    // 同 chat：没有预设的「自定义」清掉厂商预设地址，理由和边界见 clearPresetApiUrl。
     const u = vendorUrl(vendorByKey(key), "embedding");
     if (u) settings.sentenceEmbeddingProvider.apiUrl = u;
+    else if (key == "custom")
+        clearPresetApiUrl(settings.sentenceEmbeddingProvider, "embedding");
     refreshSentenceEmbeddingVendor();
 };
 const changeSentenceEmbeddingProvider = async (n) => {
