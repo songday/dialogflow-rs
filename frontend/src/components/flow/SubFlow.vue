@@ -980,7 +980,7 @@ const popupRundryWindow = async () => {
     align-items: center;
 }
 
-.header-actions .el-button + .el-button {
+.header-actions .el-button+.el-button {
     margin-left: 0;
 }
 
@@ -1310,6 +1310,7 @@ const popupRundryWindow = async () => {
     white-space: pre-wrap;
     word-break: break-word;
 }
+
 .chat-record .chat-images {
     display: flex;
     gap: 6px;
@@ -1326,39 +1327,24 @@ const popupRundryWindow = async () => {
                     <template #content>
                         <span class="header-title mr-3">{{
                             mainFlowName
-                        }}</span>
+                            }}</span>
                     </template>
                     <template #extra>
                         <div class="header-actions">
                             <el-text v-show="isDemo" class="demo-step">{{
                                 $tm("flow.steps")[0]
-                            }}</el-text>
-                            <el-tooltip
-                                :content="$t('flow.save')"
-                                placement="bottom"
-                            >
-                                <el-button
-                                    class="icon-btn"
-                                    circle
-                                    @click="saveSubFlow"
-                                    :loading="saveLoading"
-                                    v-show="!isDemo"
-                                >
+                                }}</el-text>
+                            <el-tooltip :content="$t('flow.save')" placement="bottom">
+                                <el-button class="icon-btn" circle @click="saveSubFlow" :loading="saveLoading"
+                                    v-show="!isDemo">
                                     <el-icon :size="17">
                                         <EpEdit />
                                     </el-icon>
                                 </el-button>
                             </el-tooltip>
-                            <el-tooltip
-                                :content="$t('flow.pub')"
-                                placement="bottom"
-                            >
-                                <el-button
-                                    class="icon-btn release-btn"
-                                    circle
-                                    @click="release"
-                                    :loading="releaseLoading"
-                                >
+                            <el-tooltip :content="$t('flow.pub')" placement="bottom">
+                                <el-button class="icon-btn release-btn" circle @click="release"
+                                    :loading="releaseLoading">
                                     <el-icon :size="17">
                                         <EpFinished />
                                     </el-icon>
@@ -1366,16 +1352,9 @@ const popupRundryWindow = async () => {
                             </el-tooltip>
                             <el-text v-show="isDemo" class="demo-step">{{
                                 $tm("flow.steps")[1]
-                            }}</el-text>
-                            <el-tooltip
-                                :content="$t('flow.test')"
-                                placement="bottom"
-                            >
-                                <el-button
-                                    class="icon-btn test-btn"
-                                    circle
-                                    @click="popupRundryWindow"
-                                >
+                                }}</el-text>
+                            <el-tooltip :content="$t('flow.test')" placement="bottom">
+                                <el-button class="icon-btn test-btn" circle @click="popupRundryWindow">
                                     <el-icon :size="17">
                                         <EpPromotion />
                                     </el-icon>
@@ -1389,23 +1368,15 @@ const popupRundryWindow = async () => {
                 <el-aside width="170px">
                     <div class="aside-title">{{
                         $t("flow.subFlowList")
-                    }}</div>
-                    <div
-                        class="newSubFlowBtn"
-                        @click="dialogFormVisible = true"
-                    >
+                        }}</div>
+                    <div class="newSubFlowBtn" @click="dialogFormVisible = true">
                         <el-icon size="16px">
                             <EpPlus />
                         </el-icon>
                         {{ $t("flow.addSubFlow") }}
                     </div>
-                    <div
-                        v-for="(item, index) in subFlows"
-                        :id="subFlowId(index)"
-                        :key="item.label"
-                        @click="showSubFlow(index)"
-                        class="subFlowBtn"
-                    >
+                    <div v-for="(item, index) in subFlows" :id="subFlowId(index)" :key="item.label"
+                        @click="showSubFlow(index)" class="subFlowBtn">
                         <span>{{ item.name }}</span>
                         <span @click="removeSubFlow(index)">
                             <el-icon>
@@ -1418,21 +1389,10 @@ const popupRundryWindow = async () => {
                     <div class="nodesBox">
                         <div class="palette-title">{{
                             $t("flow.nodePalette")
-                        }}</div>
-                        <div
-                            v-for="item in nodes"
-                            :key="item.type"
-                            class="node-btn"
-                            :class="item.type"
-                            draggable="true"
-                            @dragend="handleDragEnd($event, item)"
-                        >
-                            <el-tooltip
-                                class="box-item"
-                                effect="dark"
-                                :content="item.desc"
-                                placement="right-start"
-                            >
+                            }}</div>
+                        <div v-for="item in nodes" :key="item.type" class="node-btn" :class="item.type" draggable="true"
+                            @dragend="handleDragEnd($event, item)">
+                            <el-tooltip class="box-item" effect="dark" :content="item.desc" placement="right-start">
                                 <span class="node-btn-label">
                                     <el-icon :size="13" class="node-btn-icon">
                                         <component :is="item.icon" />
@@ -1442,10 +1402,7 @@ const popupRundryWindow = async () => {
                             </el-tooltip>
                         </div>
                     </div>
-                    <div
-                        id="canvas"
-                        @dragover="dragoverDiv"
-                    ></div>
+                    <div id="canvas" @dragover="dragoverDiv"></div>
                     <TeleportContainer />
                 </el-main>
             </el-container>
@@ -1458,49 +1415,36 @@ const popupRundryWindow = async () => {
             </el-form>
             <template #footer>
                 <span class="dialog-footer">
-                    <el-button
-                        type="primary"
-                        @click="
-                            dialogFormVisible = false;
-                            newSubFlow();
-                        "
-                    >
+                    <el-button type="primary" @click="
+                        dialogFormVisible = false;
+                    newSubFlow();
+                    ">
                         {{ $t("common.add") }}
                     </el-button>
                     <el-button @click="dialogFormVisible = false">{{
                         $t("common.cancel")
-                    }}</el-button>
+                        }}</el-button>
                 </span>
             </template>
         </el-dialog>
-        <el-drawer v-model="testingFormVisible" direction="rtl">
+        <el-drawer v-model="testingFormVisible" direction="rtl" size="50%" :append-to-body="true"
+            :destroy-on-close="true">
             <template #header>
                 <b>{{ $t("flow.test") }}</b>
             </template>
             <template #default>
                 <el-scrollbar ref="chatScrollbarRef" height="100%" always>
                     <div ref="dryrunChatRecords">
-                        <div
-                            v-for="item in chatRecords"
-                            :key="item.id"
-                            class="chat-record"
-                            :class="item.textSource"
-                        >
+                        <div v-for="item in chatRecords" :key="item.id" class="chat-record" :class="item.textSource">
                             <!-- <span v-html="item.text"></span> -->
                             <div v-if="item.images && item.images.length" class="chat-images">
-                                <el-image
-                                    v-for="(img, imgIdx) in item.images"
-                                    :key="imgIdx"
-                                    :src="img"
-                                    :preview-src-list="item.images"
-                                    :initial-index="imgIdx"
-                                    fit="cover"
-                                    style="width: 96px; height: 96px; border-radius: 4px"
-                                />
+                                <el-image v-for="(img, imgIdx) in item.images" :key="imgIdx" :src="img"
+                                    :preview-src-list="item.images" :initial-index="imgIdx" fit="cover"
+                                    style="width: 96px; height: 96px; border-radius: 4px" />
                             </div>
                             <el-text v-if="item.answerType == 'TextPlain'">{{
                                 item.text
-                            }}</el-text>
+                                }}</el-text>
                             <el-text v-else v-html="item.text"></el-text>
                         </div>
                     </div>
@@ -1508,75 +1452,39 @@ const popupRundryWindow = async () => {
             </template>
             <template #footer>
                 <div style="flex: auto">
-                    <div
-                        v-if="pendingImages.length"
-                        style="margin-bottom: 6px; display: flex; gap: 6px; flex-wrap: wrap"
-                    >
-                        <div
-                            v-for="(img, idx) in pendingImages"
-                            :key="idx"
-                            style="position: relative"
-                        >
-                            <el-image
-                                :src="`data:${img.mimeType};base64,${img.data}`"
-                                fit="cover"
-                                style="width: 48px; height: 48px; border-radius: 4px"
-                            />
-                            <el-button
-                                size="small"
-                                type="danger"
-                                circle
-                                style="
+                    <div v-if="pendingImages.length"
+                        style="margin-bottom: 6px; display: flex; gap: 6px; flex-wrap: wrap">
+                        <div v-for="(img, idx) in pendingImages" :key="idx" style="position: relative">
+                            <el-image :src="`data:${img.mimeType};base64,${img.data}`" fit="cover"
+                                style="width: 48px; height: 48px; border-radius: 4px" />
+                            <el-button size="small" type="danger" circle style="
                                     position: absolute;
                                     top: -6px;
                                     right: -6px;
                                     transform: scale(0.7);
-                                "
-                                @click="removePendingImage(idx)"
-                            >×</el-button>
+                                " @click="removePendingImage(idx)">×</el-button>
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px">
-                        <el-input
-                            ref="dryrunInput"
-                            :disabled="dryrunDisabled"
-                            v-model="userAsk"
-                            placeholder=""
-                            style="flex: 1"
-                            @keypress="
+                        <el-input ref="dryrunInput" :disabled="dryrunDisabled" v-model="userAsk" placeholder=""
+                            style="flex: 1" @keypress="
                                 (e) => {
                                     if (e.keyCode == 13) dryrun();
                                 }
-                            "
-                        />
+                            " />
                         <el-button-group>
-                            <el-button
-                                :disabled="dryrunDisabled"
-                                @click="dryrunImageInput.click()"
-                                >🖼</el-button
-                            >
-                            <el-button
-                                type="primary"
-                                :disabled="dryrunDisabled"
-                                @click="dryrun"
-                                :loading="waitingResponse"
-                                >{{
+                            <el-button :disabled="dryrunDisabled" @click="dryrunImageInput.click()">🖼</el-button>
+                            <el-button type="primary" :disabled="dryrunDisabled" @click="dryrun"
+                                :loading="waitingResponse">{{
                                     waitingResponse ? "Sending" : $t("flow.send")
-                                }}</el-button
-                            >
+                                }}</el-button>
                             <el-button @click="dryrunClear">{{
                                 $t("flow.reset")
-                            }}</el-button>
+                                }}</el-button>
                         </el-button-group>
                     </div>
-                    <input
-                        ref="dryrunImageInput"
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        style="display: none"
-                        @change="onDryrunImagesSelected"
-                    />
+                    <input ref="dryrunImageInput" type="file" accept="image/*" multiple style="display: none"
+                        @change="onDryrunImagesSelected" />
                 </div>
             </template>
         </el-drawer>
