@@ -1178,7 +1178,7 @@ const popupRundryWindow = async () => {
     padding: 9px 10px;
     margin-bottom: 6px;
     font-size: 12px;
-    width: 100px;
+    width: 116px;
     box-sizing: border-box;
     border-radius: 8px;
     background-color: #fff;
