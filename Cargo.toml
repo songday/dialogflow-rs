@@ -92,7 +92,8 @@ quick-xml = "0.42.0"
 # text-splitter = { version = "0.28.0", default-features = false, features = ["tokenizers"] }
 text-splitter = "0.32"
 # num_cpus = "1.17.0"
-turso = "0.7.2"
+# turso = "0.7.2"
+turso = "=0.8.0-pre.12"
 unicode-casefold = "0.2.0"
 # sqlite-vec = { path = "/mnt/d/work/sqlite-vec/bindings/rust/" }
 
