@@ -559,26 +559,6 @@ const chatProviders = [
                 value: "Phi3Mini4kInstruct",
             },
             {
-                label: "microsoft/Phi-3-mini-128k-instruct (7.7GB)",
-                value: "Phi3Mini128kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-small-8k-instruct (15GB)",
-                value: "Phi3Small8kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-small-128k-instruct (15GB)",
-                value: "Phi3Small128kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-medium-4k-instruct (30GB)",
-                value: "Phi3Medium4kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-medium-128k-instruct (30GB)",
-                value: "Phi3Medium128kInstruct",
-            },
-            {
                 label: "google/gemma-2b-it (4.9GB)",
                 value: "Gemma2bInstruct",
                 need_auth_header: true,
@@ -587,23 +567,6 @@ const chatProviders = [
                 label: "google/gemma-7b-it (12.1GB)",
                 value: "Gemma7bInstruct",
                 need_auth_header: true,
-            },
-            {
-                label: "meta-llama/Meta-Llama-3-8B-Instruct (??GB)",
-                value: "MetaLlama3_8bInstruct",
-                need_auth_header: true,
-            },
-            {
-                label: "upstage/SOLAR-10.7B-v1.0 (21.5GB)",
-                value: "Solar10_7bV1_0",
-            },
-            {
-                label: "Qwen/Qwen2-7B-Instruct (15.4GB)",
-                value: "Qwen2_7BInstruct",
-            },
-            {
-                label: "Qwen/Qwen2-72B-Instruct (144GB)",
-                value: "Qwen2_72BInstruct",
             },
             {
                 label: "TinyLlama/TinyLlama-1.1B-Chat-v1.0 (2.2GB)",
