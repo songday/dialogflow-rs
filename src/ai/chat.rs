@@ -647,7 +647,7 @@ mod tests {
         assert_eq!(info.tokenizer_repository(), "Qwen/Qwen3-4B");
         assert_eq!(
             info.gguf_model_path().unwrap(),
-            "./data/hf_hub/unsloth/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
+            "./data/model/unsloth/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
         );
         // 非 GGUF 模型不受影响：分词器仓库回退到权重仓库。
         let bert = HuggingFaceModel::AllMiniLML6V2.get_info();

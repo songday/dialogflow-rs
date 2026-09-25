@@ -704,7 +704,7 @@ impl std::fmt::Display for HuggingFaceModel {
     }
 }
 
-const HUGGING_FACE_MODEL_ROOT: &str = "./data/hf_hub/";
+const HUGGING_FACE_MODEL_ROOT: &str = "./data/model/";
 
 #[derive(Clone, Serialize)]
 pub(crate) struct DownloadStatus {
