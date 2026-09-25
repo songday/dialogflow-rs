@@ -293,6 +293,26 @@ fn huggingface(
                 &mut result_sender,
             )
         }
+        LoadedHuggingFaceModel::Qwen3((device, model, tokenizer)) => super::qwen3::gen_text(
+            device,
+            model,
+            tokenizer,
+            &new_prompt,
+            sample_len,
+            Some(0.5),
+            &mut result_sender,
+        ),
+        LoadedHuggingFaceModel::Qwen3Moe((device, model, tokenizer)) => {
+            super::qwen3::gen_text_moe(
+                device,
+                model,
+                tokenizer,
+                &new_prompt,
+                sample_len,
+                Some(0.5),
+                &mut result_sender,
+            )
+        }
         LoadedHuggingFaceModel::Bert(_m) => Err(Error::WithMessage(format!(
             "Unsuported model type {:?}.",
             &info.model_type
@@ -541,6 +561,101 @@ mod tests {
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].role, "user");
         assert_eq!(p[0].content, "hello");
+    }
+
+    /// Qwen3 用 ChatML。这里锁住几个容易写错的细节：
+    /// - 回合结束标记是 `<|im_end|>`，不是 llama 的 `</s>`；
+    /// - 每个回合都必须闭合（漏掉 `<|im_end|>` 会让模型把下一段当成同一回合）；
+    /// - 最后必须以 `<|im_start|>assistant\n` 结尾，模型才知道该它说话了。
+    ///
+    /// 期望值对照 HF 上 `Qwen/Qwen3-0.6B` 的 `chat_template` 输出。history 就是
+    /// 完整的消息列表（含最新那条 user）—— `chat()` 与 `gen_text()` 都是这么传的
+    /// （`s` 为空串）。
+    #[test]
+    fn qwen3_prompt_is_chatml_and_stays_closed() {
+        let info = HuggingFaceModel::Qwen3_0_6B.get_info();
+        let history = vec![
+            Prompt {
+                role: String::from("system"),
+                content: String::from("你是客服"),
+            },
+            Prompt {
+                role: String::from("user"),
+                content: String::from("你好"),
+            },
+            Prompt {
+                role: String::from("assistant"),
+                content: String::from("你好，有什么可以帮你？"),
+            },
+            Prompt {
+                role: String::from("user"),
+                content: String::from("退货运费谁出"),
+            },
+        ];
+        assert_eq!(
+            info.convert_prompt("", Some(history)).unwrap(),
+            "<|im_start|>system\n你是客服<|im_end|>\n\
+             <|im_start|>user\n你好<|im_end|>\n\
+             <|im_start|>assistant\n你好，有什么可以帮你？<|im_end|>\n\
+             <|im_start|>user\n退货运费谁出<|im_end|>\n\
+             <|im_start|>assistant\n"
+        );
+    }
+
+    /// 没有历史时，`user` 为空必须**跳过**整个 user 回合：`<|im_start|>user\n
+    /// <|im_end|>` 不是 Qwen3 模板会产出的形状，而 `chat()` 的第一轮就是
+    /// "history 里有 user + `s` 为空"，不注意就会多送一个空回合。
+    #[test]
+    fn qwen3_prompt_skips_an_empty_user_turn() {
+        let info = HuggingFaceModel::Qwen3_8B.get_info();
+        assert_eq!(
+            info.convert_prompt("", None).unwrap(),
+            "<|im_start|>assistant\n"
+        );
+        // 只有 system、没有 user 时同理，也不能留下空回合。
+        let history = vec![Prompt {
+            role: String::from("system"),
+            content: String::from("你是客服"),
+        }];
+        assert_eq!(
+            info.convert_prompt("", Some(history)).unwrap(),
+            "<|im_start|>system\n你是客服<|im_end|>\n<|im_start|>assistant\n"
+        );
+    }
+
+    /// MoE 档位走同一套 ChatML；两条分支不能有一条漏掉。
+    #[test]
+    fn qwen3_moe_uses_the_same_chatml() {
+        let dense = HuggingFaceModel::Qwen3_0_6B.get_info();
+        let moe = HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507.get_info();
+        let history = Some(vec![Prompt {
+            role: String::from("user"),
+            content: String::from("hi"),
+        }]);
+        assert_eq!(
+            dense.convert_prompt("", history.clone()).unwrap(),
+            moe.convert_prompt("", history).unwrap()
+        );
+    }
+
+    /// GGUF 模型是**双仓库**的：权重在 unsloth 的 GGUF 仓库，分词器在官方
+    /// base 仓库（GGUF 仓库里没有 tokenizer.json，已核对过文件清单）。
+    /// 这里锁住两个仓库名，防止有人"顺手统一"成同一个而把下载跑成 404。
+    #[test]
+    fn qwen3_reads_weights_and_tokenizer_from_two_repositories() {
+        let info = HuggingFaceModel::Qwen3_4B.get_info();
+        assert_eq!(info.tokenizer_repository(), "Qwen/Qwen3-4B");
+        assert_eq!(
+            info.gguf_model_path().unwrap(),
+            "./data/hf_hub/unsloth/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
+        );
+        // 非 GGUF 模型不受影响：分词器仓库回退到权重仓库。
+        let bert = HuggingFaceModel::AllMiniLML6V2.get_info();
+        assert!(bert.gguf_model_path().is_none());
+        assert_eq!(
+            bert.tokenizer_repository(),
+            "sentence-transformers/all-MiniLM-L6-v2"
+        );
     }
 
     /// The point of the streaming path: provider output arrives as arbitrary

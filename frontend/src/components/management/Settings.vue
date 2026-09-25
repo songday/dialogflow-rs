@@ -559,26 +559,6 @@ const chatProviders = [
                 value: "Phi3Mini4kInstruct",
             },
             {
-                label: "microsoft/Phi-3-mini-128k-instruct (7.7GB)",
-                value: "Phi3Mini128kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-small-8k-instruct (15GB)",
-                value: "Phi3Small8kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-small-128k-instruct (15GB)",
-                value: "Phi3Small128kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-medium-4k-instruct (30GB)",
-                value: "Phi3Medium4kInstruct",
-            },
-            {
-                label: "microsoft/Phi-3-medium-128k-instruct (30GB)",
-                value: "Phi3Medium128kInstruct",
-            },
-            {
                 label: "google/gemma-2b-it (4.9GB)",
                 value: "Gemma2bInstruct",
                 need_auth_header: true,
@@ -589,25 +569,39 @@ const chatProviders = [
                 need_auth_header: true,
             },
             {
-                label: "meta-llama/Meta-Llama-3-8B-Instruct (??GB)",
-                value: "MetaLlama3_8bInstruct",
-                need_auth_header: true,
-            },
-            {
-                label: "upstage/SOLAR-10.7B-v1.0 (21.5GB)",
-                value: "Solar10_7bV1_0",
-            },
-            {
-                label: "Qwen/Qwen2-7B-Instruct (15.4GB)",
-                value: "Qwen2_7BInstruct",
-            },
-            {
-                label: "Qwen/Qwen2-72B-Instruct (144GB)",
-                value: "Qwen2_72BInstruct",
-            },
-            {
                 label: "TinyLlama/TinyLlama-1.1B-Chat-v1.0 (2.2GB)",
                 value: "TinyLlama1_1bChatV1_0",
+            },
+            // 本地千问（Qwen3）。权重是 GGUF 量化版（Q4_K_M），分词器另外从官方
+            // base 仓库下载 —— GGUF 仓库本身不带 tokenizer.json。体积是
+            // Q4_K_M 实际大小。
+            {
+                label: "Qwen/Qwen3-0.6B (GGUF Q4_K_M, 397MB)",
+                value: "Qwen3_0_6B",
+            },
+            {
+                label: "Qwen/Qwen3-1.7B (GGUF Q4_K_M, 1.1GB)",
+                value: "Qwen3_1_7B",
+            },
+            {
+                label: "Qwen/Qwen3-4B (GGUF Q4_K_M, 2.5GB)",
+                value: "Qwen3_4B",
+            },
+            {
+                label: "Qwen/Qwen3-8B (GGUF Q4_K_M, 5.0GB)",
+                value: "Qwen3_8B",
+            },
+            {
+                label: "Qwen/Qwen3-14B (GGUF Q4_K_M, 9.0GB)",
+                value: "Qwen3_14B",
+            },
+            {
+                label: "Qwen/Qwen3-32B (GGUF Q4_K_M, 19.8GB)",
+                value: "Qwen3_32B",
+            },
+            {
+                label: "Qwen/Qwen3-30B-A3B-Instruct-2507 (GGUF Q4_K_M, 17.3GB)",
+                value: "Qwen3_30B_A3B_Instruct_2507",
             },
         ],
     },
