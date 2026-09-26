@@ -23,6 +23,10 @@ const nodeData = reactive({
     exitLlmResultContains: "",
     maxChatTimes: 1,
     responseStreaming: true,
+    // 本地 Qwen3 的思考模式。默认关闭：小模型上思考过程会先占掉几十秒才出
+    // 第一句话，而多数对话场景要的是直接回答。对非 Qwen3 模型（llama/gemma/
+    // phi3，以及所有在线模型）这个开关不产生任何影响。
+    enableThinking: false,
     connectTimeout: 1000,
     readTimeout: 10000,
     whenTimeoutThen: "GotoAnotherNode",
@@ -475,6 +479,24 @@ const hideForm = () => {
                         v-model="nodeData.responseStreaming"
                         label="Response streaming"
                     />
+                </el-form-item>
+                <el-form-item
+                    :label="formFields[8]"
+                    :label-width="formLabelWidth"
+                >
+                    <el-checkbox
+                        v-model="nodeData.enableThinking"
+                        :label="formFields[8]"
+                    />
+                    <el-tooltip effect="light" placement="right">
+                        <template #content>
+                            Let the model reason step by step before answering.
+                            Only affects local Qwen3 models; it makes the first
+                            word take much longer to arrive. Other models ignore
+                            this setting.
+                        </template>
+                        <el-button size="small" circle>?</el-button>
+                    </el-tooltip>
                 </el-form-item>
             </el-form>
             <div>

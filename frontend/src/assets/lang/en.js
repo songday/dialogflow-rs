@@ -204,6 +204,7 @@ export default {
       "Read",
       "When timeout then",
       "Streaming",
+      "Thinking mode",
     ],
   },
   externalHttpNode: {

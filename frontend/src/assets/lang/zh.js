@@ -189,6 +189,7 @@ export default {
       "读取超时",
       "超时则",
       "流式",
+      "思考模式",
     ],
   },
   externalHttpNode: {
