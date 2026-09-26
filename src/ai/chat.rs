@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::vec::Vec;
 
 use futures_util::StreamExt;
@@ -28,10 +28,65 @@ pub(crate) const TEMPERATURE: f64 = 0.7;
 pub(crate) const REPEAT_PENALTY: f32 = 1.1;
 pub(crate) const REPEAT_LAST_N: usize = 64;
 
-static LOADED_MODELS: LazyLock<Mutex<HashMap<String, LoadedHuggingFaceModel>>> =
+/// 已经装好的本地模型，按 `robot_id` 一个实例。
+///
+/// 两把锁，职责不同：
+///
+/// - **外层**（`Mutex`）只保护这张表本身（查/插入），拿到 `Arc` 就释放；
+/// - **内层**（`Mutex`）保护那个模型，生成期间一直持有。
+///
+/// 这样两个机器人用不同模型时可以**并行**生成；同一个机器人的请求仍在它的
+/// 内层锁上串行 —— 这是必须的，因为 KV cache 是模型自身的可变状态，两次生成
+/// 同时改它必然互相污染。
+///
+/// 以前是 `Mutex<HashMap<String, LoadedHuggingFaceModel>>`，只有一把锁、且从
+/// 加载模型一直持有到生成结束，于是**所有**本地模型请求被强制排成一队。
+static LOADED_MODELS: LazyLock<Mutex<HashMap<String, Arc<Mutex<LoadedHuggingFaceModel>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
-// static HTTP_CLIENTS: LazyLock<Mutex<HashMap<String, LoadedHuggingFaceModel>>> =
-//     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
+
+/// 正在加载中的机器人，防止同一个模型被并发加载两遍。
+///
+/// 用 `tokio::sync::Mutex` 是因为加载要跨 `.await` 持有它。每个 key 一把锁，
+/// 所以一个机器人的冷加载不会挡住别的机器人。
+static LOADING: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
+
+/// 取出 `robot_id` 对应的模型，没有就加载一个。
+async fn get_or_load_model(
+    robot_id: &str,
+    m: &HuggingFaceModel,
+) -> Result<Arc<Mutex<LoadedHuggingFaceModel>>> {
+    // 快路径：已装好就直接拿，完全不碰加载锁。
+    {
+        let models = LOADED_MODELS.lock()?;
+        if let Some(existing) = models.get(robot_id) {
+            return Ok(existing.clone());
+        }
+    }
+    // 取该机器人的加载锁；同一个模型的并发冷启动在这里排队，只有第一个真正加载。
+    let init = {
+        let mut loading = LOADING.lock()?;
+        loading
+            .entry(String::from(robot_id))
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+    let _guard = init.lock().await;
+    // 拿到加载锁后复查：排在前面的那个可能已经装好了。
+    {
+        let models = LOADED_MODELS.lock()?;
+        if let Some(existing) = models.get(robot_id) {
+            return Ok(existing.clone());
+        }
+    }
+    // 锁外加载（只持有该机器人的加载锁）。生成用的是 `Arc` 快照，所以这里
+    // 不会再阻塞任何已经在跑的生成。
+    let loaded = LoadedHuggingFaceModel::load(m)?;
+    let mut models = LOADED_MODELS.lock()?;
+    let entry = Arc::new(Mutex::new(loaded));
+    models.insert(String::from(robot_id), entry.clone());
+    Ok(entry)
+}
 
 /// The sink one answer's deltas go to.
 pub(crate) struct SenderWrapper<D> {
@@ -129,8 +184,91 @@ pub(crate) enum ChatProvider {
 pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
     let m = LoadedHuggingFaceModel::load(m)?;
     let mut r = LOADED_MODELS.lock()?;
-    r.insert(String::from(robot_id), m);
+    // 换成一个新的 `Arc`：正在生成的请求手里还攥着旧的那个，会安全地跑完并被
+    // 释放，不会被这里拦住，也不会被我们改到。
+    r.insert(String::from(robot_id), Arc::new(Mutex::new(m)));
     Ok(())
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+
+    /// 并发共享的"模型句柄"。用 `String` 占位就够了 —— 要验证的是**锁的粒度**，
+    /// 不是模型本身，这样单测不必加载任何权重。
+    fn handle(name: &str) -> Arc<Mutex<String>> {
+        Arc::new(Mutex::new(String::from(name)))
+    }
+
+    fn model_map() -> &'static Mutex<HashMap<String, Arc<Mutex<String>>>> {
+        // 与 LOADED_MODELS 同形的一张独立表，避免污染真实缓存。
+        static TEST_MAP: LazyLock<Mutex<HashMap<String, Arc<Mutex<String>>>>> =
+            LazyLock::new(|| Mutex::new(HashMap::new()));
+        &TEST_MAP
+    }
+
+    /// 生成期间**绝不能**持有 `LOADED_MODELS`，否则所有本地模型请求（哪怕用的是
+    /// 完全不同的模型）都会被排成一队 —— 这正是之前的性能问题：一把大锁从加载
+    /// 模型一直持有到生成结束。
+    ///
+    /// 判定方式：模拟"机器人 A 正在生成"（持有 A 的内层锁），此时另一个线程必须
+    /// 仍能拿到表锁、并能锁住 B 的模型。拿不到就说明粒度不对。
+    #[test]
+    fn one_robots_generation_does_not_block_another_robot() {
+        let models = model_map();
+        {
+            let mut m = models.lock().unwrap();
+            m.insert(String::from("t1"), handle("a"));
+            m.insert(String::from("t2"), handle("b"));
+        }
+
+        // 取出 A 的快照后立刻放开表锁，然后"长时间生成"。
+        let entry_a = { models.lock().unwrap().get("t1").unwrap().clone() };
+        let guard_a = entry_a.lock().unwrap();
+        assert_eq!(*guard_a, "a");
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            // 只依赖 model_map() 的 'static 引用，不需要跨越借用。
+            let models = model_map();
+            let entry_b = { models.lock().unwrap().get("t2").unwrap().clone() };
+            let g = entry_b.lock().unwrap();
+            tx.send(g.clone()).unwrap();
+        });
+
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(5)).expect(
+                "another robot's model was unreachable while one generation ran: the map \
+                 (or a shared lock) is still held across generation"
+            ),
+            "b"
+        );
+        drop(guard_a);
+        worker.join().unwrap();
+    }
+
+    /// 同一个机器人的两次生成必须串行：KV cache 是模型自身的可变状态，并发改写
+    /// 会互相污染 —— 这正是"粘在上一个话题"那个 bug 的成因。
+    #[test]
+    fn the_same_model_is_serialized() {
+        let entry = handle("only");
+
+        let guard = entry.lock().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let entry2 = entry.clone();
+        let worker = std::thread::spawn(move || {
+            let _g = entry2.lock().unwrap();
+            tx.send(()).unwrap();
+        });
+
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(300)).is_err(),
+            "a second generation on the same model must wait for the first"
+        );
+        drop(guard);
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
+        worker.join().unwrap();
+    }
 }
 
 pub(crate) async fn chat(
@@ -169,6 +307,11 @@ pub(crate) async fn chat(
                 let media = media.cloned();
                 let robot_id = String::from(robot_id);
                 let sample_len = settings.chat_provider.max_response_token_length as usize;
+                // 冷加载必须在 async 上下文里做：`spawn_blocking` 的闭包是同步
+                // 的，`.await` 进不去；而加载要按机器人串行（`get_or_load_model`
+                // 里那把按 key 分的加载锁）。放在这里也让**加载不占用模型锁**，
+                // 已经在生成的机器人不受影响。
+                let entry = get_or_load_model(&robot_id, &model).await?;
                 let (r, generated) = tokio::task::spawn_blocking(move || {
                     let mut generated = String::with_capacity(1024);
                     let r = {
@@ -179,6 +322,7 @@ pub(crate) async fn chat(
                         huggingface(
                             &robot_id,
                             &model,
+                            entry,
                             chat_history,
                             media.as_ref(),
                             sample_len,
@@ -271,8 +415,9 @@ fn parse_prompt(s: &str) -> Vec<Prompt> {
 }
 
 fn huggingface(
-    robot_id: &str,
+    _robot_id: &str,
     m: &HuggingFaceModel,
+    entry: Arc<Mutex<LoadedHuggingFaceModel>>,
     chat_history: Option<Vec<Prompt>>,
     media: Option<&crate::ai::dto::UserMediaData>,
     sample_len: usize,
@@ -291,15 +436,16 @@ fn huggingface(
     }
     let new_prompt = info.convert_prompt("", chat_history.clone(), enable_thinking)?;
     log::info!("Prompt: {}", &new_prompt);
-    let mut model = LOADED_MODELS.lock().unwrap_or_else(|e| {
+    // 只锁这一个模型：不同机器人之间互不阻塞，同一机器人的请求在此串行
+    // （KV cache 是模型自身的可变状态，必须串行）。
+    //
+    // `entry` 是 `chat()` 拿到的 `Arc` 快照：即使期间有人 `replace_model_cache`
+    // 换了新实例，我们手上这个依然有效，不会被改动或提前释放。
+    let mut guard = entry.lock().unwrap_or_else(|e| {
         log::warn!("{:#?}", &e);
         e.into_inner()
     });
-    if !model.contains_key(robot_id) {
-        let r = LoadedHuggingFaceModel::load(m)?;
-        model.insert(String::from(robot_id), r);
-    };
-    let loaded_model = model.get_mut(robot_id).unwrap();
+    let loaded_model = &mut *guard;
     match loaded_model {
         LoadedHuggingFaceModel::Gemma(m) => super::gemma::gen_text(
             &m.0,
