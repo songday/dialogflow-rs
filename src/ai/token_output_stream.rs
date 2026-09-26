@@ -82,3 +82,42 @@ impl TokenOutputStream {
         self.current_index = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 记录一个实际踩过的坑：`skip_special_tokens=true` **不会**滤掉 `<think>` /
+    /// `</think>`（151667 / 151668）—— 它们会被当成普通文本吐给读者。
+    ///
+    /// 所以"关掉思考"不能靠事后过滤，只能靠提示词（见 `huggingface.rs` 里
+    /// Qwen3 分支的说明）。这条测试用真实分词器把这个事实钉住。
+    ///
+    /// 模型文件不在时跳过（CI 上通常没有）。
+    #[test]
+    fn the_think_markers_are_not_filtered_by_skip_special_tokens() {
+        let path = "data/model/Qwen/Qwen3-0.6B/tokenizer.json";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("skipping: {path} not present");
+            return;
+        }
+        let tokenizer = tokenizers::Tokenizer::from_file(path).unwrap();
+        let mut tos = TokenOutputStream::new(tokenizer);
+
+        // 151668 = `</think>`，后面跟真实回答。
+        let mut emitted = String::new();
+        for tok in [151668u32, 271, 103942] {
+            if let Some(t) = tos.next_token(tok).unwrap() {
+                emitted.push_str(&t);
+            }
+        }
+        if let Some(rest) = tos.decode_rest().unwrap() {
+            emitted.push_str(&rest);
+        }
+        assert!(
+            emitted.contains("</think>"),
+            "if this ever stops holding, the prompt-side workaround could be \
+             replaced by filtering: {emitted:?}"
+        );
+    }
+}

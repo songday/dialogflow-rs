@@ -185,6 +185,7 @@ async fn convert_node(robot_id: &str, main_flow_id: &str, node: &mut Node) -> Re
                         connect_timeout: n.connect_timeout,
                         read_timeout: n.read_timeout,
                         response_streaming: n.response_streaming,
+                        enable_thinking: n.enable_thinking,
                         ret: NextActionType::WaitUserResponse == n.next_step,
                         next_node_id: n.branches[0].target_node_id.clone(),
                     };
@@ -204,6 +205,7 @@ async fn convert_node(robot_id: &str, main_flow_id: &str, node: &mut Node) -> Re
                 connect_timeout: n.connect_timeout,
                 read_timeout: n.read_timeout,
                 response_streaming: n.response_streaming,
+                enable_thinking: n.enable_thinking,
                 next_node_id: n.branches[0].target_node_id.clone(),
             };
             let r = RuntimeNodeEnum::LlmChatNode(node);
