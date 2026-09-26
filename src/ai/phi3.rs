@@ -69,6 +69,7 @@ pub(super) fn gen_text(
     let mut pos = 0;
     let mut rng = Rand::new();
     let mut model = model.clone();
+    model.clear_kv_cache();
     let mut logits_processor = LogitsProcessor::new(
         rng.r#gen::<u64>(),
         Some(super::chat::TEMPERATURE),

@@ -32,17 +32,45 @@ const IM_END: &str = "<|im_end|>";
 /// `[b, vocab]`，调用方 `squeeze(0)` 之后就是一维 logits。
 trait NextLogits {
     fn next_logits(&mut self, input: &Tensor, offset: usize) -> candle::Result<Tensor>;
+
+    /// 丢掉上一次推理留下的 KV cache。
+    ///
+    /// **每次回答之前都必须调。** `LOADED_MODELS` 会把模型实例缓存下来复用，
+    /// 而 cache 里的 K/V 是上一次请求的内容：不清理的话，新提示词虽然从 offset 0
+    /// 开始，注意力却还会读到上一次的 token。
+    ///
+    /// 症状非常有迷惑性 —— 模型"粘"在上一个话题上：连问五个互不相关的新话题
+    /// （时尚 / 美食 / 音乐 / 航空母舰 / 园艺），答案全部还是第一个话题"时尚"。
+    /// 新建实例就没有这个问题，所以一度被误判成"小模型能力不行"。
+    fn clear_cache(&mut self);
 }
 
 impl NextLogits for Qwen3 {
     fn next_logits(&mut self, input: &Tensor, offset: usize) -> candle::Result<Tensor> {
         self.forward(input, offset)
     }
+
+    fn clear_cache(&mut self) {
+        self.clear_kv_cache();
+    }
 }
 
 impl NextLogits for Qwen3Moe {
     fn next_logits(&mut self, input: &Tensor, offset: usize) -> candle::Result<Tensor> {
         self.forward(input, offset)
+    }
+
+    fn clear_cache(&mut self) {
+        // `GGUFQWenMoE` 没有暴露 `clear_kv_cache()`（只有 `ConcatKvCache` 字段，
+        // 没给出重置入口），所以这里做不到。后果是**第二条及以后的请求会读到
+        // 上一次的 KV**，和稠密版没修之前一样。要彻底解决得等上游补这个接口，
+        // 或者每次请求都重建 MoE 模型（加载很贵）。
+        //
+        // 用 debug 而不是 warn：每次请求都会走到这里，warn 会把日志刷满。
+        log::debug!(
+            "Qwen3Moe cannot clear its KV cache (candle exposes no clear_kv_cache); \
+             answers after the first one may bleed the previous conversation's topic"
+        );
     }
 }
 
@@ -156,6 +184,10 @@ fn generate<M: NextLogits>(
         prompt_len,
         device,
     );
+
+    // 先清掉上一次回答留下的 KV。模型实例是跨请求复用的（`LOADED_MODELS`），
+    // 不清就会"粘"在上一个话题上 —— 详见 `NextLogits::clear_cache`。
+    model.clear_cache();
 
     // 预填充：整段提示词一次过，offset 从 0 开始。
     let mut logits = {

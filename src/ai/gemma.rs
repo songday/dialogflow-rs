@@ -59,6 +59,7 @@ pub(super) fn gen_text(
     let mut generated_tokens = 0usize;
     let start_gen = std::time::Instant::now();
     let mut model = model.clone();
+    model.clear_kv_cache();
     // let rr = Rc::new(result_sender);
     for index in 0..sample_len {
         let context_size = if index > 0 { 1 } else { tokens.len() };
