@@ -209,7 +209,7 @@ impl Default for Settings {
                 model: String::new(),
                 connect_timeout_millis: 5000,
                 read_timeout_millis: 10000,
-                max_response_token_length: 1000,
+                max_response_token_length: 200,
                 proxy_url: String::new(),
             },
             sentence_embedding_provider: SentenceEmbeddingProvider {
@@ -392,7 +392,7 @@ pub(crate) async fn save_settings(robot_id: &str, data: Settings) -> Result<()> 
     if let embedding::SentenceEmbeddingProvider::HuggingFace(m) =
         &data.sentence_embedding_provider.provider
     {
-        match crate::ai::huggingface::load_bert_model_files(m.get_info().repository) {
+        match crate::ai::huggingface::load_bert_model_files(&m.get_info()) {
             Ok(m) => embedding::replace_model_cache(robot_id, m),
             Err(e) => {
                 log::warn!(
