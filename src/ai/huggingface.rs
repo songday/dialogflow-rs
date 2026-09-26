@@ -84,7 +84,7 @@ impl LoadedHuggingFaceModel {
                 LoadedHuggingFaceModel::Moondream(load_moondream_model_files(&info)?)
             }
             HuggingFaceModelType::Bert => {
-                LoadedHuggingFaceModel::Bert(load_bert_model_files(info.tokenizer_repository())?)
+                LoadedHuggingFaceModel::Bert(load_bert_model_files(&info)?)
             }
             HuggingFaceModelType::Qwen3 => {
                 LoadedHuggingFaceModel::Qwen3(super::qwen3::load_qwen3_model_files(&info)?)
@@ -149,20 +149,48 @@ impl HuggingFaceModelInfo {
             None
         } else {
             Some(construct_model_file_path(
-                self.mirror,
+                self.local_directory(),
                 self.gguf_model_filename,
             ))
         }
+    }
+
+    /// 这个模型的本地根目录名（相对 `HUGGING_FACE_MODEL_ROOT`）。
+    ///
+    /// 下载与加载**必须**都从这里取。以前下载用 `repository`、加载用 `mirror`，
+    /// 两个字段一旦不一致，文件就被下载到一个目录、却去另一个目录加载。
+    ///
+    /// 取 `repository` 而不是 `mirror`：目录名要跟着**保存时**用的那个仓库走，
+    /// 这样已经下载好的模型原地可用。`mirror` 只表示"从哪个镜像/量化仓库取文件"，
+    /// 它会随量化档位变（`unsloth/Qwen3-0.6B-GGUF`），不该决定本地目录。
+    pub(super) fn local_directory(&self) -> &'static str {
+        self.repository
+    }
+
+    /// `local_directory()` 的完整路径。
+    pub(super) fn local_directory_path(&self) -> String {
+        format!("{HUGGING_FACE_MODEL_ROOT}{}", self.local_directory())
+    }
+
+    /// 本地 `tokenizer.json` 的完整路径。
+    pub(super) fn tokenizer_path(&self) -> String {
+        construct_model_file_path(self.local_directory(), "tokenizer.json")
     }
 
     pub(super) fn supports_vision(&self) -> bool {
         matches!(self.model_type, HuggingFaceModelType::Moondream)
     }
 
+    /// 把对话历史拼成模型要的提示词。
+    ///
+    /// `enable_thinking` 只对 Qwen3 有意义（`false` 时注入官方模板的 `/no_think`）；
+    /// 其余模型完全忽略它 —— 给 llama/gemma/phi3 塞 `/no_think` 只会污染它们的
+    /// 提示词，所以这个开关必须在这里按模型类型判断，不能让调用方自己拼字符串。
     pub(super) fn convert_prompt(
         &self,
         s: &str,
         history: Option<Vec<crate::ai::chat::Prompt>>,
+        enable_thinking: bool,
     ) -> Result<String> {
         let mut system = String::new();
         let mut user = String::new();
@@ -264,14 +292,9 @@ impl HuggingFaceModelInfo {
             // Qwen3 用 ChatML。和上面几个一样，只有 system 和我们自己拼的
             // assistant 开头是固定的，history 原样保留。
             //
-            // 两点上游细节，故意跟随：
-            // 1. 历史里的 `tool` 回合先开一个 `<|im_start|>user`；本项目的
-            //    `Prompt.role` 目前只有 system/user/assistant，走不到这个分支，
-            //    但保持一致，将来加角色时不会静默丢弃内容。
-            // 2. 带思考模式的档位（0.6B–32B）在 `enable_thinking=false` 时，
-            //    template 会在 assistant 前缀后注入 `<think>\n\n</think>\n\n`。
-            //    我们不发这个指令，就用模型默认行为（思考模式开）；想关掉，
-            //    在 system 提示词里加 `/no_think` 即可。
+            // 历史里的 `tool` 回合先开一个 `<|im_start|>user`；本项目的
+            // `Prompt.role` 目前只有 system/user/assistant，走不到这个分支，
+            // 但保持一致，将来加角色时不会静默丢弃内容。
             HuggingFaceModelType::Qwen3 | HuggingFaceModelType::Qwen3Moe => {
                 let mut p = String::with_capacity(s.len() + 64);
                 if !system.is_empty() {
@@ -306,7 +329,22 @@ impl HuggingFaceModelInfo {
                     p.push_str(&user);
                     p.push_str("<|im_end|>\n");
                 }
+                // 生成前缀。关闭思考时照着 Qwen3 自己的 `chat_template` 来：
+                // 它的 `add_generation_prompt` 分支在 `enable_thinking == false`
+                // 时就追加一个**空的 think 块**，模型随后直接给答案、不会再吐
+                // 思考内容。
+                //
+                // 早先这里发的是 `/no_think`（Qwen2.5 的软开关）。实测不行：
+                // 0.6B 不认它，照样输出 `<think>\n\n</think>\n\n` 前缀，
+                // 那个 `</think>` 会被当成正文流到用户面前。
+                //
+                // 实测对比（`Qwen3-0.6B-Q4_K_M`，同一 seed）：
+                //   `/no_think` 版 → `<think>\n\n</think>\n\n当然可以！…`
+                //   空 think 块版 → `当然可以！…`            ← 模型跳过了思考
                 p.push_str("<|im_start|>assistant\n");
+                if !enable_thinking {
+                    p.push_str("<think>\n\n</think>\n\n");
+                }
                 Ok(p)
             }
             HuggingFaceModelType::Moondream => todo!()
@@ -793,7 +831,10 @@ pub(crate) async fn download_hf_models(
         }
         status.downloading = true;
     }
-    let root_path = format!("{}{}", HUGGING_FACE_MODEL_ROOT, info.repository);
+    // 目录名走 `local_directory()`，和加载路径（`construct_model_file_path` /
+    // `gguf_model_path`）同源。以前这里用 `info.repository`，于是 GGUF 模型
+    // （repository 是所有权仓库、mirror 是量化仓库）下载与加载各去一个目录。
+    let root_path = info.local_directory_path();
     tokio::fs::create_dir_all(&root_path).await?;
 
     let mut headers = HeaderMap::new();
@@ -820,33 +861,23 @@ pub(crate) async fn download_hf_models(
         }
     }
     let client = builder.build()?;
-    // 要下载的文件是 (仓库, 文件名) 而不是纯文件名：GGUF 模型的权重在本仓库、
-    // 分词器在另一个仓库（本仓库里根本没有）。不比较仓库就跳过，因为分词器仓库
-    // 通常已经在本仓库的 model_files 里（`tokenizer.json` / `config.json`）。
-    let tokenizer_repository = info.tokenizer_repository();
-    let mut files: Vec<(&str, String)> = info
-        .model_files
-        .iter()
-        .map(|&s| (info.mirror, String::from(s)))
-        .collect();
-    if tokenizer_repository != info.mirror {
-        for &f in info.model_files.iter() {
-            files.push((tokenizer_repository, String::from(f)));
-        }
-    }
-    if !info.gguf_model_filename.is_empty() {
-        files.push((info.mirror, String::from(info.gguf_model_filename)));
-    }
+    // 每个文件只归**一个**仓库。曾经这里是"两个仓库各推一份"，依赖 `download_hf_file`
+    // 跳过已存在的文件来收敛 —— 于是顺序成了行为的一部分，而且第一个被尝试的是
+    // 错的仓库（`unsloth/Qwen3-0.6B-GGUF/tokenizer.json`，那个仓库里根本没这个
+    // 文件），每次下载都先白挨一个 404。现在路由一次定死（`download_file_list`），
+    // 顺序无关紧要。
+    let mut files = download_file_list(info);
     let mut r: Result<_> = Ok(());
     if !info.model_index_file.is_empty() {
-        let model_index_file = construct_model_file_path(info.mirror, info.model_index_file);
+        let dir = info.local_directory();
+        let model_index_file = construct_model_file_path(dir, info.model_index_file);
         let path = std::path::Path::new(&model_index_file);
         if !path.exists() {
-            r = download_hf_file(&client, info.mirror, &root_path, info.model_index_file).await;
+            r = download_hf_file(&client, dir, &root_path, info.model_index_file).await;
         }
         if r.is_ok() {
-            let f = load_safetensors(info.mirror, info.model_index_file)?;
-            files.extend(f.into_iter().map(|v| (info.mirror, v)));
+            let f = load_safetensors(dir, info.model_index_file)?;
+            files.extend(f.into_iter().map(|v| (dir, v)));
         }
     };
     if r.is_ok() {
@@ -1076,21 +1107,28 @@ pub(crate) fn check_model_files(info: &HuggingFaceModelInfo) -> Result<()> {
     // }
 }
 
-pub(super) fn init_tokenizer(repo: &str) -> Result<Tokenizer> {
-    let f = construct_model_file_path(repo, "tokenizer.json");
-    match Tokenizer::from_file(&f) {
+/// 读已下载的 `tokenizer.json`。
+///
+/// 收的是**文件路径**而不是仓库名：分词器是两仓库下载的产物，落在
+/// `local_directory()` 里（`Qwen/Qwen3-0.6B`），而不是它在 HuggingFace 上的
+/// 来源仓库（`mirror`）。按仓库名去找会指到一个不存在的目录。
+pub(super) fn init_tokenizer(tokenizer_path: &str) -> Result<Tokenizer> {
+    match Tokenizer::from_file(tokenizer_path) {
         Ok(t) => Ok(t),
-        Err(e) => Err(Error::WithMessage(format!("{}", &e))),
+        Err(e) => Err(Error::WithMessage(format!("{tokenizer_path}: {e}"))),
     }
 }
 
 fn set_tokenizer_config(
-    tokenizer_repository: &str,
+    tokenizer_path: &str,
     mut tokenizer: Tokenizer,
     pad_token_id: u32,
 ) -> Result<Tokenizer> {
-    let f = construct_model_file_path(tokenizer_repository, "tokenizer_config.json");
-    let p = std::path::Path::new(&f);
+    let dir = std::path::Path::new(tokenizer_path)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let f = dir.join("tokenizer_config.json");
+    let p = f.as_path();
     let t = if p.exists() {
         let j: serde_json::Value = serde_json::from_slice(std::fs::read(&f)?.as_slice())?;
         let model_max_length = j["model_max_length"]
@@ -1131,9 +1169,12 @@ fn set_tokenizer_config(
     // log::info!("t2 {}", tokenizer.get_truncation().unwrap().max_length);
 }
 
-fn set_special_tokens_map(mirror: &str, tokenizer: &mut Tokenizer) -> Result<()> {
-    let f = construct_model_file_path(mirror, "special_tokens_map.json");
-    let p = std::path::Path::new(&f);
+fn set_special_tokens_map(tokenizer_path: &str, tokenizer: &mut Tokenizer) -> Result<()> {
+    let dir = std::path::Path::new(tokenizer_path)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let f = dir.join("special_tokens_map.json");
+    let p = f.as_path();
     if !p.exists() {
         return Ok(());
     }
@@ -1162,16 +1203,19 @@ fn set_special_tokens_map(mirror: &str, tokenizer: &mut Tokenizer) -> Result<()>
     Ok(())
 }
 
-pub(crate) fn load_bert_model_files(tokenizer_repository: &str) -> Result<(BertModel, Tokenizer)> {
-    let f = construct_model_file_path(tokenizer_repository, "config.json");
+pub(crate) fn load_bert_model_files(info: &HuggingFaceModelInfo) -> Result<(BertModel, Tokenizer)> {
+    // 本地目录一律走 `local_directory()`：下载落在那里，加载也从那里读。
+    let dir = info.local_directory();
+    let f = construct_model_file_path(dir, "config.json");
     let config = std::fs::read_to_string(&f)?;
     let config: serde_json::Value = serde_json::from_str(&config)?;
     let pad_token_id = config["pad_token_id"].as_u64().unwrap_or(0) as u32;
     let config: Config = serde_json::from_value(config)?;
-    let tokenizer = init_tokenizer(tokenizer_repository)?;
-    let mut tokenizer = set_tokenizer_config(tokenizer_repository, tokenizer, pad_token_id)?;
-    set_special_tokens_map(tokenizer_repository, &mut tokenizer)?;
-    let f = construct_model_file_path(tokenizer_repository, "model.safetensors");
+    let tokenizer_path = info.tokenizer_path();
+    let tokenizer = init_tokenizer(&tokenizer_path)?;
+    let mut tokenizer = set_tokenizer_config(&tokenizer_path, tokenizer, pad_token_id)?;
+    set_special_tokens_map(&tokenizer_path, &mut tokenizer)?;
+    let f = construct_model_file_path(dir, "model.safetensors");
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&[&f], DTYPE, &device()?)? };
     let model = BertModel::load(vb, &config)?;
     Ok((model, tokenizer))
@@ -1213,16 +1257,17 @@ pub(crate) fn load_phi3_model_files(
     } else {
         DType::F32
     };
-    let filenames = load_safetensors(info.mirror, info.model_index_file)?
+    let dir = info.local_directory();
+    let filenames = load_safetensors(dir, info.model_index_file)?
         .iter()
-        .map(|v| std::path::PathBuf::from(construct_model_file_path(info.mirror, v)))
+        .map(|v| std::path::PathBuf::from(construct_model_file_path(dir, v)))
         .collect::<Vec<_>>();
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
-    let config_filename = construct_model_file_path(info.mirror, "config.json");
+    let config_filename = construct_model_file_path(dir, "config.json");
     let config = std::fs::read_to_string(config_filename)?;
     let config: Phi3Config = serde_json::from_str(&config)?;
     let phi3 = Phi3::new(&config, vb)?;
-    let tokenizer = init_tokenizer(info.tokenizer_repository())?;
+    let tokenizer = init_tokenizer(&info.tokenizer_path())?;
     Ok((device, phi3, tokenizer))
 }
 
@@ -1232,36 +1277,65 @@ pub(crate) fn load_phi3_model_files(
 /// 仓库，`info.model_files` 里既有本仓库的文件（`config.json`）也有 tokenizer
 /// 仓库的文件（`tokenizer.json`）。
 fn get_model_files(info: &HuggingFaceModelInfo) -> Result<Vec<String>> {
-    let tokenizer_repository = info.tokenizer_repository();
+    // 本地路径全部按 `local_directory()` 拼 —— 下载落在那里，校验也从那里看。
+    let dir = info.local_directory();
     let mut f = if info.model_index_file.is_empty() {
-        vec![construct_model_file_path(info.mirror, "model.safetensors")]
+        vec![construct_model_file_path(dir, "model.safetensors")]
     } else {
-        load_safetensors(info.repository, info.model_index_file)?
+        load_safetensors(dir, info.model_index_file)?
             .iter()
-            .map(|v| construct_model_file_path(info.mirror, v))
+            .map(|v| construct_model_file_path(dir, v))
             .collect::<Vec<_>>()
     };
     if !info.gguf_model_filename.is_empty() {
         // GGUF 模型没有 model.safetensors —— 上面那个占位路径要把权重换成 GGUF。
         f.clear();
-        f.push(construct_model_file_path(
-            info.mirror,
-            info.gguf_model_filename,
-        ));
+        f.push(construct_model_file_path(dir, info.gguf_model_filename));
     }
     for &name in info.model_files.iter() {
-        let repository = if tokenizer_repository != info.mirror && is_tokenizer_file(name) {
-            tokenizer_repository
-        } else {
-            info.mirror
-        };
-        f.push(construct_model_file_path(repository, name));
+        f.push(construct_model_file_path(dir, name));
     }
     Ok(f)
 }
 
-/// `model_files` 里哪些属于分词器仓库。GGUF 权重仓库只有 `config.json`，
-/// 其余（`tokenizer.json` / `tokenizer_config.json`）都在 base 模型仓库。
+/// 要下载的文件清单：`(仓库, 文件名)`。
+///
+/// 拆成独立函数是为了能被单测覆盖 —— 这里出过一次真实的错（同一份
+/// `tokenizer.json` 被同时指向 GGUF 权重仓库和 base 模型仓库，于是每次下载都先
+/// 向一个没有该文件的仓库发一次请求）。不联网也能断言路由结果。
+fn download_file_list(info: &HuggingFaceModelInfo) -> Vec<(&'static str, String)> {
+    let mut files: Vec<(&'static str, String)> = info
+        .model_files
+        .iter()
+        .map(|&name| (file_repository(info, name), String::from(name)))
+        .collect();
+    if !info.gguf_model_filename.is_empty() {
+        files.push((file_repository(info, info.gguf_model_filename), String::from(info.gguf_model_filename)));
+    }
+    files
+}
+
+/// `model_files` 里的某个文件该从哪个**远端**仓库取。
+///
+/// **下载与校验两条路径都必须走这里。** 之前下载那边是自己写的一套"两个仓库各
+/// 推一份"的逻辑，于是每次下载都先往 GGUF 权重仓库要一次 `tokenizer.json`
+/// （那里没有这个文件），只是靠"文件已存在就跳过"才没真正失败。
+///
+/// 依据：GGUF 权重仓库只有 `.gguf` + `config.json`（外加 README/params），
+/// `tokenizer.json` / `tokenizer_config.json` 在 base 模型仓库。非 GGUF 模型
+/// 两边是同一个仓库，走哪个分支都一样。
+///
+/// 这里回答的是"从哪儿下"，不是"存到哪儿" —— 本地一律进 `local_directory()`。
+fn file_repository(info: &HuggingFaceModelInfo, name: &str) -> &'static str {
+    let tokenizer_repository = info.tokenizer_repository();
+    if tokenizer_repository != info.mirror && is_tokenizer_file(name) {
+        tokenizer_repository
+    } else {
+        info.mirror
+    }
+}
+
+/// `model_files` 里哪些属于分词器仓库。
 fn is_tokenizer_file(name: &str) -> bool {
     name.starts_with("tokenizer") || name.eq("special_tokens_map.json") || name.eq("vocab.json")
 }
@@ -1341,4 +1415,245 @@ pub(crate) fn load_pytorch_mode_files(info: &HuggingFaceModelInfo, device: &Devi
     let weights_filename = construct_model_file_path(info.repository, "pytorch_model.bin");
     let vb = VarBuilder::from_pth(&weights_filename, DType::BF16, device)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A GGUF model as it is actually configured: `repository` is both the
+    /// local directory and the origin of the weights, while `tokenizer_repository`
+    /// names a different repo that holds the tokenizer.
+    fn gguf_info(local: &'static str, tokenizer_repository: &'static str) -> HuggingFaceModelInfo {
+        HuggingFaceModelInfo {
+            model_type: HuggingFaceModelType::Qwen3,
+            repository: local,
+            mirror: local,
+            model_files: qwen3_model_files(),
+            model_index_file: "",
+            tokenizer_filename: "tokenizer.json",
+            dimenssions: 1024,
+            gguf_model_filename: "model-Q4_K_M.gguf",
+            tokenizer_repository,
+        }
+    }
+
+    /// Regression test: `tokenizer.json` and `tokenizer_config.json` may only be
+    /// fetched from the tokenizer repo; `config.json` and the GGUF weights only
+    /// from the weights repo.
+    ///
+    /// This used to be broken in a way that only showed up at runtime: the
+    /// download list pushed *both* repos for every file, so each download first
+    /// asked the quant repo for `tokenizer.json` (which is not there) and only
+    /// survived because "file already exists" skipped it. The user reported
+    /// exactly that wrong URL.
+    #[test]
+    fn gguf_files_each_go_to_exactly_one_repository() {
+        let info = gguf_info("unsloth/Qwen3-0.6B-GGUF", "Qwen/Qwen3-0.6B");
+        let files = download_file_list(&info);
+
+        let repo_of = |name: &str| {
+            files
+                .iter()
+                .find(|(_, f)| f == name)
+                .map(|(r, _)| *r)
+                .unwrap_or_else(|| panic!("{name} is missing from the download list"))
+        };
+        assert_eq!(repo_of("tokenizer.json"), "Qwen/Qwen3-0.6B");
+        assert_eq!(repo_of("tokenizer_config.json"), "Qwen/Qwen3-0.6B");
+        assert_eq!(repo_of("config.json"), "unsloth/Qwen3-0.6B-GGUF");
+        assert_eq!(repo_of("model-Q4_K_M.gguf"), "unsloth/Qwen3-0.6B-GGUF");
+        // The tokenizer repo must be taken from config, never guessed from the
+        // weights repo name (the 30B-A3B entry differs).
+        let moe = gguf_info(
+            "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
+            "Qwen/Qwen3-30B-A3B-Instruct-2507",
+        );
+        assert!(
+            download_file_list(&moe)
+                .iter()
+                .any(|(r, f)| *r == "Qwen/Qwen3-30B-A3B-Instruct-2507" && f == "tokenizer.json"),
+            "the tokenizer must come from the configured repository"
+        );
+    }
+
+    /// The same file must never be listed twice: duplicate entries are the
+    /// direct symptom of the bug above.
+    #[test]
+    fn download_list_has_no_duplicate_file_names() {
+        let info = gguf_info("unsloth/Qwen3-0.6B-GGUF", "Qwen/Qwen3-0.6B");
+        let files = download_file_list(&info);
+        let mut seen = std::collections::HashSet::new();
+        for (repository, f) in files.iter() {
+            assert!(seen.insert(f.clone()), "{f} is listed more than once");
+            assert!(!repository.is_empty(), "{f} has no repository");
+        }
+        assert_eq!(seen.len(), files.len());
+    }
+
+    /// The check pass and the download pass must name the same set of files.
+    ///
+    /// These two paths used to each carry their own routing logic, and their
+    /// disagreement is what let the wrong-URL bug slip past `cargo check`.
+    /// Download paths are remote (`unsloth/...`), check paths are local
+    /// (`Qwen/Qwen3-0.6B/...`), so they are compared by file name — the file
+    /// *set* is what has to match.
+    #[test]
+    fn check_and_download_paths_cover_the_same_files() {
+        let info = HuggingFaceModel::Qwen3_0_6B.get_info();
+        let mut checked: Vec<String> = get_model_files(&info)
+            .unwrap()
+            .iter()
+            .map(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        let mut downloaded: Vec<String> = download_file_list(&info)
+            .into_iter()
+            .map(|(_, f)| f)
+            .collect();
+        checked.sort();
+        downloaded.sort();
+        assert_eq!(checked, downloaded);
+    }
+
+    /// Where each file is fetched from, for a real entry. The weights repo and
+    /// the local directory are deliberately different fields: the files are
+    /// saved under the base-model directory (`Qwen/Qwen3-0.6B`) but the GGUF
+    /// comes from unsloth's quant repo, and the tokenizer from the base repo.
+    ///
+    /// If the weights source were derived from `repository`, the 0.6B entry
+    /// would pull `Qwen/Qwen3-0.6B-GGUF` (Q8_0 only, ~2x bigger) and the MoE
+    /// entry would point at `Qwen/Qwen3-30B-A3B-Instruct-2507`, which has no
+    /// GGUF repo at all.
+    #[test]
+    fn files_are_fetched_from_the_configured_repositories() {
+        let info = HuggingFaceModel::Qwen3_0_6B.get_info();
+        let repos: std::collections::HashMap<String, &str> = download_file_list(&info)
+            .into_iter()
+            .map(|(r, f)| (f, r))
+            .collect();
+        assert_eq!(repos["tokenizer.json"], "Qwen/Qwen3-0.6B");
+        assert_eq!(repos["tokenizer_config.json"], "Qwen/Qwen3-0.6B");
+        assert_eq!(repos["config.json"], "unsloth/Qwen3-0.6B-GGUF");
+        assert_eq!(repos["Qwen3-0.6B-Q4_K_M.gguf"], "unsloth/Qwen3-0.6B-GGUF");
+
+        let moe = HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507.get_info();
+        let repos: std::collections::HashMap<String, &str> = download_file_list(&moe)
+            .into_iter()
+            .map(|(r, f)| (f, r))
+            .collect();
+        assert_eq!(
+            repos["Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf"],
+            "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF"
+        );
+        assert_eq!(
+            repos["tokenizer.json"],
+            "Qwen/Qwen3-30B-A3B-Instruct-2507"
+        );
+    }
+
+    /// The load path must match where the files are actually saved.
+    ///
+    /// `Qwen3_0_6B` used to download into `data/model/Qwen/Qwen3-0.6B/` (built
+    /// from `repository`) while loading from `data/model/unsloth/Qwen3-0.6B-GGUF/`
+    /// (built from `mirror`), so an already-downloaded model could never load.
+    /// The local directory is now `repository` and both sides use it.
+    #[test]
+    fn load_paths_match_the_download_directory() {
+        for (m, dir) in [
+            (HuggingFaceModel::Qwen3_0_6B, "Qwen/Qwen3-0.6B"),
+            (HuggingFaceModel::Qwen3_1_7B, "Qwen/Qwen3-1.7B"),
+            (HuggingFaceModel::Qwen3_4B, "Qwen/Qwen3-4B"),
+            (HuggingFaceModel::Qwen3_8B, "Qwen/Qwen3-8B"),
+            (HuggingFaceModel::Qwen3_14B, "Qwen/Qwen3-14B"),
+            (HuggingFaceModel::Qwen3_32B, "Qwen/Qwen3-32B"),
+            (
+                HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507,
+                "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            ),
+        ] {
+            let info = m.get_info();
+            assert_eq!(info.local_directory(), dir, "{m:?} local directory");
+            assert_eq!(
+                info.local_directory_path(),
+                format!("./data/model/{dir}"),
+                "{m:?} local directory path"
+            );
+            // The exact path the user reported, pinned so it cannot drift again.
+            assert_eq!(
+                info.gguf_model_path().unwrap(),
+                format!("./data/model/{dir}/{}", info.gguf_model_filename)
+            );
+            assert_eq!(
+                info.tokenizer_path(),
+                format!("./data/model/{dir}/tokenizer.json")
+            );
+        }
+        assert_eq!(
+            HuggingFaceModel::Qwen3_0_6B.get_info().gguf_model_path().unwrap(),
+            "./data/model/Qwen/Qwen3-0.6B/Qwen3-0.6B-Q4_K_M.gguf"
+        );
+    }
+
+    /// Every path the check pass looks at must live in the local directory.
+    ///
+    /// Only GGUF models are exercised here: `get_model_files` returns paths
+    /// without touching the disk for them. A model with sharded weights would
+    /// need its index file to already be downloaded, which a unit test must not
+    /// depend on.
+    #[test]
+    fn all_local_paths_live_in_the_local_directory() {
+        for m in [
+            HuggingFaceModel::Qwen3_0_6B,
+            HuggingFaceModel::Qwen3_8B,
+            HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507,
+        ] {
+            let info = m.get_info();
+            let prefix = format!("{}/", info.local_directory_path());
+            let files = get_model_files(&info).unwrap();
+            assert!(!files.is_empty(), "{m:?} listed no files to check");
+            for p in files.iter() {
+                assert!(
+                    p.starts_with(&prefix),
+                    "{m:?}: {p} is outside {prefix} (download and load would disagree)"
+                );
+            }
+            // The tokenizer is fetched from another repo but saved locally,
+            // so the check pass must look for it in the local directory too.
+            assert!(
+                files.contains(&info.tokenizer_path()),
+                "{m:?}: {} is missing from {files:?}",
+                info.tokenizer_path()
+            );
+        }
+    }
+
+    /// Non-GGUF models keep a single repository, so nothing changes for them.
+    ///
+    /// Uses the real `Phi3Mini4kInstruct` entry rather than a hand-built struct:
+    /// its `model_files` deliberately omits `model.safetensors` (weights come
+    /// from `model_index_file` shards) and hand-building it is easy to get wrong.
+    #[test]
+    fn non_gguf_models_keep_a_single_repository() {
+        let info = HuggingFaceModel::Phi3Mini4kInstruct.get_info();
+        assert_eq!(info.tokenizer_repository(), info.mirror);
+        assert_eq!(info.local_directory(), info.repository);
+        // For every non-GGUF entry these three coincide, so the local directory,
+        // the download origin and the tokenizer origin are all the same repo.
+        assert_eq!(info.local_directory(), info.mirror);
+        let files = download_file_list(&info);
+        for (repository, _) in files.iter() {
+            assert_eq!(*repository, info.mirror);
+        }
+        assert!(files.iter().all(|(_, f)| f != "model.safetensors"));
+        assert!(
+            files.iter().any(|(_, f)| f == "tokenizer.json"),
+            "the tokenizer still has to be in the list: {files:?}"
+        );
+    }
 }

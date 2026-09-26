@@ -94,6 +94,22 @@ impl ResultSender<'_, StreamingResponseData> {
     }
 }
 
+impl<'r> ResultSender<'r, StreamingResponseData> {
+    /// 把"借用调用方的缓冲区"拆开：流式那条 sender 变成可以 `move` 走的所有权值，
+    /// 缓冲区还给调用方。
+    ///
+    /// 需要它是因为本地模型的推理必须搬到 `spawn_blocking` 上跑（原因见 `chat()`
+    /// 里 HuggingFace 分支的说明），而阻塞任务的闭包要求 `'static`，`&'r mut String`
+    /// 借不进去。于是文本先由阻塞任务攒在自己的缓冲里，跑完再交回调用方，
+    /// 由调用方写回原来那块 `&mut String` —— 调用方看到的最终结果不变。
+    fn detach(self) -> (Option<SenderWrapper<StreamingResponseData>>, &'r mut String) {
+        match self {
+            Self::ChannelSender(sender, answer) => (Some(sender), answer),
+            Self::StrBuf(answer) => (None, answer),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "id", content = "model")]
 pub(crate) enum ChatProvider {
@@ -124,20 +140,60 @@ pub(crate) async fn chat(
     media: Option<&crate::ai::dto::UserMediaData>,
     connect_timeout: Option<u32>,
     read_timeout: Option<u32>,
+    // Qwen3 的思考模式开关。只对本地 Qwen3 生效，其余后端（含在线模型）忽略。
+    enable_thinking: bool,
     result_sender: ResultSender<'_, StreamingResponseData>,
 ) -> Result<()> {
     if let Some(settings) = settings::get_settings(robot_id).await? {
         // log::info!("{:?}", &settings.chat_provider.provider);
         match settings.chat_provider.provider {
             ChatProvider::HuggingFace(m) => {
-                huggingface(
-                    robot_id,
-                    &m,
-                    chat_history,
-                    media,
-                    settings.chat_provider.max_response_token_length as usize,
-                    result_sender,
-                )?;
+                // 本地模型是**同步**的 CPU 推理：一旦开始就占着当前线程不放，
+                // 整段回答期间都不会让出。所以它必须搬去阻塞线程池，不能在 async
+                // 任务里直接调用 —— 否则流式输出会被攒到最后一次性吐给客户端。
+                //
+                // 攒住 delta 的不是我们这层，是 tokio 多线程调度器的 LIFO 槽：
+                // `SenderWrapper::send` 是在**正在跑推理的那个 worker 线程**上
+                // 唤醒 SSE 连接任务的，而 `Handle::schedule_task` 对"worker 线程
+                // 上的唤醒"走 `schedule_local`，把任务塞进**当前 worker 的 LIFO
+                // 槽**；LIFO 槽是刻意不参与工作窃取的（tokio `worker.rs`：除 LIFO
+                // 槽里的任务外都可被偷），所以连接任务要等推理结束、worker 回到
+                // 调度器才第一次被轮询到 —— 表现就是"干等十几秒，然后整段回答
+                // 一下子全冒出来"，本地模型越慢越明显，而 Ollama 那类在线后端
+                // 每收一个 delta 都会 await 让出线程，所以看不出问题。
+                //
+                // 在阻塞线程池上唤醒则走 `push_remote_task`（inject 队列），任何
+                // 空闲 worker 都能立刻接手，每个 delta 都会即时刷出去。
+                let (sender, answer) = result_sender.detach();
+                let model = m.clone();
+                let media = media.cloned();
+                let robot_id = String::from(robot_id);
+                let sample_len = settings.chat_provider.max_response_token_length as usize;
+                let (r, generated) = tokio::task::spawn_blocking(move || {
+                    let mut generated = String::with_capacity(1024);
+                    let r = {
+                        let sender = match sender {
+                            Some(sender) => ResultSender::ChannelSender(sender, &mut generated),
+                            None => ResultSender::StrBuf(&mut generated),
+                        };
+                        huggingface(
+                            &robot_id,
+                            &model,
+                            chat_history,
+                            media.as_ref(),
+                            sample_len,
+                            enable_thinking,
+                            sender,
+                        )
+                    };
+                    (r, generated)
+                })
+                .await
+                .map_err(|e| Error::WithMessage(format!("Local model task failed: {e}")))?;
+                // 失败时也把已生成的部分写回：调用方靠这块缓冲判断要不要兜底
+                // （见 `flow/rt/node.rs`），中途出错时它和以前一样能看到半截回答。
+                answer.push_str(&generated);
+                r?;
                 Ok(())
             }
             ChatProvider::OpenAICompatible(m) => {
@@ -170,9 +226,14 @@ pub(crate) async fn chat(
 /// 于是同一个机器人要在设置页配两遍模型；而在线模型那条分支把调用方给过来的
 /// JSON 提示词数组当成纯文本塞进一条 user 消息，界面里填的 system 提示词根本
 /// 到不了模型。现在它和对话节点走**完全相同**的路径、用同一份配置。
+///
+/// `enable_thinking` 由调用方给（见 `dto::Request`），缺省为 `false`：这个接口
+/// 是"生成一段文字"，思考过程的推理轨迹对调用方没有意义，而本地小模型上它会
+/// 先烧掉几十秒才吐第一个字。
 pub(crate) async fn gen_text(
     robot_id: &str,
     prompt: &str,
+    enable_thinking: bool,
     sender: UnboundedSender<StreamingResponseData>,
 ) -> Result<()> {
     let history = parse_prompt(prompt);
@@ -185,6 +246,7 @@ pub(crate) async fn gen_text(
         None,
         None,
         None,
+        enable_thinking,
         ResultSender::ChannelSender(SenderWrapper::new(sender, 0), &mut answer),
     )
     .await
@@ -214,6 +276,7 @@ fn huggingface(
     chat_history: Option<Vec<Prompt>>,
     media: Option<&crate::ai::dto::UserMediaData>,
     sample_len: usize,
+    enable_thinking: bool,
     mut result_sender: ResultSender<'_, StreamingResponseData>,
 ) -> Result<()> {
     let info = m.get_info();
@@ -226,7 +289,7 @@ fn huggingface(
             &info.model_type
         )));
     }
-    let new_prompt = info.convert_prompt("", chat_history.clone())?;
+    let new_prompt = info.convert_prompt("", chat_history.clone(), enable_thinking)?;
     log::info!("Prompt: {}", &new_prompt);
     let mut model = LOADED_MODELS.lock().unwrap_or_else(|e| {
         log::warn!("{:#?}", &e);
@@ -488,6 +551,34 @@ mod tests {
 
     use super::*;
 
+    /// 本地模型那条路要把 delta 的 sender 交给阻塞线程池（靠 [`ResultSender::detach`]），
+    /// 缓冲区留在调用方手里。这一步不能把"要不要流式"弄丢 —— 丢了就退化成
+    /// 一次性应答；缓冲也必须还是调用方那块，否则 `node.rs` 拿到的回答会是空的。
+    #[tokio::test]
+    async fn detach_keeps_the_stream_and_hands_the_buffer_back() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut answer = String::new();
+        let (sender, buf) =
+            ResultSender::ChannelSender(SenderWrapper::new(tx, 7), &mut answer).detach();
+        assert!(
+            sender.is_some(),
+            "a streaming call must keep its channel: the local-model path hands this \
+             sender to the blocking pool"
+        );
+        buf.push_str("hi");
+        assert_eq!(buf.len(), 2, "the buffer handed back is the caller's");
+        assert_eq!(answer, "hi", "the caller's buffer is the one that moves");
+
+        // 非流式的调用不能被凭空塞一个通道进去。
+        let rs: ResultSender<StreamingResponseData> = ResultSender::StrBuf(&mut answer);
+        let (sender, buf) = rs.detach();
+        assert!(sender.is_none());
+        buf.push_str("!");
+        assert_eq!(buf.len(), 3, "the buffer handed back is the caller's");
+        assert_eq!(answer, "hi!");
+        assert!(rx.try_recv().is_err());
+    }
+
     /// What actually goes on the wire: the configured URL, the key, and the
     /// token cap. The cap used to be dropped entirely on this path, and an
     /// empty URL used to silently become OpenAI's.
@@ -571,6 +662,9 @@ mod tests {
     /// 期望值对照 HF 上 `Qwen/Qwen3-0.6B` 的 `chat_template` 输出。history 就是
     /// 完整的消息列表（含最新那条 user）—— `chat()` 与 `gen_text()` 都是这么传的
     /// （`s` 为空串）。
+    ///
+    /// 这里传 `enable_thinking = true`，所以不该出现 `/no_think`；关掉的那个
+    /// 由 `qwen3_thinking_off_injects_no_think` 覆盖。
     #[test]
     fn qwen3_prompt_is_chatml_and_stays_closed() {
         let info = HuggingFaceModel::Qwen3_0_6B.get_info();
@@ -593,7 +687,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            info.convert_prompt("", Some(history)).unwrap(),
+            info.convert_prompt("", Some(history), true).unwrap(),
             "<|im_start|>system\n你是客服<|im_end|>\n\
              <|im_start|>user\n你好<|im_end|>\n\
              <|im_start|>assistant\n你好，有什么可以帮你？<|im_end|>\n\
@@ -609,7 +703,7 @@ mod tests {
     fn qwen3_prompt_skips_an_empty_user_turn() {
         let info = HuggingFaceModel::Qwen3_8B.get_info();
         assert_eq!(
-            info.convert_prompt("", None).unwrap(),
+            info.convert_prompt("", None, true).unwrap(),
             "<|im_start|>assistant\n"
         );
         // 只有 system、没有 user 时同理，也不能留下空回合。
@@ -618,7 +712,7 @@ mod tests {
             content: String::from("你是客服"),
         }];
         assert_eq!(
-            info.convert_prompt("", Some(history)).unwrap(),
+            info.convert_prompt("", Some(history), true).unwrap(),
             "<|im_start|>system\n你是客服<|im_end|>\n<|im_start|>assistant\n"
         );
     }
@@ -633,21 +727,105 @@ mod tests {
             content: String::from("hi"),
         }]);
         assert_eq!(
-            dense.convert_prompt("", history.clone()).unwrap(),
-            moe.convert_prompt("", history).unwrap()
+            dense.convert_prompt("", history.clone(), true).unwrap(),
+            moe.convert_prompt("", history, true).unwrap()
         );
     }
 
-    /// GGUF 模型是**双仓库**的：权重在 unsloth 的 GGUF 仓库，分词器在官方
-    /// base 仓库（GGUF 仓库里没有 tokenizer.json，已核对过文件清单）。
-    /// 这里锁住两个仓库名，防止有人"顺手统一"成同一个而把下载跑成 404。
+    /// 关闭思考：照 Qwen3 自己 `chat_template` 的 `enable_thinking == false`
+    /// 分支，在生成前缀后追加一个**空的 think 块**。
+    ///
+    /// 早先这里发的是 `/no_think`（Qwen2.5 的软开关）。实测 0.6B 根本不认它：
+    /// 照样输出 `<think>\n\n</think>\n\n` 前缀，而那个 `</think>` 会作为正文流到
+    /// 用户面前 —— 就是"回答以 `</think>` 开头"这个现象的来源。
     #[test]
-    fn qwen3_reads_weights_and_tokenizer_from_two_repositories() {
+    fn qwen3_thinking_off_appends_an_empty_think_block() {
+        let info = HuggingFaceModel::Qwen3_0_6B.get_info();
+        let history = Some(vec![
+            Prompt {
+                role: String::from("system"),
+                content: String::from("你是客服"),
+            },
+            Prompt {
+                role: String::from("user"),
+                content: String::from("你好"),
+            },
+        ]);
+        assert_eq!(
+            info.convert_prompt("", history.clone(), false).unwrap(),
+            "<|im_start|>system\n你是客服<|im_end|>\n\
+             <|im_start|>user\n你好<|im_end|>\n\
+             <|im_start|>assistant\n<think>\n\n</think>\n\n"
+        );
+        // 开着思考时不能有这个空块（那等于替模型把思考跳过了）。
+        assert_eq!(
+            info.convert_prompt("", history, true).unwrap(),
+            "<|im_start|>system\n你是客服<|im_end|>\n\
+             <|im_start|>user\n你好<|im_end|>\n\
+             <|im_start|>assistant\n"
+        );
+    }
+
+    /// MoE 那档（Instruct-2507）的模板里本来就没有 `<think>`，但开关走的是同一条
+    /// 分支，不能出现"密集模型注入、MoE 不注入"这种不一致。
+    #[test]
+    fn qwen3_moe_honours_the_thinking_switch() {
+        let moe = HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507.get_info();
+        assert_eq!(
+            moe.convert_prompt("", None, false).unwrap(),
+            "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        );
+        assert_eq!(
+            moe.convert_prompt("", None, true).unwrap(),
+            "<|im_start|>assistant\n"
+        );
+    }
+
+    /// 空 think 块是 Qwen3 专有的：**绝不能**注入到 llama/gemma/phi3 的提示词里，
+    /// 那会把它们的提示词弄脏。这个开关必须由 `convert_prompt` 按模型类型判断，
+    /// 而不是让调用方自己拼字符串。
+    #[test]
+    fn the_thinking_markers_never_leak_into_other_models() {
+        let history = Some(vec![Prompt {
+            role: String::from("user"),
+            content: String::from("hi"),
+        }]);
+        for m in [
+            HuggingFaceModel::TinyLlama1_1bChatV1_0,
+            HuggingFaceModel::Gemma2bInstruct,
+            HuggingFaceModel::Phi3Mini4kInstruct,
+        ] {
+            let info = m.get_info();
+            for enable in [false, true] {
+                let p = info.convert_prompt("", history.clone(), enable).unwrap();
+                assert!(
+                    !p.contains("<think>") && !p.contains("/no_think"),
+                    "{m:?} (thinking={enable}) must not get Qwen thinking markers: {p}"
+                );
+            }
+            // 两种取值必须产出完全一样的提示词。
+            assert_eq!(
+                info.convert_prompt("", history.clone(), false).unwrap(),
+                info.convert_prompt("", history.clone(), true).unwrap(),
+                "{m:?} ignores the thinking switch, so both settings must match"
+            );
+        }
+    }
+
+    /// GGUF 模型是**双仓库**的：权重从 unsloth 的 GGUF 仓库取，分词器从官方
+    /// base 仓库取（GGUF 仓库里没有 tokenizer.json，已核对过文件清单）。
+    /// 这里锁住两个**远端来源**，防止有人"顺手统一"成同一个而把下载跑成 404。
+    ///
+    /// 注意本地目录不在这两个字段里：它跟着保存时用的 `repository` 走，
+    /// 所以 GGUF 落在 `data/model/Qwen/Qwen3-4B/`，而不是量化仓库名下。
+    #[test]
+    fn qwen3_fetches_weights_and_tokenizer_from_two_repositories() {
         let info = HuggingFaceModel::Qwen3_4B.get_info();
         assert_eq!(info.tokenizer_repository(), "Qwen/Qwen3-4B");
+        assert_eq!(info.local_directory(), "Qwen/Qwen3-4B");
         assert_eq!(
             info.gguf_model_path().unwrap(),
-            "./data/model/unsloth/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
+            "./data/model/Qwen/Qwen3-4B/Qwen3-4B-Q4_K_M.gguf"
         );
         // 非 GGUF 模型不受影响：分词器仓库回退到权重仓库。
         let bert = HuggingFaceModel::AllMiniLML6V2.get_info();

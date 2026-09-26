@@ -71,7 +71,7 @@ fn hugging_face(robot_id: &str, info: &HuggingFaceModelInfo, s: &str) -> Result<
         e.into_inner()
     });
     if !model.contains_key(robot_id) {
-        let r = load_bert_model_files(info.repository)?;
+        let r = load_bert_model_files(info)?;
         model.insert(String::from(robot_id), r);
     };
     let (m, t) = model.get_mut(robot_id).unwrap();

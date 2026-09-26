@@ -76,7 +76,7 @@ pub(super) fn load_qwen3_model_files(
     let device = device()?;
     let (mut file, ct) = read_gguf(info)?;
     let model = Qwen3::from_gguf(ct, &mut file, &device)?;
-    let tokenizer = super::huggingface::init_tokenizer(info.tokenizer_repository())?;
+    let tokenizer = super::huggingface::init_tokenizer(&info.tokenizer_path())?;
     Ok((device, model, tokenizer))
 }
 
@@ -95,7 +95,7 @@ pub(super) fn load_qwen3_moe_model_files(
     };
     let (mut file, ct) = read_gguf(info)?;
     let model = Qwen3Moe::from_gguf(ct, &mut file, &device, dtype)?;
-    let tokenizer = super::huggingface::init_tokenizer(info.tokenizer_repository())?;
+    let tokenizer = super::huggingface::init_tokenizer(&info.tokenizer_path())?;
     Ok((device, model, tokenizer))
 }
 
@@ -151,11 +151,23 @@ fn generate<M: NextLogits>(
     let start_gen = std::time::Instant::now();
     let mut generated = 0usize;
 
+    log::info!(
+        "{backend}: prefill {} tokens on {:?} (max {sample_len} new tokens)...",
+        prompt_len,
+        device,
+    );
+
     // 预填充：整段提示词一次过，offset 从 0 开始。
     let mut logits = {
         let input = Tensor::new(tokens.as_slice(), device)?.unsqueeze(0)?;
         model.next_logits(&input, 0)?
     };
+    let prefill_dt = start_gen.elapsed();
+    log::info!(
+        "{backend}: prefill done in {:.2}s ({:.2} tok/s), generating...",
+        prefill_dt.as_secs_f64(),
+        prompt_len as f64 / prefill_dt.as_secs_f64(),
+    );
 
     for _ in 0..sample_len {
         let step_logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
@@ -174,10 +186,18 @@ fn generate<M: NextLogits>(
         tokens.push(next_token);
         generated += 1;
 
+        // 每 8 个 token 报一次进度。原来这里只在整段生成**结束后**才打日志，
+        // 于是在慢机器上（debug 构建下一 token 要二十多秒）看起来像是卡死了。
+        if generated % 8 == 0 {
+            let dt = start_gen.elapsed().as_secs_f64();
+            let rate = (generated as f64) / (dt - prefill_dt.as_secs_f64()).max(1e-9);
+            log::info!(
+                "{backend}: {generated}/{sample_len} tokens, {rate:.2} tok/s, {:.0}s elapsed",
+                dt,
+            );
+        }
+
         if next_token == eos_token {
-            if let Some(t) = tokenizer.decode_rest()? {
-                result_sender.push_delta(t);
-            }
             break;
         }
         if let Some(t) = tokenizer.next_token(next_token)? {
@@ -193,6 +213,15 @@ fn generate<M: NextLogits>(
         let offset = tokens.len() - 1;
         let input = Tensor::new(&[next_token], device)?.unsqueeze(0)?;
         logits = model.next_logits(&input, offset)?;
+    }
+
+    // 无论从哪个分支退出都要**冲刷尾巴**。`next_token` 只在解码出的文本以
+    // 字母数字结尾时才吐字，所以只要最后几个 token 是标点/换行（中文回答的
+    // 结尾几乎总是"。"），它们还压在 `TokenOutputStream` 里。原来只在 EOS
+    // 分支里调 `decode_rest()`，于是"跑满 token 上限"或"客户端断开"退出时，
+    // 结尾会被静默丢掉。
+    if let Some(t) = tokenizer.decode_rest()? {
+        result_sender.push_delta(t);
     }
 
     let dt = start_gen.elapsed();
