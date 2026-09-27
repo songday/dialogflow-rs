@@ -377,6 +377,9 @@ pub(crate) struct DialogNode {
     pub(crate) read_timeout: Option<u32>,
     #[serde(rename = "responseStreaming")]
     pub(crate) response_streaming: bool,
+    /// Qwen3 的思考模式。老流程 JSON 里没有这个字段，缺省即不思考。
+    #[serde(default, rename = "enableThinking")]
+    pub(crate) enable_thinking: bool,
     #[serde(rename = "nextStep")]
     pub(crate) next_step: NextActionType,
     pub(crate) branches: Vec<Branch>,
@@ -399,6 +402,9 @@ pub(crate) struct LlmChatNode {
     pub(crate) when_timeout_then: crate::flow::rt::node::LlmChatAnswerTimeoutThen,
     #[serde(rename = "responseStreaming")]
     pub(crate) response_streaming: bool,
+    /// Qwen3 的思考模式，由节点表单里的开关决定。缺省不思考。
+    #[serde(default, rename = "enableThinking")]
+    pub(crate) enable_thinking: bool,
     pub(crate) branches: Vec<Branch>,
     #[serde(rename = "connectTimeout")]
     pub(crate) connect_timeout: Option<u32>,
@@ -526,4 +532,78 @@ pub(crate) struct KnowledgeBaseAnswerNode {
     pub(crate) no_answer_then: crate::flow::rt::node::KnowledgeBaseAnswerNoRecallThen,
     #[serde(rename = "retrieveAnswerSources")]
     pub(crate) retrieve_answer_sources: Vec<crate::flow::rt::node::KnowledgeBaseAnswerSource>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 老画布 JSON（没有 `enableThinking`）必须还能解析出来，否则已经存过盘的
+    /// 流程在加载时整个失败 —— 而这正是 `#[serde(default)]` 存在的唯一理由。
+    ///
+    /// 直接解析 `Node`（生产路径上 `CanvasCell.data` 也是这么被 serde 解出来的）。
+    #[test]
+    fn a_flow_saved_before_the_thinking_flag_still_loads() {
+        let json = r#"{
+            "nodeType": "LlmChatNode",
+            "valid": true,
+            "nodeId": "n1",
+            "nodeName": "chat-1",
+            "prompt": "[]",
+            "contextLength": 5,
+            "exitCondition": {"Intent": ""},
+            "whenTimeoutThen": "GotoAnotherNode",
+            "responseStreaming": true,
+            "branches": []
+        }"#;
+        match serde_json::from_str::<Node>(json) {
+            Ok(Node::LlmChatNode(n)) => {
+                assert!(
+                    !n.enable_thinking,
+                    "a missing field must default to thinking off"
+                );
+                assert_eq!(n.context_length, 5);
+                assert!(n.response_streaming);
+            }
+            Ok(other) => panic!("expected LlmChatNode, got {}", node_name(&other)),
+            Err(e) => panic!("old flow JSON must still load: {e}"),
+        }
+    }
+
+    /// 新画布带上这个字段时要能读进来（并且真的生效，不是被 default 吃掉）。
+    #[test]
+    fn the_thinking_flag_reads_from_the_canvas() {
+        let json = r#"{
+            "nodeType": "LlmChatNode",
+            "valid": true,
+            "nodeId": "n1",
+            "nodeName": "chat-1",
+            "prompt": "[]",
+            "contextLength": 5,
+            "exitCondition": {"Intent": ""},
+            "whenTimeoutThen": "GotoAnotherNode",
+            "responseStreaming": true,
+            "enableThinking": true,
+            "branches": []
+        }"#;
+        match serde_json::from_str::<Node>(json) {
+            Ok(Node::LlmChatNode(n)) => assert!(n.enable_thinking, "enableThinking must be honoured"),
+            Ok(other) => panic!("expected LlmChatNode, got {}", node_name(&other)),
+            Err(e) => panic!("canvas JSON with enableThinking must load: {e}"),
+        }
+    }
+
+    fn node_name(n: &Node) -> &'static str {
+        match n {
+            Node::DialogNode(_) => "DialogNode",
+            Node::LlmChatNode(_) => "LlmChatNode",
+            Node::ConditionNode(_) => "ConditionNode",
+            Node::CollectNode(_) => "CollectNode",
+            Node::GotoNode(_) => "GotoNode",
+            Node::ExternalHttpNode(_) => "ExternalHttpNode",
+            Node::SendEmailNode(_) => "SendEmailNode",
+            Node::EndNode(_) => "EndNode",
+            Node::KnowledgeBaseAnswerNode(_) => "KnowledgeBaseAnswerNode",
+        }
+    }
 }

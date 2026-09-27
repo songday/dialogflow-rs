@@ -18,6 +18,11 @@ use crate::ai::chat;
 pub(crate) struct Request {
     pub(crate) robot_id: String,
     pub(crate) prompt: String,
+    /// Qwen3 的思考模式。缺省 `false`（不思考）—— 这个接口要的是"生成一段文字"，
+    /// 推理轨迹对调用方没有意义，而本地小模型上它会先烧掉几十秒才吐第一个字。
+    /// 老调用方不传这个字段也照常工作。
+    #[serde(default, rename = "enableThinking")]
+    pub(crate) enable_thinking: bool,
 }
 
 // struct Guard;
@@ -51,7 +56,7 @@ pub(crate) async fn gen_text(bytes: Bytes) -> Sse<impl Stream<Item = Result<Even
         tokio::spawn(async move {
             // 走 chat 那条路径，用对话模型那一份配置（`chat::gen_text` 里
             // 说明了为什么）。路由本身保持不变，前端仍在调 `/ai/text/generation`。
-            if let Err(e) = chat::gen_text(&q.robot_id, &q.prompt, sender).await {
+            if let Err(e) = chat::gen_text(&q.robot_id, &q.prompt, q.enable_thinking, sender).await {
                 log::error!("{:?}", &e);
             }
         });

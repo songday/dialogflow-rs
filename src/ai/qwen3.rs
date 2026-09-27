@@ -32,17 +32,45 @@ const IM_END: &str = "<|im_end|>";
 /// `[b, vocab]`，调用方 `squeeze(0)` 之后就是一维 logits。
 trait NextLogits {
     fn next_logits(&mut self, input: &Tensor, offset: usize) -> candle::Result<Tensor>;
+
+    /// 丢掉上一次推理留下的 KV cache。
+    ///
+    /// **每次回答之前都必须调。** `LOADED_MODELS` 会把模型实例缓存下来复用，
+    /// 而 cache 里的 K/V 是上一次请求的内容：不清理的话，新提示词虽然从 offset 0
+    /// 开始，注意力却还会读到上一次的 token。
+    ///
+    /// 症状非常有迷惑性 —— 模型"粘"在上一个话题上：连问五个互不相关的新话题
+    /// （时尚 / 美食 / 音乐 / 航空母舰 / 园艺），答案全部还是第一个话题"时尚"。
+    /// 新建实例就没有这个问题，所以一度被误判成"小模型能力不行"。
+    fn clear_cache(&mut self);
 }
 
 impl NextLogits for Qwen3 {
     fn next_logits(&mut self, input: &Tensor, offset: usize) -> candle::Result<Tensor> {
         self.forward(input, offset)
     }
+
+    fn clear_cache(&mut self) {
+        self.clear_kv_cache();
+    }
 }
 
 impl NextLogits for Qwen3Moe {
     fn next_logits(&mut self, input: &Tensor, offset: usize) -> candle::Result<Tensor> {
         self.forward(input, offset)
+    }
+
+    fn clear_cache(&mut self) {
+        // `GGUFQWenMoE` 没有暴露 `clear_kv_cache()`（只有 `ConcatKvCache` 字段，
+        // 没给出重置入口），所以这里做不到。后果是**第二条及以后的请求会读到
+        // 上一次的 KV**，和稠密版没修之前一样。要彻底解决得等上游补这个接口，
+        // 或者每次请求都重建 MoE 模型（加载很贵）。
+        //
+        // 用 debug 而不是 warn：每次请求都会走到这里，warn 会把日志刷满。
+        log::debug!(
+            "Qwen3Moe cannot clear its KV cache (candle exposes no clear_kv_cache); \
+             answers after the first one may bleed the previous conversation's topic"
+        );
     }
 }
 
@@ -76,7 +104,7 @@ pub(super) fn load_qwen3_model_files(
     let device = device()?;
     let (mut file, ct) = read_gguf(info)?;
     let model = Qwen3::from_gguf(ct, &mut file, &device)?;
-    let tokenizer = super::huggingface::init_tokenizer(info.tokenizer_repository())?;
+    let tokenizer = super::huggingface::init_tokenizer(&info.tokenizer_path())?;
     Ok((device, model, tokenizer))
 }
 
@@ -95,7 +123,7 @@ pub(super) fn load_qwen3_moe_model_files(
     };
     let (mut file, ct) = read_gguf(info)?;
     let model = Qwen3Moe::from_gguf(ct, &mut file, &device, dtype)?;
-    let tokenizer = super::huggingface::init_tokenizer(info.tokenizer_repository())?;
+    let tokenizer = super::huggingface::init_tokenizer(&info.tokenizer_path())?;
     Ok((device, model, tokenizer))
 }
 
@@ -151,11 +179,27 @@ fn generate<M: NextLogits>(
     let start_gen = std::time::Instant::now();
     let mut generated = 0usize;
 
+    log::info!(
+        "{backend}: prefill {} tokens on {:?} (max {sample_len} new tokens)...",
+        prompt_len,
+        device,
+    );
+
+    // 先清掉上一次回答留下的 KV。模型实例是跨请求复用的（`LOADED_MODELS`），
+    // 不清就会"粘"在上一个话题上 —— 详见 `NextLogits::clear_cache`。
+    model.clear_cache();
+
     // 预填充：整段提示词一次过，offset 从 0 开始。
     let mut logits = {
         let input = Tensor::new(tokens.as_slice(), device)?.unsqueeze(0)?;
         model.next_logits(&input, 0)?
     };
+    let prefill_dt = start_gen.elapsed();
+    log::info!(
+        "{backend}: prefill done in {:.2}s ({:.2} tok/s), generating...",
+        prefill_dt.as_secs_f64(),
+        prompt_len as f64 / prefill_dt.as_secs_f64(),
+    );
 
     for _ in 0..sample_len {
         let step_logits = logits.squeeze(0)?.to_dtype(DType::F32)?;
@@ -174,10 +218,18 @@ fn generate<M: NextLogits>(
         tokens.push(next_token);
         generated += 1;
 
+        // 每 8 个 token 报一次进度。原来这里只在整段生成**结束后**才打日志，
+        // 于是在慢机器上（debug 构建下一 token 要二十多秒）看起来像是卡死了。
+        if generated % 8 == 0 {
+            let dt = start_gen.elapsed().as_secs_f64();
+            let rate = (generated as f64) / (dt - prefill_dt.as_secs_f64()).max(1e-9);
+            log::info!(
+                "{backend}: {generated}/{sample_len} tokens, {rate:.2} tok/s, {:.0}s elapsed",
+                dt,
+            );
+        }
+
         if next_token == eos_token {
-            if let Some(t) = tokenizer.decode_rest()? {
-                result_sender.push_delta(t);
-            }
             break;
         }
         if let Some(t) = tokenizer.next_token(next_token)? {
@@ -193,6 +245,15 @@ fn generate<M: NextLogits>(
         let offset = tokens.len() - 1;
         let input = Tensor::new(&[next_token], device)?.unsqueeze(0)?;
         logits = model.next_logits(&input, offset)?;
+    }
+
+    // 无论从哪个分支退出都要**冲刷尾巴**。`next_token` 只在解码出的文本以
+    // 字母数字结尾时才吐字，所以只要最后几个 token 是标点/换行（中文回答的
+    // 结尾几乎总是"。"），它们还压在 `TokenOutputStream` 里。原来只在 EOS
+    // 分支里调 `decode_rest()`，于是"跑满 token 上限"或"客户端断开"退出时，
+    // 结尾会被静默丢掉。
+    if let Some(t) = tokenizer.decode_rest()? {
+        result_sender.push_delta(t);
     }
 
     let dt = start_gen.elapsed();

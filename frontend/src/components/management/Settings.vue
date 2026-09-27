@@ -40,10 +40,10 @@ const settings = reactive({
         apiUrlDisabled: false,
         showApiKeyInput: true,
         apiKey: "",
-        max_token_len: 1000,
+        // max_token_len: 200,
         connectTimeoutMillis: 5000,
         readTimeoutMillis: 10000,
-        maxResponseTokenLength: 5000,
+        maxResponseTokenLength: 200,
         proxyUrl: "",
     },
     sentenceEmbeddingProvider: {

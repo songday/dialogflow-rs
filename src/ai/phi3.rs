@@ -69,6 +69,7 @@ pub(super) fn gen_text(
     let mut pos = 0;
     let mut rng = Rand::new();
     let mut model = model.clone();
+    model.clear_kv_cache();
     let mut logits_processor = LogitsProcessor::new(
         rng.r#gen::<u64>(),
         Some(super::chat::TEMPERATURE),
@@ -97,9 +98,6 @@ pub(super) fn gen_text(
         tokens.push(next_token);
         generated_tokens += 1;
         if next_token == eos_token {
-            if let Some(t) = tokenizer.decode_rest()? {
-                result_sender.push_delta(t);
-            }
             break;
         }
         if let Some(t) = tokenizer.next_token(next_token)? {
@@ -111,6 +109,13 @@ pub(super) fn gen_text(
             }
         }
         pos += context_size;
+    }
+    // 无论从哪个分支退出都要冲刷尾巴：`next_token` 只在解码文本以字母数字结尾
+    // 时才吐字，最后几个 token 若以标点/换行收尾就会一直压在流里。原来只在 EOS
+    // 分支里 `decode_rest()`，"跑满上限"或"客户端断开"退出时会静默丢掉结尾。
+    // （`gemma.rs` / `llama.rs` 在循环之后无条件调用了它，这里跟它们对齐。）
+    if let Some(t) = tokenizer.decode_rest()? {
+        result_sender.push_delta(t);
     }
     let dt = start_gen.elapsed();
     log::info!(

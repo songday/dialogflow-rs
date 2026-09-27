@@ -597,6 +597,7 @@ pub(crate) async fn search_doc(
             None,
             Some(connect_timeout),
             Some(read_timeout),
+            false,
             crate::ai::chat::ResultSender::StrBuf(&mut s),
         )
         .await

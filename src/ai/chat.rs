@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::vec::Vec;
 
 use futures_util::StreamExt;
@@ -28,10 +28,143 @@ pub(crate) const TEMPERATURE: f64 = 0.7;
 pub(crate) const REPEAT_PENALTY: f32 = 1.1;
 pub(crate) const REPEAT_LAST_N: usize = 64;
 
-static LOADED_MODELS: LazyLock<Mutex<HashMap<String, LoadedHuggingFaceModel>>> =
-    LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
-// static HTTP_CLIENTS: LazyLock<Mutex<HashMap<String, LoadedHuggingFaceModel>>> =
-//     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
+/// 已经装好的本地模型，按 `robot_id` 一个实例。
+///
+/// 两把锁，职责不同：
+///
+/// - **外层**（`Mutex`）只保护这张表本身（查/插入），拿到 `Arc` 就释放；
+/// - **内层**（`Mutex`）保护那个模型，生成期间一直持有。
+///
+/// 这样两个机器人用不同模型时可以**并行**生成；同一个机器人的请求仍在它的
+/// 内层锁上串行 —— 这是必须的，因为 KV cache 是模型自身的可变状态，两次生成
+/// 同时改它必然互相污染。
+///
+/// 以前是 `Mutex<HashMap<String, LoadedHuggingFaceModel>>`，只有一把锁、且从
+/// 加载模型一直持有到生成结束，于是**所有**本地模型请求被强制排成一队。
+static LOADED_MODELS: LazyLock<Mutex<HashMap<String, Arc<Mutex<LoadedHuggingFaceModel>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::with_capacity(8)));
+
+/// 模型的最近使用顺序，队首最新、队尾最旧。
+///
+/// 本地模型很占内存（Qwen3-1.7B 权重约 1.1GB，再加约 470MB 的 KV cache；
+/// 8B 是 5GB + 1.1GB），所以必须有上限，否则每个用过的机器人都会常驻一份。
+static MODEL_LRU: LazyLock<Mutex<std::collections::VecDeque<String>>> =
+    LazyLock::new(|| Mutex::new(std::collections::VecDeque::with_capacity(8)));
+
+/// 最多同时常驻几个本地模型。超了就淘汰最久未用的那个。
+const MAX_LOADED_MODELS: usize = 5;
+
+/// 把 `robot_id` 记为最近使用。
+fn touch_lru(lru: &mut std::collections::VecDeque<String>, robot_id: &str) {
+    if let Some(i) = lru.iter().position(|k| k == robot_id) {
+        lru.remove(i);
+    }
+    lru.push_front(String::from(robot_id));
+}
+
+/// 超过上限时淘汰最久未使用的模型，返回被淘汰的 key。
+///
+/// 淘汰**正在生成**的条目是安全的：在飞请求手里攥着 `Arc` 快照，会自己跑完。
+/// 但那会在下次请求时白白重载，所以这里优先挑空闲的（`try_lock` 能拿到锁说明
+/// 没人在生成）。全都忙就挑最旧的那个 —— 正确性不受影响，只是可能多一次加载。
+///
+/// 对 `T` 泛型只是为了单测能用占位类型（不必加载真实权重）。
+fn evict_one_idle<T>(
+    models: &mut HashMap<String, Arc<Mutex<T>>>,
+    lru: &mut std::collections::VecDeque<String>,
+) -> Option<String> {
+    if let Some(free) = lru
+        .iter()
+        .rev()
+        .find(|k| models.get(*k).map(|e| e.try_lock().is_ok()).unwrap_or(false))
+    {
+        let key = free.clone();
+        models.remove(&key);
+        if let Some(i) = lru.iter().position(|k| *k == key) {
+            lru.remove(i);
+        }
+        return Some(key);
+    }
+    // 全都在生成中：退而求其次，淘汰最旧的那个。
+    if let Some(key) = lru.pop_back() {
+        models.remove(&key);
+        return Some(key);
+    }
+    None
+}
+
+/// 正在加载中的机器人，防止同一个模型被并发加载两遍。
+///
+/// 用 `tokio::sync::Mutex` 是因为加载要跨 `.await` 持有它。每个 key 一把锁，
+/// 所以一个机器人的冷加载不会挡住别的机器人。
+static LOADING: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::with_capacity(8)));
+
+/// 取出 `robot_id` 对应的模型，没有就加载一个。
+///
+/// 每次都更新 LRU 顺序；超过 `MAX_LOADED_MODELS` 时淘汰最久未用的那个。
+async fn get_or_load_model(
+    robot_id: &str,
+    m: &HuggingFaceModel,
+) -> Result<Arc<Mutex<LoadedHuggingFaceModel>>> {
+    // 快路径：已装好就直接拿，完全不碰加载锁。
+    {
+        let models = LOADED_MODELS.lock()?;
+        if let Some(existing) = models.get(robot_id) {
+            let entry = existing.clone();
+            let mut lru = MODEL_LRU.lock()?;
+            touch_lru(&mut lru, robot_id);
+            return Ok(entry);
+        }
+    }
+    // 取该机器人的加载锁；同一个模型的并发冷启动在这里排队，只有第一个真正加载。
+    // 注意这个 guard 要活到插入之后：否则排队者会在插入前溜进来重复加载。
+    let init = {
+        let mut loading = LOADING.lock()?;
+        loading
+            .entry(String::from(robot_id))
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+    let _guard = init.lock().await;
+    // 拿到加载锁后复查：排在前面的那个可能已经装好了。
+    {
+        let models = LOADED_MODELS.lock()?;
+        if let Some(existing) = models.get(robot_id) {
+            let entry = existing.clone();
+            let mut lru = MODEL_LRU.lock()?;
+            touch_lru(&mut lru, robot_id);
+            return Ok(entry);
+        }
+    }
+    // 锁外加载（只持有该机器人的加载锁）。生成用的是 `Arc` 快照，所以这里
+    // 不会再阻塞任何已经在跑的生成。
+    let loaded = LoadedHuggingFaceModel::load(m)?;
+
+    let entry = Arc::new(Mutex::new(loaded));
+    let evicted = {
+        let mut models = LOADED_MODELS.lock()?;
+        models.insert(String::from(robot_id), entry.clone());
+        let mut lru = MODEL_LRU.lock()?;
+        touch_lru(&mut lru, robot_id);
+        if lru.len() > MAX_LOADED_MODELS {
+            evict_one_idle(&mut models, &mut lru)
+        } else {
+            None
+        }
+    };
+    if let Some(key) = evicted {
+        // 顺手清掉加载锁条目，别让它无界增长。
+        if let Ok(mut loading) = LOADING.lock() {
+            loading.remove(&key);
+        }
+        log::info!(
+            "Evicted local model for robot {key} (limit {MAX_LOADED_MODELS}); \
+             it will be reloaded on its next request"
+        );
+    }
+    Ok(entry)
+}
 
 /// The sink one answer's deltas go to.
 pub(crate) struct SenderWrapper<D> {
@@ -94,6 +227,22 @@ impl ResultSender<'_, StreamingResponseData> {
     }
 }
 
+impl<'r> ResultSender<'r, StreamingResponseData> {
+    /// 把"借用调用方的缓冲区"拆开：流式那条 sender 变成可以 `move` 走的所有权值，
+    /// 缓冲区还给调用方。
+    ///
+    /// 需要它是因为本地模型的推理必须搬到 `spawn_blocking` 上跑（原因见 `chat()`
+    /// 里 HuggingFace 分支的说明），而阻塞任务的闭包要求 `'static`，`&'r mut String`
+    /// 借不进去。于是文本先由阻塞任务攒在自己的缓冲里，跑完再交回调用方，
+    /// 由调用方写回原来那块 `&mut String` —— 调用方看到的最终结果不变。
+    fn detach(self) -> (Option<SenderWrapper<StreamingResponseData>>, &'r mut String) {
+        match self {
+            Self::ChannelSender(sender, answer) => (Some(sender), answer),
+            Self::StrBuf(answer) => (None, answer),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "id", content = "model")]
 pub(crate) enum ChatProvider {
@@ -113,8 +262,146 @@ pub(crate) enum ChatProvider {
 pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
     let m = LoadedHuggingFaceModel::load(m)?;
     let mut r = LOADED_MODELS.lock()?;
-    r.insert(String::from(robot_id), m);
+    // 换成一个新的 `Arc`：正在生成的请求手里还攥着旧的那个，会安全地跑完并被
+    // 释放，不会被这里拦住，也不会被我们改到。
+    r.insert(String::from(robot_id), Arc::new(Mutex::new(m)));
     Ok(())
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+
+    /// 并发共享的"模型句柄"。用 `String` 占位就够了 —— 要验证的是**锁的粒度**，
+    /// 不是模型本身，这样单测不必加载任何权重。
+    fn handle(name: &str) -> Arc<Mutex<String>> {
+        Arc::new(Mutex::new(String::from(name)))
+    }
+
+    fn model_map() -> &'static Mutex<HashMap<String, Arc<Mutex<String>>>> {
+        // 与 LOADED_MODELS 同形的一张独立表，避免污染真实缓存。
+        static TEST_MAP: LazyLock<Mutex<HashMap<String, Arc<Mutex<String>>>>> =
+            LazyLock::new(|| Mutex::new(HashMap::new()));
+        &TEST_MAP
+    }
+
+    /// 生成期间**绝不能**持有 `LOADED_MODELS`，否则所有本地模型请求（哪怕用的是
+    /// 完全不同的模型）都会被排成一队 —— 这正是之前的性能问题：一把大锁从加载
+    /// 模型一直持有到生成结束。
+    ///
+    /// 判定方式：模拟"机器人 A 正在生成"（持有 A 的内层锁），此时另一个线程必须
+    /// 仍能拿到表锁、并能锁住 B 的模型。拿不到就说明粒度不对。
+    #[test]
+    fn one_robots_generation_does_not_block_another_robot() {
+        let models = model_map();
+        {
+            let mut m = models.lock().unwrap();
+            m.insert(String::from("t1"), handle("a"));
+            m.insert(String::from("t2"), handle("b"));
+        }
+
+        // 取出 A 的快照后立刻放开表锁，然后"长时间生成"。
+        let entry_a = { models.lock().unwrap().get("t1").unwrap().clone() };
+        let guard_a = entry_a.lock().unwrap();
+        assert_eq!(*guard_a, "a");
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            // 只依赖 model_map() 的 'static 引用，不需要跨越借用。
+            let models = model_map();
+            let entry_b = { models.lock().unwrap().get("t2").unwrap().clone() };
+            let g = entry_b.lock().unwrap();
+            tx.send(g.clone()).unwrap();
+        });
+
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(5)).expect(
+                "another robot's model was unreachable while one generation ran: the map \
+                 (or a shared lock) is still held across generation"
+            ),
+            "b"
+        );
+        drop(guard_a);
+        worker.join().unwrap();
+    }
+
+    /// 同一个机器人的两次生成必须串行：KV cache 是模型自身的可变状态，并发改写
+    /// 会互相污染 —— 这正是"粘在上一个话题"那个 bug 的成因。
+    #[test]
+    fn the_same_model_is_serialized() {
+        let entry = handle("only");
+
+        let guard = entry.lock().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let entry2 = entry.clone();
+        let worker = std::thread::spawn(move || {
+            let _g = entry2.lock().unwrap();
+            tx.send(()).unwrap();
+        });
+
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(300)).is_err(),
+            "a second generation on the same model must wait for the first"
+        );
+        drop(guard);
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
+        worker.join().unwrap();
+    }
+
+    /// 本地模型必须有上限：每个都是几百 MB 到几 GB 的常驻内存。
+    /// 超过 `MAX_LOADED_MODELS` 时淘汰最久未用的那个。
+    #[test]
+    fn the_least_recently_used_model_is_evicted() {
+        let mut models: HashMap<String, Arc<Mutex<String>>> = HashMap::new();
+        let mut lru = std::collections::VecDeque::new();
+
+        // 装 6 个（上限 5），key 按使用顺序 t1..t6。
+        for i in 1..=6 {
+            let key = format!("t{i}");
+            models.insert(key.clone(), handle(&key));
+            touch_lru(&mut lru, &key);
+            if lru.len() > MAX_LOADED_MODELS {
+                evict_one_idle(&mut models, &mut lru);
+            }
+        }
+        assert_eq!(models.len(), MAX_LOADED_MODELS);
+        assert!(!models.contains_key("t1"), "t1 is the least recently used");
+        for i in 2..=6 {
+            assert!(models.contains_key(&format!("t{i}")), "t{i} should survive");
+        }
+
+        // 再碰一次 t2，它就不再是最旧的了 —— 下一个被淘汰的应该是 t3。
+        touch_lru(&mut lru, "t2");
+        models.insert(String::from("t7"), handle("t7"));
+        touch_lru(&mut lru, "t7");
+        evict_one_idle(&mut models, &mut lru);
+        assert!(models.contains_key("t2"), "t2 was touched, so it stays");
+        assert!(!models.contains_key("t3"), "t3 became the least recently used");
+        assert!(models.contains_key("t7"), "the newest entry must never be evicted");
+    }
+
+    /// 正在生成的模型优先不被淘汰：`try_lock` 拿不到锁说明有人占着。
+    #[test]
+    fn eviction_prefers_an_idle_model() {
+        let mut models: HashMap<String, Arc<Mutex<String>>> = HashMap::new();
+        let mut lru = std::collections::VecDeque::new();
+        for i in 1..=3 {
+            let key = format!("t{i}");
+            models.insert(key.clone(), handle(&key));
+            touch_lru(&mut lru, &key);
+        }
+        // t1 最旧，但正在生成；t2 空闲。
+        let busy = models.get("t1").unwrap().clone();
+        let _busy_guard = busy.lock().unwrap();
+
+        let evicted = evict_one_idle(&mut models, &mut lru);
+        assert_eq!(
+            evicted.as_deref(),
+            Some("t2"),
+            "an idle model should be evicted before a busy one"
+        );
+        assert!(models.contains_key("t1"), "the busy model stays");
+    }
 }
 
 pub(crate) async fn chat(
@@ -124,20 +411,66 @@ pub(crate) async fn chat(
     media: Option<&crate::ai::dto::UserMediaData>,
     connect_timeout: Option<u32>,
     read_timeout: Option<u32>,
+    // Qwen3 的思考模式开关。只对本地 Qwen3 生效，其余后端（含在线模型）忽略。
+    enable_thinking: bool,
     result_sender: ResultSender<'_, StreamingResponseData>,
 ) -> Result<()> {
     if let Some(settings) = settings::get_settings(robot_id).await? {
         // log::info!("{:?}", &settings.chat_provider.provider);
         match settings.chat_provider.provider {
             ChatProvider::HuggingFace(m) => {
-                huggingface(
-                    robot_id,
-                    &m,
-                    chat_history,
-                    media,
-                    settings.chat_provider.max_response_token_length as usize,
-                    result_sender,
-                )?;
+                // 本地模型是**同步**的 CPU 推理：一旦开始就占着当前线程不放，
+                // 整段回答期间都不会让出。所以它必须搬去阻塞线程池，不能在 async
+                // 任务里直接调用 —— 否则流式输出会被攒到最后一次性吐给客户端。
+                //
+                // 攒住 delta 的不是我们这层，是 tokio 多线程调度器的 LIFO 槽：
+                // `SenderWrapper::send` 是在**正在跑推理的那个 worker 线程**上
+                // 唤醒 SSE 连接任务的，而 `Handle::schedule_task` 对"worker 线程
+                // 上的唤醒"走 `schedule_local`，把任务塞进**当前 worker 的 LIFO
+                // 槽**；LIFO 槽是刻意不参与工作窃取的（tokio `worker.rs`：除 LIFO
+                // 槽里的任务外都可被偷），所以连接任务要等推理结束、worker 回到
+                // 调度器才第一次被轮询到 —— 表现就是"干等十几秒，然后整段回答
+                // 一下子全冒出来"，本地模型越慢越明显，而 Ollama 那类在线后端
+                // 每收一个 delta 都会 await 让出线程，所以看不出问题。
+                //
+                // 在阻塞线程池上唤醒则走 `push_remote_task`（inject 队列），任何
+                // 空闲 worker 都能立刻接手，每个 delta 都会即时刷出去。
+                let (sender, answer) = result_sender.detach();
+                let model = m.clone();
+                let media = media.cloned();
+                let robot_id = String::from(robot_id);
+                let sample_len = settings.chat_provider.max_response_token_length as usize;
+                // 冷加载必须在 async 上下文里做：`spawn_blocking` 的闭包是同步
+                // 的，`.await` 进不去；而加载要按机器人串行（`get_or_load_model`
+                // 里那把按 key 分的加载锁）。放在这里也让**加载不占用模型锁**，
+                // 已经在生成的机器人不受影响。
+                let entry = get_or_load_model(&robot_id, &model).await?;
+                let (r, generated) = tokio::task::spawn_blocking(move || {
+                    let mut generated = String::with_capacity(1024);
+                    let r = {
+                        let sender = match sender {
+                            Some(sender) => ResultSender::ChannelSender(sender, &mut generated),
+                            None => ResultSender::StrBuf(&mut generated),
+                        };
+                        huggingface(
+                            &robot_id,
+                            &model,
+                            entry,
+                            chat_history,
+                            media.as_ref(),
+                            sample_len,
+                            enable_thinking,
+                            sender,
+                        )
+                    };
+                    (r, generated)
+                })
+                .await
+                .map_err(|e| Error::WithMessage(format!("Local model task failed: {e}")))?;
+                // 失败时也把已生成的部分写回：调用方靠这块缓冲判断要不要兜底
+                // （见 `flow/rt/node.rs`），中途出错时它和以前一样能看到半截回答。
+                answer.push_str(&generated);
+                r?;
                 Ok(())
             }
             ChatProvider::OpenAICompatible(m) => {
@@ -170,9 +503,14 @@ pub(crate) async fn chat(
 /// 于是同一个机器人要在设置页配两遍模型；而在线模型那条分支把调用方给过来的
 /// JSON 提示词数组当成纯文本塞进一条 user 消息，界面里填的 system 提示词根本
 /// 到不了模型。现在它和对话节点走**完全相同**的路径、用同一份配置。
+///
+/// `enable_thinking` 由调用方给（见 `dto::Request`），缺省为 `false`：这个接口
+/// 是"生成一段文字"，思考过程的推理轨迹对调用方没有意义，而本地小模型上它会
+/// 先烧掉几十秒才吐第一个字。
 pub(crate) async fn gen_text(
     robot_id: &str,
     prompt: &str,
+    enable_thinking: bool,
     sender: UnboundedSender<StreamingResponseData>,
 ) -> Result<()> {
     let history = parse_prompt(prompt);
@@ -185,6 +523,7 @@ pub(crate) async fn gen_text(
         None,
         None,
         None,
+        enable_thinking,
         ResultSender::ChannelSender(SenderWrapper::new(sender, 0), &mut answer),
     )
     .await
@@ -209,11 +548,13 @@ fn parse_prompt(s: &str) -> Vec<Prompt> {
 }
 
 fn huggingface(
-    robot_id: &str,
+    _robot_id: &str,
     m: &HuggingFaceModel,
+    entry: Arc<Mutex<LoadedHuggingFaceModel>>,
     chat_history: Option<Vec<Prompt>>,
     media: Option<&crate::ai::dto::UserMediaData>,
     sample_len: usize,
+    enable_thinking: bool,
     mut result_sender: ResultSender<'_, StreamingResponseData>,
 ) -> Result<()> {
     let info = m.get_info();
@@ -226,17 +567,18 @@ fn huggingface(
             &info.model_type
         )));
     }
-    let new_prompt = info.convert_prompt("", chat_history.clone())?;
+    let new_prompt = info.convert_prompt("", chat_history.clone(), enable_thinking)?;
     log::info!("Prompt: {}", &new_prompt);
-    let mut model = LOADED_MODELS.lock().unwrap_or_else(|e| {
+    // 只锁这一个模型：不同机器人之间互不阻塞，同一机器人的请求在此串行
+    // （KV cache 是模型自身的可变状态，必须串行）。
+    //
+    // `entry` 是 `chat()` 拿到的 `Arc` 快照：即使期间有人 `replace_model_cache`
+    // 换了新实例，我们手上这个依然有效，不会被改动或提前释放。
+    let mut guard = entry.lock().unwrap_or_else(|e| {
         log::warn!("{:#?}", &e);
         e.into_inner()
     });
-    if !model.contains_key(robot_id) {
-        let r = LoadedHuggingFaceModel::load(m)?;
-        model.insert(String::from(robot_id), r);
-    };
-    let loaded_model = model.get_mut(robot_id).unwrap();
+    let loaded_model = &mut *guard;
     match loaded_model {
         LoadedHuggingFaceModel::Gemma(m) => super::gemma::gen_text(
             &m.0,
@@ -488,6 +830,34 @@ mod tests {
 
     use super::*;
 
+    /// 本地模型那条路要把 delta 的 sender 交给阻塞线程池（靠 [`ResultSender::detach`]），
+    /// 缓冲区留在调用方手里。这一步不能把"要不要流式"弄丢 —— 丢了就退化成
+    /// 一次性应答；缓冲也必须还是调用方那块，否则 `node.rs` 拿到的回答会是空的。
+    #[tokio::test]
+    async fn detach_keeps_the_stream_and_hands_the_buffer_back() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut answer = String::new();
+        let (sender, buf) =
+            ResultSender::ChannelSender(SenderWrapper::new(tx, 7), &mut answer).detach();
+        assert!(
+            sender.is_some(),
+            "a streaming call must keep its channel: the local-model path hands this \
+             sender to the blocking pool"
+        );
+        buf.push_str("hi");
+        assert_eq!(buf.len(), 2, "the buffer handed back is the caller's");
+        assert_eq!(answer, "hi", "the caller's buffer is the one that moves");
+
+        // 非流式的调用不能被凭空塞一个通道进去。
+        let rs: ResultSender<StreamingResponseData> = ResultSender::StrBuf(&mut answer);
+        let (sender, buf) = rs.detach();
+        assert!(sender.is_none());
+        buf.push_str("!");
+        assert_eq!(buf.len(), 3, "the buffer handed back is the caller's");
+        assert_eq!(answer, "hi!");
+        assert!(rx.try_recv().is_err());
+    }
+
     /// What actually goes on the wire: the configured URL, the key, and the
     /// token cap. The cap used to be dropped entirely on this path, and an
     /// empty URL used to silently become OpenAI's.
@@ -571,6 +941,9 @@ mod tests {
     /// 期望值对照 HF 上 `Qwen/Qwen3-0.6B` 的 `chat_template` 输出。history 就是
     /// 完整的消息列表（含最新那条 user）—— `chat()` 与 `gen_text()` 都是这么传的
     /// （`s` 为空串）。
+    ///
+    /// 这里传 `enable_thinking = true`，所以不该出现 `/no_think`；关掉的那个
+    /// 由 `qwen3_thinking_off_injects_no_think` 覆盖。
     #[test]
     fn qwen3_prompt_is_chatml_and_stays_closed() {
         let info = HuggingFaceModel::Qwen3_0_6B.get_info();
@@ -593,7 +966,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            info.convert_prompt("", Some(history)).unwrap(),
+            info.convert_prompt("", Some(history), true).unwrap(),
             "<|im_start|>system\n你是客服<|im_end|>\n\
              <|im_start|>user\n你好<|im_end|>\n\
              <|im_start|>assistant\n你好，有什么可以帮你？<|im_end|>\n\
@@ -609,7 +982,7 @@ mod tests {
     fn qwen3_prompt_skips_an_empty_user_turn() {
         let info = HuggingFaceModel::Qwen3_8B.get_info();
         assert_eq!(
-            info.convert_prompt("", None).unwrap(),
+            info.convert_prompt("", None, true).unwrap(),
             "<|im_start|>assistant\n"
         );
         // 只有 system、没有 user 时同理，也不能留下空回合。
@@ -618,7 +991,7 @@ mod tests {
             content: String::from("你是客服"),
         }];
         assert_eq!(
-            info.convert_prompt("", Some(history)).unwrap(),
+            info.convert_prompt("", Some(history), true).unwrap(),
             "<|im_start|>system\n你是客服<|im_end|>\n<|im_start|>assistant\n"
         );
     }
@@ -633,21 +1006,105 @@ mod tests {
             content: String::from("hi"),
         }]);
         assert_eq!(
-            dense.convert_prompt("", history.clone()).unwrap(),
-            moe.convert_prompt("", history).unwrap()
+            dense.convert_prompt("", history.clone(), true).unwrap(),
+            moe.convert_prompt("", history, true).unwrap()
         );
     }
 
-    /// GGUF 模型是**双仓库**的：权重在 unsloth 的 GGUF 仓库，分词器在官方
-    /// base 仓库（GGUF 仓库里没有 tokenizer.json，已核对过文件清单）。
-    /// 这里锁住两个仓库名，防止有人"顺手统一"成同一个而把下载跑成 404。
+    /// 关闭思考：照 Qwen3 自己 `chat_template` 的 `enable_thinking == false`
+    /// 分支，在生成前缀后追加一个**空的 think 块**。
+    ///
+    /// 早先这里发的是 `/no_think`（Qwen2.5 的软开关）。实测 0.6B 根本不认它：
+    /// 照样输出 `<think>\n\n</think>\n\n` 前缀，而那个 `</think>` 会作为正文流到
+    /// 用户面前 —— 就是"回答以 `</think>` 开头"这个现象的来源。
     #[test]
-    fn qwen3_reads_weights_and_tokenizer_from_two_repositories() {
+    fn qwen3_thinking_off_appends_an_empty_think_block() {
+        let info = HuggingFaceModel::Qwen3_0_6B.get_info();
+        let history = Some(vec![
+            Prompt {
+                role: String::from("system"),
+                content: String::from("你是客服"),
+            },
+            Prompt {
+                role: String::from("user"),
+                content: String::from("你好"),
+            },
+        ]);
+        assert_eq!(
+            info.convert_prompt("", history.clone(), false).unwrap(),
+            "<|im_start|>system\n你是客服<|im_end|>\n\
+             <|im_start|>user\n你好<|im_end|>\n\
+             <|im_start|>assistant\n<think>\n\n</think>\n\n"
+        );
+        // 开着思考时不能有这个空块（那等于替模型把思考跳过了）。
+        assert_eq!(
+            info.convert_prompt("", history, true).unwrap(),
+            "<|im_start|>system\n你是客服<|im_end|>\n\
+             <|im_start|>user\n你好<|im_end|>\n\
+             <|im_start|>assistant\n"
+        );
+    }
+
+    /// MoE 那档（Instruct-2507）的模板里本来就没有 `<think>`，但开关走的是同一条
+    /// 分支，不能出现"密集模型注入、MoE 不注入"这种不一致。
+    #[test]
+    fn qwen3_moe_honours_the_thinking_switch() {
+        let moe = HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507.get_info();
+        assert_eq!(
+            moe.convert_prompt("", None, false).unwrap(),
+            "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        );
+        assert_eq!(
+            moe.convert_prompt("", None, true).unwrap(),
+            "<|im_start|>assistant\n"
+        );
+    }
+
+    /// 空 think 块是 Qwen3 专有的：**绝不能**注入到 llama/gemma/phi3 的提示词里，
+    /// 那会把它们的提示词弄脏。这个开关必须由 `convert_prompt` 按模型类型判断，
+    /// 而不是让调用方自己拼字符串。
+    #[test]
+    fn the_thinking_markers_never_leak_into_other_models() {
+        let history = Some(vec![Prompt {
+            role: String::from("user"),
+            content: String::from("hi"),
+        }]);
+        for m in [
+            HuggingFaceModel::TinyLlama1_1bChatV1_0,
+            HuggingFaceModel::Gemma2bInstruct,
+            HuggingFaceModel::Phi3Mini4kInstruct,
+        ] {
+            let info = m.get_info();
+            for enable in [false, true] {
+                let p = info.convert_prompt("", history.clone(), enable).unwrap();
+                assert!(
+                    !p.contains("<think>") && !p.contains("/no_think"),
+                    "{m:?} (thinking={enable}) must not get Qwen thinking markers: {p}"
+                );
+            }
+            // 两种取值必须产出完全一样的提示词。
+            assert_eq!(
+                info.convert_prompt("", history.clone(), false).unwrap(),
+                info.convert_prompt("", history.clone(), true).unwrap(),
+                "{m:?} ignores the thinking switch, so both settings must match"
+            );
+        }
+    }
+
+    /// GGUF 模型是**双仓库**的：权重从 unsloth 的 GGUF 仓库取，分词器从官方
+    /// base 仓库取（GGUF 仓库里没有 tokenizer.json，已核对过文件清单）。
+    /// 这里锁住两个**远端来源**，防止有人"顺手统一"成同一个而把下载跑成 404。
+    ///
+    /// 注意本地目录不在这两个字段里：它跟着保存时用的 `repository` 走，
+    /// 所以 GGUF 落在 `data/model/Qwen/Qwen3-4B/`，而不是量化仓库名下。
+    #[test]
+    fn qwen3_fetches_weights_and_tokenizer_from_two_repositories() {
         let info = HuggingFaceModel::Qwen3_4B.get_info();
         assert_eq!(info.tokenizer_repository(), "Qwen/Qwen3-4B");
+        assert_eq!(info.local_directory(), "Qwen/Qwen3-4B");
         assert_eq!(
             info.gguf_model_path().unwrap(),
-            "./data/hf_hub/unsloth/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
+            "./data/model/Qwen/Qwen3-4B/Qwen3-4B-Q4_K_M.gguf"
         );
         // 非 GGUF 模型不受影响：分词器仓库回退到权重仓库。
         let bert = HuggingFaceModel::AllMiniLML6V2.get_info();

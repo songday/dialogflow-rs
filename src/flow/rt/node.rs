@@ -188,6 +188,8 @@ pub(crate) struct LlmGenTextNode {
     pub(crate) connect_timeout: Option<u32>,
     pub(crate) read_timeout: Option<u32>,
     pub(crate) response_streaming: bool,
+    /// Qwen3 的思考模式。对话节点里的"生成文本"默认不思考。
+    pub(crate) enable_thinking: bool,
     pub(super) ret: bool,
     pub(super) next_node_id: String,
 }
@@ -234,6 +236,7 @@ impl RuntimeNode for LlmGenTextNode {
                 ctx.user_media.as_ref(),
                 self.connect_timeout,
                 self.read_timeout,
+                self.enable_thinking,
                 ResultSender::ChannelSender(sender, &mut answer),
             )
             .await;
@@ -270,6 +273,7 @@ impl RuntimeNode for LlmGenTextNode {
                 ctx.user_media.as_ref(),
                 self.connect_timeout,
                 self.read_timeout,
+                self.enable_thinking,
                 ResultSender::StrBuf(&mut answer),
             )
             .await
@@ -295,6 +299,7 @@ impl RuntimeNode for LlmGenTextNode {
                 ctx.user_media.as_ref(),
                 self.connect_timeout,
                 self.read_timeout,
+                self.enable_thinking,
                 ResultSender::StrBuf(&mut s),
             )
             .await
@@ -699,6 +704,8 @@ pub(crate) struct LlmChatNode {
     pub(crate) connect_timeout: Option<u32>,
     pub(crate) read_timeout: Option<u32>,
     pub(crate) response_streaming: bool,
+    /// Qwen3 的思考模式，由用户在节点里选。默认 `false`。
+    pub(crate) enable_thinking: bool,
     pub(super) next_node_id: String,
 }
 
@@ -758,6 +765,7 @@ impl LlmChatNode {
                 ctx.user_media.as_ref(),
                 self.connect_timeout,
                 self.read_timeout,
+                self.enable_thinking,
                 ResultSender::ChannelSender(sender, &mut answer),
             )
             .await
@@ -808,6 +816,7 @@ impl LlmChatNode {
                 ctx.user_media.as_ref(),
                 self.connect_timeout,
                 self.read_timeout,
+                self.enable_thinking,
                 ResultSender::StrBuf(&mut answer),
             )
             .await
@@ -842,6 +851,7 @@ impl LlmChatNode {
                 ctx.user_media.as_ref(),
                 self.connect_timeout,
                 self.read_timeout,
+                self.enable_thinking,
                 ResultSender::StrBuf(&mut s),
             )
             .await
