@@ -42,16 +42,67 @@ pub(crate) const REPEAT_LAST_N: usize = 64;
 /// 以前是 `Mutex<HashMap<String, LoadedHuggingFaceModel>>`，只有一把锁、且从
 /// 加载模型一直持有到生成结束，于是**所有**本地模型请求被强制排成一队。
 static LOADED_MODELS: LazyLock<Mutex<HashMap<String, Arc<Mutex<LoadedHuggingFaceModel>>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
+    LazyLock::new(|| Mutex::new(HashMap::with_capacity(8)));
+
+/// 模型的最近使用顺序，队首最新、队尾最旧。
+///
+/// 本地模型很占内存（Qwen3-1.7B 权重约 1.1GB，再加约 470MB 的 KV cache；
+/// 8B 是 5GB + 1.1GB），所以必须有上限，否则每个用过的机器人都会常驻一份。
+static MODEL_LRU: LazyLock<Mutex<std::collections::VecDeque<String>>> =
+    LazyLock::new(|| Mutex::new(std::collections::VecDeque::with_capacity(8)));
+
+/// 最多同时常驻几个本地模型。超了就淘汰最久未用的那个。
+const MAX_LOADED_MODELS: usize = 5;
+
+/// 把 `robot_id` 记为最近使用。
+fn touch_lru(lru: &mut std::collections::VecDeque<String>, robot_id: &str) {
+    if let Some(i) = lru.iter().position(|k| k == robot_id) {
+        lru.remove(i);
+    }
+    lru.push_front(String::from(robot_id));
+}
+
+/// 超过上限时淘汰最久未使用的模型，返回被淘汰的 key。
+///
+/// 淘汰**正在生成**的条目是安全的：在飞请求手里攥着 `Arc` 快照，会自己跑完。
+/// 但那会在下次请求时白白重载，所以这里优先挑空闲的（`try_lock` 能拿到锁说明
+/// 没人在生成）。全都忙就挑最旧的那个 —— 正确性不受影响，只是可能多一次加载。
+///
+/// 对 `T` 泛型只是为了单测能用占位类型（不必加载真实权重）。
+fn evict_one_idle<T>(
+    models: &mut HashMap<String, Arc<Mutex<T>>>,
+    lru: &mut std::collections::VecDeque<String>,
+) -> Option<String> {
+    if let Some(free) = lru
+        .iter()
+        .rev()
+        .find(|k| models.get(*k).map(|e| e.try_lock().is_ok()).unwrap_or(false))
+    {
+        let key = free.clone();
+        models.remove(&key);
+        if let Some(i) = lru.iter().position(|k| *k == key) {
+            lru.remove(i);
+        }
+        return Some(key);
+    }
+    // 全都在生成中：退而求其次，淘汰最旧的那个。
+    if let Some(key) = lru.pop_back() {
+        models.remove(&key);
+        return Some(key);
+    }
+    None
+}
 
 /// 正在加载中的机器人，防止同一个模型被并发加载两遍。
 ///
 /// 用 `tokio::sync::Mutex` 是因为加载要跨 `.await` 持有它。每个 key 一把锁，
 /// 所以一个机器人的冷加载不会挡住别的机器人。
 static LOADING: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
+    LazyLock::new(|| Mutex::new(HashMap::with_capacity(8)));
 
 /// 取出 `robot_id` 对应的模型，没有就加载一个。
+///
+/// 每次都更新 LRU 顺序；超过 `MAX_LOADED_MODELS` 时淘汰最久未用的那个。
 async fn get_or_load_model(
     robot_id: &str,
     m: &HuggingFaceModel,
@@ -60,10 +111,14 @@ async fn get_or_load_model(
     {
         let models = LOADED_MODELS.lock()?;
         if let Some(existing) = models.get(robot_id) {
-            return Ok(existing.clone());
+            let entry = existing.clone();
+            let mut lru = MODEL_LRU.lock()?;
+            touch_lru(&mut lru, robot_id);
+            return Ok(entry);
         }
     }
     // 取该机器人的加载锁；同一个模型的并发冷启动在这里排队，只有第一个真正加载。
+    // 注意这个 guard 要活到插入之后：否则排队者会在插入前溜进来重复加载。
     let init = {
         let mut loading = LOADING.lock()?;
         loading
@@ -76,15 +131,38 @@ async fn get_or_load_model(
     {
         let models = LOADED_MODELS.lock()?;
         if let Some(existing) = models.get(robot_id) {
-            return Ok(existing.clone());
+            let entry = existing.clone();
+            let mut lru = MODEL_LRU.lock()?;
+            touch_lru(&mut lru, robot_id);
+            return Ok(entry);
         }
     }
     // 锁外加载（只持有该机器人的加载锁）。生成用的是 `Arc` 快照，所以这里
     // 不会再阻塞任何已经在跑的生成。
     let loaded = LoadedHuggingFaceModel::load(m)?;
-    let mut models = LOADED_MODELS.lock()?;
+
     let entry = Arc::new(Mutex::new(loaded));
-    models.insert(String::from(robot_id), entry.clone());
+    let evicted = {
+        let mut models = LOADED_MODELS.lock()?;
+        models.insert(String::from(robot_id), entry.clone());
+        let mut lru = MODEL_LRU.lock()?;
+        touch_lru(&mut lru, robot_id);
+        if lru.len() > MAX_LOADED_MODELS {
+            evict_one_idle(&mut models, &mut lru)
+        } else {
+            None
+        }
+    };
+    if let Some(key) = evicted {
+        // 顺手清掉加载锁条目，别让它无界增长。
+        if let Ok(mut loading) = LOADING.lock() {
+            loading.remove(&key);
+        }
+        log::info!(
+            "Evicted local model for robot {key} (limit {MAX_LOADED_MODELS}); \
+             it will be reloaded on its next request"
+        );
+    }
     Ok(entry)
 }
 
@@ -268,6 +346,61 @@ mod lock_tests {
         drop(guard);
         assert!(rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok());
         worker.join().unwrap();
+    }
+
+    /// 本地模型必须有上限：每个都是几百 MB 到几 GB 的常驻内存。
+    /// 超过 `MAX_LOADED_MODELS` 时淘汰最久未用的那个。
+    #[test]
+    fn the_least_recently_used_model_is_evicted() {
+        let mut models: HashMap<String, Arc<Mutex<String>>> = HashMap::new();
+        let mut lru = std::collections::VecDeque::new();
+
+        // 装 6 个（上限 5），key 按使用顺序 t1..t6。
+        for i in 1..=6 {
+            let key = format!("t{i}");
+            models.insert(key.clone(), handle(&key));
+            touch_lru(&mut lru, &key);
+            if lru.len() > MAX_LOADED_MODELS {
+                evict_one_idle(&mut models, &mut lru);
+            }
+        }
+        assert_eq!(models.len(), MAX_LOADED_MODELS);
+        assert!(!models.contains_key("t1"), "t1 is the least recently used");
+        for i in 2..=6 {
+            assert!(models.contains_key(&format!("t{i}")), "t{i} should survive");
+        }
+
+        // 再碰一次 t2，它就不再是最旧的了 —— 下一个被淘汰的应该是 t3。
+        touch_lru(&mut lru, "t2");
+        models.insert(String::from("t7"), handle("t7"));
+        touch_lru(&mut lru, "t7");
+        evict_one_idle(&mut models, &mut lru);
+        assert!(models.contains_key("t2"), "t2 was touched, so it stays");
+        assert!(!models.contains_key("t3"), "t3 became the least recently used");
+        assert!(models.contains_key("t7"), "the newest entry must never be evicted");
+    }
+
+    /// 正在生成的模型优先不被淘汰：`try_lock` 拿不到锁说明有人占着。
+    #[test]
+    fn eviction_prefers_an_idle_model() {
+        let mut models: HashMap<String, Arc<Mutex<String>>> = HashMap::new();
+        let mut lru = std::collections::VecDeque::new();
+        for i in 1..=3 {
+            let key = format!("t{i}");
+            models.insert(key.clone(), handle(&key));
+            touch_lru(&mut lru, &key);
+        }
+        // t1 最旧，但正在生成；t2 空闲。
+        let busy = models.get("t1").unwrap().clone();
+        let _busy_guard = busy.lock().unwrap();
+
+        let evicted = evict_one_idle(&mut models, &mut lru);
+        assert_eq!(
+            evicted.as_deref(),
+            Some("t2"),
+            "an idle model should be evicted before a busy one"
+        );
+        assert!(models.contains_key("t1"), "the busy model stays");
     }
 }
 
