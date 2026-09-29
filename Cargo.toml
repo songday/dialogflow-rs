@@ -36,7 +36,7 @@ candle-transformers = { version = "0.11.0" }
 # crossbeam-channel = "0.5"
 frand = "0.10.1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
-tokenizers = "0.23.2"
+tokenizers = { version = "0.23.2", default-features = false, features = ["fancy-regex"] }
 # candle_embed = "0.1"
 colored = "3.1.1"
 # dashmap = "5.5.1"
@@ -92,8 +92,7 @@ quick-xml = "0.42.0"
 # text-splitter = { version = "0.28.0", default-features = false, features = ["tokenizers"] }
 text-splitter = "0.33"
 # num_cpus = "1.17.0"
-# turso = "0.7.2"
-turso = "=0.8.0-pre.13"
+turso = "0.8.1"
 unicode-casefold = "0.2.0"
 # sqlite-vec = { path = "/mnt/d/work/sqlite-vec/bindings/rust/" }
 
