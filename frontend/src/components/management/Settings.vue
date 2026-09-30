@@ -568,6 +568,17 @@ const chatProviders = [
                 value: "Gemma7bInstruct",
                 need_auth_header: true,
             },
+            // 本地 Gemma 4（多模态：文本 + 图像）。Apache-2.0、免访问令牌。
+            // 体积是单文件 BF16 safetensors 的实际大小（"E" 是 effective
+            // parameters，E2B/E4B 的权重其实有 51 亿 / 80 亿参数）。
+            {
+                label: "google/gemma-4-E2B-it (10.2GB, text+vision)",
+                value: "Gemma4E2BIt",
+            },
+            {
+                label: "google/gemma-4-E4B-it (16.0GB, text+vision)",
+                value: "Gemma4E4BIt",
+            },
             {
                 label: "TinyLlama/TinyLlama-1.1B-Chat-v1.0 (2.2GB)",
                 value: "TinyLlama1_1bChatV1_0",
