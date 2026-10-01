@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, provide } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, provide } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { copyProperties, httpReq, getRobotType } from "../../assets/tools.js";
@@ -96,13 +96,44 @@ const smtpFailed = ref(false);
 const smtpFailedDetail = ref("");
 const showHfIncorrectChatModelTip = ref(false);
 const showHfChatModelDownloadProgress = ref(false);
-const chatModelRepository = ref("");
 const showHfIncorrectEmbeddingModelTip = ref(false);
 const showHfEmbeddingModelDownloadProgress = ref(false);
-const sentenceEmbeddingModelRepository = ref("");
 const originalSentenceEmbeddingModelId = ref("");
 const downloadingUrl = ref("");
 const downloadingProgress = ref("");
+
+// 本地模型的实际落盘目录，由后端给出（见 checkHfModelFiles 调的那个接口）。
+// 空串 = 当前不是本地模型，或者接口还没回来。
+const chatModelLocalPath = ref("");
+const sentenceEmbeddingModelLocalPath = ref("");
+
+// HuggingFace 的「请求地址」不是一个真的地址，而是一句"模型会落到哪儿"的提示。
+// 前缀留在前端，路径必须由后端给：真正写文件的是后端，只有它能保证这句话
+// 和磁盘上的目录一致（前端硬编码的 ./data/models 曾经就和实际根目录不一致）。
+const hfLocalPathHint = "Model will be downloaded locally at ";
+// 还没拿到具体模型的路径时显示的兜底文案。权威的根目录在后端
+// （HUGGING_FACE_MODEL_ROOT），所以这里只是"模型还没选/接口还没回来"时的样子。
+const hfLocalRootFallback = hfLocalPathHint + "./data/models";
+
+// 用 computed 而不是把拼好的字符串写回 settings.*.apiUrl：那个字段会随设置一起
+// 存库，它只该是 provider 预设的那句提示（后端读设置时不看 HuggingFace 的
+// apiUrl）；带路径的字符串会随选中的模型变，写进去只会留下一堆没用的脏值。
+const chatApiUrl = computed({
+    get: () =>
+        settings.chatProvider.provider.id == "HuggingFace" &&
+        chatModelLocalPath.value
+            ? hfLocalPathHint + chatModelLocalPath.value
+            : settings.chatProvider.apiUrl,
+    set: (v) => (settings.chatProvider.apiUrl = v),
+});
+const sentenceEmbeddingApiUrl = computed({
+    get: () =>
+        settings.sentenceEmbeddingProvider.provider.id == "HuggingFace" &&
+        sentenceEmbeddingModelLocalPath.value
+            ? hfLocalPathHint + sentenceEmbeddingModelLocalPath.value
+            : settings.sentenceEmbeddingProvider.apiUrl,
+    set: (v) => (settings.sentenceEmbeddingProvider.apiUrl = v),
+});
 
 onMounted(async () => {
     const r = await httpReq(
@@ -150,53 +181,56 @@ onUnmounted(() => {
     if (timeoutID != null) clearTimeout(timeoutID);
 });
 
+// 本地模型在候选列表里的 value 就是后端认的模型名（枚举名，如 Qwen3_0_6B）。
+// 这里只判断"这个值还在候选里"。老代码还会截掉最后一个空格之后的部分，那是
+// 候选项 value 曾经长成"仓库名 (体积)"时留下的残留；现在 value 里没有空格。
+const isHfModelName = (options, model) => options.some((o) => o.value == model);
+
 async function checkHfModelFiles() {
-    const repostories = new Map();
-    if (settings.chatProvider.provider.id == "HuggingFace") {
-        for (let i = 0; i < chatModelOptions.length; i++) {
-            if (
-                chatModelOptions[i].value ==
-                settings.chatProvider.provider.model
-            ) {
-                let l = chatModelOptions[i].value;
-                const p = l.lastIndexOf(" ");
-                if (p > -1) l = l.substring(0, p);
-                chatModelRepository.value = l;
-                repostories.set(showHfIncorrectChatModelTip, l);
-                break;
-            }
+    // 每一项：后端认的模型名，以及查完要写回哪两个 ref。
+    const items = [];
+    const collect = (provider, options, tip, path) => {
+        // 不是本地模型：既没有路径可显示，也不必提示下载。
+        if (
+            provider.id != "HuggingFace" ||
+            !isHfModelName(options, provider.model)
+        ) {
+            tip.value = false;
+            path.value = "";
+            return;
         }
-    } else showHfIncorrectChatModelTip.value = false;
-    if (settings.sentenceEmbeddingProvider.provider.id == "HuggingFace") {
-        for (let i = 0; i < sentenceEmbeddingModelOptions.length; i++) {
-            if (
-                sentenceEmbeddingModelOptions[i].value ==
-                settings.sentenceEmbeddingProvider.provider.model
-            ) {
-                let l = sentenceEmbeddingModelOptions[i].value;
-                const p = l.lastIndexOf(" ");
-                if (p > -1) l = l.substring(0, p);
-                sentenceEmbeddingModelRepository.value = l;
-                repostories.set(showHfIncorrectEmbeddingModelTip, l);
-                break;
-            }
-        }
-    } else showHfIncorrectEmbeddingModelTip.value = false;
-    if (repostories.size > 0) {
-        const r = await httpReq(
-            "POST",
-            "management/settings/model/check/files",
-            null,
-            null,
-            Array.from(repostories.values()),
-        );
-        if (r && r.data) {
-            for (let [k, v] of repostories.entries()) {
-                if (r.data[v] == false) {
-                    k.value = true;
-                } else k.value = false;
-            }
-        }
+        items.push({ model: provider.model, tip: tip, path: path });
+    };
+    collect(
+        settings.chatProvider.provider,
+        chatModelOptions,
+        showHfIncorrectChatModelTip,
+        chatModelLocalPath,
+    );
+    collect(
+        settings.sentenceEmbeddingProvider.provider,
+        sentenceEmbeddingModelOptions,
+        showHfIncorrectEmbeddingModelTip,
+        sentenceEmbeddingModelLocalPath,
+    );
+    if (items.length == 0) return;
+    const r = await httpReq(
+        "POST",
+        "management/settings/model/local/path",
+        null,
+        null,
+        items.map((i) => i.model),
+    );
+    if (r == null || r.data == null) return;
+    for (const i of items) {
+        const info = r.data[i.model];
+        if (info == null) continue;
+        // 路径直接显示给用户，别再自己拼。
+        i.path.value = info.path;
+        // 只 stat 目录：目录不在 = 还没下载过。这里刻意不走文件级校验——那要读
+        // 并解析 tokenizer.json（几兆到几十兆），而这条路径每次打开设置页、每次
+        // 保存设置都会走一遍；模型是否真的完整，交给用户主动触发的按钮。
+        i.tip.value = info.exists == false;
     }
 }
 
@@ -246,7 +280,11 @@ async function saveSettings() {
 
 let timeoutID = null;
 
-async function downloadModels(m) {
+// `m` 是模型名（下载接口的请求体就是它），`kind` 说明这次下载属于哪一块。
+// 以前靠 `m == "sentenceEmbedding"` 区分，可两个按钮传的都是模型名
+// （如 AllMiniLML6V2），这个判断永远不成立 —— 于是句向量模型下载时亮的是
+// 对话那一块的进度条，句向量自己的进度条一个都不显示。归属由调用方明说。
+async function downloadModels(m, kind) {
     const r = await httpReq(
         "GET",
         "management/settings/model/download/progress",
@@ -275,7 +313,7 @@ async function downloadModels(m) {
             ElMessage.error("Download failed: " + r.err.message);
             return;
         }
-        if (m == "sentenceEmbedding") {
+        if (kind == "embedding") {
             showHfIncorrectEmbeddingModelTip.value = false;
             showHfEmbeddingModelDownloadProgress.value = true;
         } else {
@@ -291,12 +329,15 @@ async function downloadModels(m) {
     });
 }
 
-function downloadComplete() {
+async function downloadComplete() {
     clearTimeout(timeoutID);
     showHfIncorrectChatModelTip.value = false;
     showHfChatModelDownloadProgress.value = false;
     showHfIncorrectEmbeddingModelTip.value = false;
     showHfEmbeddingModelDownloadProgress.value = false;
+    // 文件刚落盘，重新问一遍"会放到哪儿、那个目录在不在"：路径通常没变，但
+    // 目录此时才真正存在，靠它判断的「模型缺失」提示该跟着消失。
+    await checkHfModelFiles();
 }
 
 async function showDownloadProgress() {
@@ -323,9 +364,9 @@ async function showDownloadProgress() {
             timeoutID = setTimeout(async () => {
                 await showDownloadProgress();
             }, 1000);
-        } else downloadComplete();
+        } else await downloadComplete();
     } else {
-        downloadComplete();
+        await downloadComplete();
     }
 }
 
@@ -550,7 +591,7 @@ const chatProviders = [
     {
         id: "HuggingFace",
         nameKey: "botSettings.providerHuggingFace",
-        apiUrl: "Model will be downloaded locally at ./data/models",
+        apiUrl: hfLocalRootFallback,
         apiUrlDisabled: true,
         showApiKeyInput: false,
         models: [
@@ -655,7 +696,7 @@ const sentenceEmbeddingProviders = [
     {
         id: "HuggingFace",
         nameKey: "botSettings.providerHuggingFace",
-        apiUrl: "Model will be downloaded locally at ./data/models",
+        apiUrl: hfLocalRootFallback,
         apiUrlDisabled: true,
         showApiKeyInput: false,
         models: [
@@ -1045,7 +1086,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                     </el-form-item>
                     <el-form-item :label="t('botSettings.reqAddr')">
                         <el-input
-                            v-model="settings.chatProvider.apiUrl"
+                            v-model="chatApiUrl"
                             :disabled="settings.chatProvider.apiUrlDisabled"
                             @change="refreshChatVendor"
                         />
@@ -1072,6 +1113,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 settings.chatProvider.provider.id !=
                                 'HuggingFace'
                             "
+                            @change="checkHfModelFiles"
                         >
                             <el-option
                                 v-for="item in chatModelOptions"
@@ -1224,11 +1266,16 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 <el-button
                     type="primary"
                     text
-                    @click="downloadModels(settings.chatProvider.provider.model)"
+                    @click="
+                        downloadModels(
+                            settings.chatProvider.provider.model,
+                            'chat',
+                        )
+                    "
                 >
                     {{ $t("botSettings.hfModelDownloadLink") }}
                 </el-button>
-                {{ $t("botSettings.hfModelManual", { repo: chatModelRepository }) }}
+                {{ $t("botSettings.hfModelManual", { path: chatModelLocalPath }) }}
             </template>
         </el-alert>
         <div v-if="showHfChatModelDownloadProgress" class="download-progress">
@@ -1304,7 +1351,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                     </el-form-item>
                     <el-form-item :label="t('botSettings.reqAddr')">
                         <el-input
-                            v-model="settings.sentenceEmbeddingProvider.apiUrl"
+                            v-model="sentenceEmbeddingApiUrl"
                             :disabled="
                                 settings.sentenceEmbeddingProvider.apiUrlDisabled
                             "
@@ -1337,6 +1384,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                                 settings.sentenceEmbeddingProvider.provider
                                     .id != 'HuggingFace'
                             "
+                            @change="checkHfModelFiles"
                         >
                             <el-option
                                 v-for="item in sentenceEmbeddingModelOptions"
@@ -1516,12 +1564,13 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                     @click="
                         downloadModels(
                             settings.sentenceEmbeddingProvider.provider.model,
+                            'embedding',
                         )
                     "
                 >
                     {{ $t("botSettings.hfModelDownloadLink") }}
                 </el-button>
-                {{ $t("botSettings.hfModelManual", { repo: sentenceEmbeddingModelRepository }) }}
+                {{ $t("botSettings.hfModelManual", { path: sentenceEmbeddingModelLocalPath }) }}
             </template>
         </el-alert>
         <div

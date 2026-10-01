@@ -319,7 +319,7 @@ export default {
     simThresTip: "当表达式匹配相似度超过该阈值时，对应意图才会被使用。",
     hfModelMissing: "HuggingFace 模型文件不正确或缺失，请",
     hfModelDownloadLink: "点击此处从 Huggingface.co 下载模型文件",
-    hfModelManual: "，或者手动下载后放到 ./data/model/{repo} 目录",
+    hfModelManual: "，或者手动下载后放到 {path} 目录",
     downloading: "正在下载",
     modelChangedWarning: "句子向量模型已被修改，这可能引起向量维度不匹配问题<strong>（可以重新生成所有句子的向量来解决）</strong>。是否继续？",
     apiKey: "API 密钥",

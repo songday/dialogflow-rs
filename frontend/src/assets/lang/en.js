@@ -347,7 +347,7 @@ export default {
     simThresTip: "An intent is used when the expression matching similarity exceeds the threshold.",
     hfModelMissing: "HuggingFace model files were incorrect or missing, please",
     hfModelDownloadLink: "click here to download model files from Huggingface.co",
-    hfModelManual: ", or you can download manually and put them in ./data/model/{repo}",
+    hfModelManual: ", or you can download manually and put them in {path}",
     downloading: "Downloading",
     modelChangedWarning: "Sentence embedding model has been changed, this may cause dimension mismatch issue <strong>(You can regenerate all sentences to resolve)</strong>. Continue?",
     apiKey: "API key",
