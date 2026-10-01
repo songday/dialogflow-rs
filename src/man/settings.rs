@@ -502,6 +502,50 @@ pub(crate) async fn check_model_files(bytes: Bytes) -> impl IntoResponse {
     }
 }
 
+/// 本地 HuggingFace 模型的落盘位置，以及那个目录是否已经存在。
+///
+/// 设置页把它拼在"Model will be downloaded locally at ..."后面显示给用户。以前
+/// 这句话整个是前端硬编码的（`./data/models`），和真正写文件的根目录
+/// （`HUGGING_FACE_MODEL_ROOT`）对不上，用户照着提示去目录里找是找不到文件的；
+/// 路径改由后端给出，两边就不可能再漂移。
+///
+/// `path` 只是"要放到哪个目录"，不含模型文件名。目录本身也算信息：设置页据此
+/// 决定要不要提示"模型缺失/需要下载"。
+#[derive(Serialize)]
+pub(crate) struct LocalModelPath {
+    pub(crate) path: String,
+    pub(crate) exists: bool,
+}
+
+/// 批量查本地模型目录：请求体是模型名数组，响应是 `模型名 -> {path, exists}`。
+///
+/// 只 `stat` **目录**，不逐个检查模型文件——`check/files` 那套要读并解析
+/// `tokenizer.json`（几兆到几十兆，bge-m3 这类模型更大），进一次设置页就做一遍
+/// 并不划算，而"目录在不在"已经足够回答"要不要提示用户下载"。文件级有效性校验
+/// 留给用户主动触发的按钮（接口仍是 [`check_model_files`]）。
+///
+/// 形状刻意和 [`check_model_files`] 对齐（同样是模型名数组进、以模型名为键的
+/// map 出），这样前端两处调用可以共用同一个收集模型名的流程。
+pub(crate) async fn local_model_paths(bytes: Bytes) -> impl IntoResponse {
+    match serde_json::from_slice::<Vec<HuggingFaceModel>>(bytes.as_ref()) {
+        Ok(models) => {
+            // 用 std 的 `HashMap` 而不是 `serde_json::Map`：后者只在 value 是
+            // `serde_json::Value` 时才可序列化，而这里的 value 是上面那个结构体。
+            // 两者的 JSON 形状一样（`{模型名: {...}}`），前端按键取值。
+            let mut map: HashMap<String, LocalModelPath> = HashMap::new();
+            for model in models.iter() {
+                let (path, exists) = model.get_info().local_directory_status();
+                map.insert(model.to_string(), LocalModelPath { path, exists });
+            }
+            to_res(Ok(map))
+        }
+        Err(e) => to_res(Err(Error::WithMessage(format!(
+            "Invalid request body, err {:?}",
+            &e
+        )))),
+    }
+}
+
 pub(crate) async fn check_embedding_model(Query(q): Query<RobotQuery>) -> impl IntoResponse {
     let r = if let Ok(r) = get_settings(&q.robot_id).await {
         if let Some(settings) = r {
