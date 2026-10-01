@@ -101,11 +101,24 @@ const showHfEmbeddingModelDownloadProgress = ref(false);
 const originalSentenceEmbeddingModelId = ref("");
 const downloadingUrl = ref("");
 const downloadingProgress = ref("");
+// 「检测模型」按钮的转圈状态。文件级校验要读几十兆的 tokenizer.json，慢，得让
+// 用户看见它在跑。
+const checkingChatModel = ref(false);
+const checkingEmbeddingModel = ref(false);
 
 // 本地模型的实际落盘目录，由后端给出（见 checkHfModelFiles 调的那个接口）。
 // 空串 = 当前不是本地模型，或者接口还没回来。
 const chatModelLocalPath = ref("");
 const sentenceEmbeddingModelLocalPath = ref("");
+
+// 上一次保存（或刚进页面时）**生效**的本地模型名；这一块存的是在线模型时是空串。
+// 「重新加载模型」装的是存库的设置，所以要先知道存库的是哪个，才能判断用户是不是
+// 改了下拉框而还没保存。
+const savedChatModel = ref("");
+const savedEmbeddingModel = ref("");
+// 后端 provider 的形状是 `{id, model}`：只有 HuggingFace 时 model 才是本地模型名。
+const savedLocalModelName = (provider) =>
+    provider?.id == "HuggingFace" ? provider.model || "" : "";
 
 // HuggingFace 的「请求地址」不是一个真的地址，而是一句"模型会落到哪儿"的提示。
 // 前缀留在前端，路径必须由后端给：真正写文件的是后端，只有它能保证这句话
@@ -152,6 +165,10 @@ onMounted(async () => {
             );
         originalSentenceEmbeddingModelId.value =
             r.data.sentenceEmbeddingProvider.provider.id;
+        savedChatModel.value = savedLocalModelName(r.data.chatProvider.provider);
+        savedEmbeddingModel.value = savedLocalModelName(
+            r.data.sentenceEmbeddingProvider.provider,
+        );
         // 这件事必须在 change*Provider 之前做：
         // 把已存地址种进 urlMap。change*Provider 的 else 分支要读这个 map，
         // 不种的话它会拿到 undefined，于是把刚 copyProperties 进来的用户
@@ -176,9 +193,13 @@ onMounted(async () => {
         );
     }
     await checkHfModelFiles();
+    // 上一次保存触发的后台装载可能还在跑，或者上一次装载失败的原因还在：只显示，
+    // 不弹窗（那是历史，不是刚发生的事）。
+    await refreshModelLoadStatus(false);
 });
 onUnmounted(() => {
     if (timeoutID != null) clearTimeout(timeoutID);
+    if (loadTimeoutID != null) clearTimeout(loadTimeoutID);
 });
 
 // 本地模型在候选列表里的 value 就是后端认的模型名（枚举名，如 Qwen3_0_6B）。
@@ -234,6 +255,180 @@ async function checkHfModelFiles() {
     }
 }
 
+// 「检测模型」：走文件级校验（check/files）——逐个 stat、解析 config.json /
+// tokenizer.json、核对 safetensors 体积和 GGUF 魔数。这比上面只 stat 目录贵得多
+// （tokenizer.json 几兆到几十兆），所以只在用户点按钮时跑一次，进页面不跑。
+// 失败原因（哪个文件不对、为什么）由后端带回，原样弹出：只给一句"校验失败"，
+// 用户既不知道该删哪个文件也不知道该重下什么。
+async function checkModelFiles(kind, model) {
+    const loading =
+        kind == "embedding" ? checkingEmbeddingModel : checkingChatModel;
+    const tip =
+        kind == "embedding"
+            ? showHfIncorrectEmbeddingModelTip
+            : showHfIncorrectChatModelTip;
+    // 校验失败 = 文件真的有问题：弹出原因之外，还要把"缺失/不正确"的提示位打开，
+    // 让下载入口和"手动放到 {path}"的说明一起回来，而不是只弹一句错误就没下文。
+    // 提示位一开，本按钮按设计就隐藏了（它只在"模型存在"时显示）。
+    const fail = (detail) => {
+        ElMessage.error(detail || t("botSettings.hfModelCheckFailed"));
+        tip.value = true;
+    };
+    loading.value = true;
+    try {
+        const r = await httpReq(
+            "POST",
+            "management/settings/model/check/files",
+            null,
+            null,
+            [model],
+        );
+        if (r == null) {
+            fail();
+        } else if (r.data == null) {
+            // 接口本身出错（模型名后端不认识会走这里）：原因在 err 里。这不是
+            // "文件不对"，所以不动提示位——否则会把一次请求错误说成模型坏了。
+            ElMessage.error(
+                r.err?.message || t("botSettings.hfModelCheckFailed"),
+            );
+        } else if (r.data[model] == null) {
+            fail();
+        } else if (r.data[model].ok) {
+            ElMessage.success(t("botSettings.hfModelCheckOk"));
+        } else {
+            fail(r.data[model].err);
+        }
+    } finally {
+        loading.value = false;
+    }
+}
+
+// 选中的是不是本地模型（和目录在不在无关）：两个按钮的公共前提。
+const isLocalChatModel = computed(
+    () =>
+        settings.chatProvider.provider.id == "HuggingFace" &&
+        isHfModelName(chatModelOptions, settings.chatProvider.provider.model),
+);
+const isLocalEmbeddingModel = computed(
+    () =>
+        settings.sentenceEmbeddingProvider.provider.id == "HuggingFace" &&
+        isHfModelName(
+            sentenceEmbeddingModelOptions,
+            settings.sentenceEmbeddingProvider.provider.model,
+        ),
+);
+
+// 「检测模型」只在**目录已存在**时显示：模型还没下载的时候，那条警告里的下载入口
+// 才是用户该点的东西，再摆一个必然失败的检测按钮只会让人困惑。
+const canCheckChatModel = computed(
+    () => isLocalChatModel.value && !showHfIncorrectChatModelTip.value,
+);
+const canCheckEmbeddingModel = computed(
+    () =>
+        isLocalEmbeddingModel.value && !showHfIncorrectEmbeddingModelTip.value,
+);
+
+// 下拉框里的选择还没保存。「重新加载模型」装的是**存库**的设置（缓存按 robot_id 存，
+// 运行中的对话读的也是存库那份），所以不一致时不能装：否则点了会去装另一个模型，
+// 报出来的错和用户屏幕上看到的模型对不上——真实踩过：界面上选的是 Qwen3-1.7B，
+// 报的却是 `TinyLlama/...: 系统找不到指定的路径`。
+const chatModelNotSaved = computed(
+    () => (settings.chatProvider.provider.model || "") != savedChatModel.value,
+);
+const sentenceEmbeddingModelNotSaved = computed(
+    () =>
+        (settings.sentenceEmbeddingProvider.provider.model || "") !=
+        savedEmbeddingModel.value,
+);
+
+// 保存时换了本地模型，后端会在**后台**装它（不在请求里现装，几十 GB 的权重会把
+// 保存接口卡住）。这里轮询状态：装着就显示"正在后台加载模型"，装失败了把后端给的
+// 原因（哪个文件不对）显示出来并弹一次。
+const chatModelLoad = reactive({ loading: false, model: "", err: "" });
+const sentenceEmbeddingModelLoad = reactive({
+    loading: false,
+    model: "",
+    err: "",
+});
+let loadTimeoutID = null;
+// 同一条错误只弹一次：轮询是每秒一次的，每次都弹会把屏幕刷满。
+const shownLoadErr = { chat: "", embedding: "" };
+
+// 后端回的是枚举名（如 Qwen3_1_7B），给用户看的是候选项里的 label（仓库 + 体积）；
+// 查不到就退回枚举名，至少不是空白。
+const hfModelLabel = (options, model) =>
+    options.find((o) => o.value == model)?.label || model;
+
+// 取一次后台装载状态；只要还有东西在装，就每秒再取一次（装完自然停）。
+//
+// `notify` 为 false 时不弹窗，只把状态显示出来：进页面时读到的是**上一次**保存
+// 留下的失败，悄悄显示在那一行就够，每次刷新页面都弹一次会很烦。
+async function refreshModelLoadStatus(notify = true) {
+    if (loadTimeoutID != null) {
+        clearTimeout(loadTimeoutID);
+        loadTimeoutID = null;
+    }
+    const r = await httpReq(
+        "GET",
+        "management/settings/model/load/progress",
+        { robotId: robotId },
+        null,
+        null,
+    );
+    if (r == null || r.data == null) return;
+    for (const [kind, src, dst] of [
+        ["chat", r.data.chat, chatModelLoad],
+        ["embedding", r.data.embedding, sentenceEmbeddingModelLoad],
+    ]) {
+        if (src == null) continue;
+        dst.loading = src.loading == true;
+        dst.model = src.model || "";
+        dst.err = src.err || "";
+        if (!dst.err) shownLoadErr[kind] = "";
+        else if (dst.err != shownLoadErr[kind]) {
+            // 原因原样弹出来（哪个文件不对、为什么），不要只说一句"加载失败"。
+            // 同一条只弹一次：轮询是每秒一次的。
+            shownLoadErr[kind] = dst.err;
+            if (notify) ElMessage.error(dst.err);
+        }
+    }
+    if (chatModelLoad.loading || sentenceEmbeddingModelLoad.loading)
+        loadTimeoutID = setTimeout(refreshModelLoadStatus, 1000);
+}
+
+// 「重新加载模型」：让后端把**当前保存的**本地模型重新装进内存（后台装，进度走上面
+// 那套轮询）。用在"文件坏了 → 补好 → 不想等下一次对话、也不想重启"这条路上。
+//
+// 拼错的 kind / 这块用的是在线模型，都会由后端明确报错——那说明界面状态和后端不一致，
+// 应该让用户看见，而不是静默什么都不做。
+async function reloadModel(kind) {
+    const notSaved =
+        kind == "embedding"
+            ? sentenceEmbeddingModelNotSaved.value
+            : chatModelNotSaved.value;
+    if (notSaved) {
+        // 选择还没保存。保存本身就会在后台装它，所以这里只提示，不去装存库的那个
+        // （那正是"选了 Qwen3 却报 TinyLlama 找不到"的由来）。
+        ElMessage.warning(t("botSettings.hfModelReloadSaveFirst"));
+        return;
+    }
+    const r = await httpReq(
+        "POST",
+        "management/settings/model/load",
+        { robotId: robotId, kind: kind },
+        null,
+        null,
+    );
+    if (r == null || r.status != 200) {
+        ElMessage.error(
+            r?.err?.message || t("botSettings.hfModelReloadFailed"),
+        );
+        return;
+    }
+    // 后端在返回之前就把状态置成"加载中"了，这里立刻接上进度显示。
+    await refreshModelLoadStatus();
+}
+
 async function save() {
     if (
         originalSentenceEmbeddingModelId.value !=
@@ -271,7 +466,15 @@ async function saveSettings() {
     );
     if (r.status == 200) {
         ElMessage({ type: "success", message: t("common.saved") });
+        // 现在存库的就是界面上选的这份了：先记下来，再刷新提示（不然刚保存完
+        // 「重新加载」还会以为"没保存"）。
+        savedChatModel.value = savedLocalModelName(settings.chatProvider.provider);
+        savedEmbeddingModel.value = savedLocalModelName(
+            settings.sentenceEmbeddingProvider.provider,
+        );
         await checkHfModelFiles();
+        // 换了本地模型的话，后端已经开始在后台装它了：这里开始（或继续）显示进度。
+        await refreshModelLoadStatus();
     } else {
         const m = t(r.err.message);
         ElMessage.error(m ? m : r.err.message);
@@ -1255,6 +1458,40 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 />
             </el-col>
         </el-row>
+        <div v-if="chatModelLoad.loading" class="model-load-status">
+            {{
+                $t("botSettings.hfModelLoading", {
+                    model: hfModelLabel(chatModelOptions, chatModelLoad.model),
+                })
+            }}
+        </div>
+        <div v-else-if="chatModelLoad.err" class="model-load-status is-error">
+            {{ chatModelLoad.err }}
+        </div>
+        <div v-if="isLocalChatModel" class="model-check-row">
+            <el-button
+                v-if="canCheckChatModel"
+                size="small"
+                :loading="checkingChatModel"
+                @click="
+                    checkModelFiles(
+                        'chat',
+                        settings.chatProvider.provider.model,
+                    )
+                "
+            >
+                {{ $t("botSettings.hfModelCheck") }}
+            </el-button>
+            <!-- 手动重装：模型存在与否都能点。文件刚补好（提示位还停在"缺失"）
+                 或者想确认一次装载失败的原因时，这是唯一不必等下一次对话的入口。 -->
+            <el-button
+                size="small"
+                :loading="chatModelLoad.loading"
+                @click="reloadModel('chat')"
+            >
+                {{ $t("botSettings.hfModelReload") }}
+            </el-button>
+        </div>
         <el-alert
             v-if="showHfIncorrectChatModelTip"
             type="warning"
@@ -1550,6 +1787,45 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 />
             </el-col>
         </el-row>
+        <div v-if="sentenceEmbeddingModelLoad.loading" class="model-load-status">
+            {{
+                $t("botSettings.hfModelLoading", {
+                    model: hfModelLabel(
+                        sentenceEmbeddingModelOptions,
+                        sentenceEmbeddingModelLoad.model,
+                    ),
+                })
+            }}
+        </div>
+        <div
+            v-else-if="sentenceEmbeddingModelLoad.err"
+            class="model-load-status is-error"
+        >
+            {{ sentenceEmbeddingModelLoad.err }}
+        </div>
+        <div v-if="isLocalEmbeddingModel" class="model-check-row">
+            <el-button
+                v-if="canCheckEmbeddingModel"
+                size="small"
+                :loading="checkingEmbeddingModel"
+                @click="
+                    checkModelFiles(
+                        'embedding',
+                        settings.sentenceEmbeddingProvider.provider.model,
+                    )
+                "
+            >
+                {{ $t("botSettings.hfModelCheck") }}
+            </el-button>
+            <!-- 同对话卡片：重装按钮不看"模型缺失"提示，谁都能点。 -->
+            <el-button
+                size="small"
+                :loading="sentenceEmbeddingModelLoad.loading"
+                @click="reloadModel('embedding')"
+            >
+                {{ $t("botSettings.hfModelReload") }}
+            </el-button>
+        </div>
         <el-alert
             v-if="showHfIncorrectEmbeddingModelTip"
             type="warning"
@@ -1709,6 +1985,27 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
     display: flex;
     align-items: center;
     gap: 6px;
+}
+
+/* 「检测模型 / 重新加载模型」按钮行：和下面的警告条/加载提示占同一个位置
+   （模型存在时是按钮，缺失时是警告）。 */
+.model-check-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* 后台装载模型：加载中一句灰字，失败就把后端给的原因（哪个文件不对）红字留在
+   这里，旁边那条"模型缺失"警告仍然负责给下载入口。 */
+.model-load-status {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary, #909399);
+    word-break: break-all;
+}
+
+.model-load-status.is-error {
+    color: var(--el-color-danger, #f56c6c);
 }
 
 .hf-alert {

@@ -64,6 +64,19 @@ pub(crate) fn replace_model_cache(robot_id: &str, c: (BertModel, Tokenizer)) {
     }
 }
 
+/// 从磁盘装载 `m`（HF 句向量模型）并放进缓存。
+///
+/// **同步且耗时**（几百 MB 到 1 GB 的权重），调用方必须放进 `spawn_blocking`，
+/// 否则会占住一个 tokio worker（设置保存的后台预热就是这么用的）。
+///
+/// 和 chat 那边不同，这张缓存**没有上限**：一个机器人一条，换模型时覆盖。句向量
+/// 模型比对话模型小得多，为了省内存把它淘汰、下次请求再装一遍并不划算。
+pub(crate) fn load_model_into_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
+    let c = load_bert_model_files(&m.get_info())?;
+    replace_model_cache(robot_id, c);
+    Ok(())
+}
+
 fn hugging_face(robot_id: &str, info: &HuggingFaceModelInfo, s: &str) -> Result<Vec<f32>> {
     let lock = EMBEDDING_MODEL.get_or_init(|| Mutex::new(HashMap::with_capacity(32)));
     let mut model = lock.lock().unwrap_or_else(|e| {

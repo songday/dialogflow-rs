@@ -141,7 +141,22 @@ async fn get_or_load_model(
     // 不会再阻塞任何已经在跑的生成。
     let loaded = LoadedHuggingFaceModel::load(m)?;
 
-    let entry = Arc::new(Mutex::new(loaded));
+    cache_loaded_model(robot_id, loaded)
+}
+
+/// 把一个**已经装好**的模型放进缓存，并按 LRU 记账，返回放进去的那个句柄。
+///
+/// 插入和淘汰**必须在同一处**。只在 [`get_or_load_model`] 里记账的话，从别的入口
+/// （保存设置的后台预热走 [`load_model_into_cache`]）插进来的条目不会进 `MODEL_LRU`
+/// 队列：它永远不会被淘汰，`lru.len()` 也算不到它，常驻模型数就能悄悄超过
+/// `MAX_LOADED_MODELS`。
+fn cache_loaded_model(
+    robot_id: &str,
+    model: LoadedHuggingFaceModel,
+) -> Result<Arc<Mutex<LoadedHuggingFaceModel>>> {
+    // 换成一个新的 `Arc`：正在生成的请求手里还攥着旧的那个，会安全地跑完并被
+    // 释放，不会被这里拦住，也不会被我们改到。
+    let entry = Arc::new(Mutex::new(model));
     let evicted = {
         let mut models = LOADED_MODELS.lock()?;
         models.insert(String::from(robot_id), entry.clone());
@@ -259,12 +274,14 @@ pub(crate) enum ChatProvider {
     OpenAICompatible(String),
 }
 
-pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
+/// 从磁盘装载 `m`，装好后按 LRU 放进缓存。
+///
+/// **同步且耗时**：要把整个权重文件读进来再建 tensor，GGUF 动辄几 GB 到几十 GB。
+/// 调用方必须把它放进 `spawn_blocking`，否则会占住一个 tokio worker 几十秒
+/// （设置保存的后台预热就是这么用的）。
+pub(crate) fn load_model_into_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
     let m = LoadedHuggingFaceModel::load(m)?;
-    let mut r = LOADED_MODELS.lock()?;
-    // 换成一个新的 `Arc`：正在生成的请求手里还攥着旧的那个，会安全地跑完并被
-    // 释放，不会被这里拦住，也不会被我们改到。
-    r.insert(String::from(robot_id), Arc::new(Mutex::new(m)));
+    cache_loaded_model(robot_id, m)?;
     Ok(())
 }
 
@@ -572,7 +589,7 @@ fn huggingface(
     // 只锁这一个模型：不同机器人之间互不阻塞，同一机器人的请求在此串行
     // （KV cache 是模型自身的可变状态，必须串行）。
     //
-    // `entry` 是 `chat()` 拿到的 `Arc` 快照：即使期间有人 `replace_model_cache`
+    // `entry` 是 `chat()` 拿到的 `Arc` 快照：即使期间有人 `load_model_into_cache`
     // 换了新实例，我们手上这个依然有效，不会被改动或提前释放。
     let mut guard = entry.lock().unwrap_or_else(|e| {
         log::warn!("{:#?}", &e);

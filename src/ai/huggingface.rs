@@ -26,7 +26,9 @@ use tokio::io::AsyncWriteExt;
 
 use crate::result::{Error, Result};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// 本地的 HuggingFace 模型。`PartialEq` 是给"保存设置时模型换没换"比的：只有换了
+/// 才需要重新装（见 `man::settings::models_to_reload`）。
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub(crate) enum HuggingFaceModel {
     AllMiniLML6V2,
     ParaphraseMLMiniLML12V2,
@@ -1271,11 +1273,25 @@ pub(crate) fn check_model_files(info: &HuggingFaceModelInfo) -> Result<()> {
 /// 收的是**文件路径**而不是仓库名：分词器是两仓库下载的产物，落在
 /// `local_directory()` 里（`Qwen/Qwen3-0.6B`），而不是它在 HuggingFace 上的
 /// 来源仓库（`mirror`）。按仓库名去找会指到一个不存在的目录。
+///
+/// 只是"路径"这个口子本身太容易喂错——装载器请一律走 [`init_model_tokenizer`]。
 pub(super) fn init_tokenizer(tokenizer_path: &str) -> Result<Tokenizer> {
     match Tokenizer::from_file(tokenizer_path) {
         Ok(t) => Ok(t),
         Err(e) => Err(Error::WithMessage(format!("{tokenizer_path}: {e}"))),
     }
+}
+
+/// 读 `info` 对应的本地 `tokenizer.json`（装载器统一入口）。
+///
+/// 收模型信息而不是路径，是因为**这个错误真的发生过**：
+/// `load_llama_model_files` / `load_gemma_model_files` / `load_moondream_model_files`
+/// / `load_parler_tts_model_files` 四处都写成过 `init_tokenizer(info.repository)`，
+/// 把仓库名当文件路径去打开，于是这四个模型家族**永远加载失败**，用户看到的还是
+/// 一句看不懂的 `TinyLlama/TinyLlama-1.1B-Chat-v1.0: 系统找不到指定的路径。`。
+/// 不接受路径参数，这类错误就不可能再写出来。
+pub(super) fn init_model_tokenizer(info: &HuggingFaceModelInfo) -> Result<Tokenizer> {
+    init_tokenizer(&info.tokenizer_path())
 }
 
 fn set_tokenizer_config(
@@ -1426,7 +1442,7 @@ pub(crate) fn load_phi3_model_files(
     let config = std::fs::read_to_string(config_filename)?;
     let config: Phi3Config = serde_json::from_str(&config)?;
     let phi3 = Phi3::new(&config, vb)?;
-    let tokenizer = init_tokenizer(&info.tokenizer_path())?;
+    let tokenizer = init_model_tokenizer(info)?;
     Ok((device, phi3, tokenizer))
 }
 
@@ -1503,7 +1519,7 @@ pub(crate) fn load_llama_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, Llama, LlamaCache, Tokenizer, Option<LlamaEosToks>)> {
     log::info!("load_llama_model_files start");
-    let tokenizer = init_tokenizer(info.repository)?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
 
     let config_filename = construct_model_file_path(info.repository, "config.json");
@@ -1524,7 +1540,7 @@ pub(crate) fn load_llama_model_files(
 pub(crate) fn load_gemma_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, GemmaModel, Tokenizer)> {
-    let tokenizer = init_tokenizer(info.repository)?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
 
     let config_filename = construct_model_file_path(info.repository, "config.json");
@@ -1581,7 +1597,7 @@ pub(crate) fn load_gemma4_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, super::gemma::Gemma4Loaded, Tokenizer)> {
     let start = std::time::Instant::now();
-    let tokenizer = init_tokenizer(&info.tokenizer_path())?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
     let dtype = if device.is_cuda() {
         DType::BF16
@@ -1624,7 +1640,7 @@ pub(crate) fn load_gemma4_model_files(
 pub(crate) fn load_parler_tts_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, ParlerTtsModel, Tokenizer)> {
-    let tokenizer = init_tokenizer(info.repository)?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
     let filenames = get_model_files(info)?;
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, DType::F32, &device)? };
@@ -1637,7 +1653,7 @@ pub(crate) fn load_parler_tts_model_files(
 pub(crate) fn load_moondream_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, MoondreamModel, Tokenizer)> {
-    let tokenizer = init_tokenizer(info.repository)?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
     let config = MoondreamConfig::v2();
     let dtype = if device.is_cuda() {
@@ -1861,6 +1877,50 @@ mod tests {
                 exists,
                 std::path::Path::new(&path).is_dir(),
                 "{m:?} existence"
+            );
+        }
+    }
+
+    /// 每个装载器都必须按**本地路径**去找 `tokenizer.json`，而不是拿仓库名当路径。
+    ///
+    /// 这个错误真的发生过：llama / gemma / moondream / parler_tts 四个装载器都写成
+    /// 了 `init_tokenizer(info.repository)`，于是这四个模型家族永远加载失败，用户看到
+    /// 的是一句看不懂的 `TinyLlama/TinyLlama-1.1B-Chat-v1.0: 系统找不到指定的路径。`。
+    ///
+    /// 用一个**不存在的仓库名**调用就够把路径钉住：这四个装载器都是先读分词器，所以
+    /// 它们必定在分词器这一步失败，不会碰到任何权重（这条测试不许依赖磁盘上有模型）。
+    #[test]
+    fn loaders_look_for_the_tokenizer_in_the_local_directory() {
+        let info = HuggingFaceModelInfo {
+            model_type: HuggingFaceModelType::Llama,
+            repository: "__no_such_repository__/nope",
+            mirror: "__no_such_repository__/nope",
+            model_files: Vec::new(),
+            model_index_file: "",
+            tokenizer_filename: "tokenizer.json",
+            dimenssions: 0,
+            gguf_model_filename: "",
+            tokenizer_repository: "",
+        };
+        let expected = format!("{HUGGING_FACE_MODEL_ROOT}__no_such_repository__/nope/tokenizer.json");
+
+        let cases: [(&str, Result<()>); 4] = [
+            ("llama", load_llama_model_files(&info).map(|_| ())),
+            ("gemma", load_gemma_model_files(&info).map(|_| ())),
+            (
+                "moondream",
+                load_moondream_model_files(&info).map(|_| ()),
+            ),
+            (
+                "parler_tts",
+                load_parler_tts_model_files(&info).map(|_| ()),
+            ),
+        ];
+        for (name, r) in cases {
+            let err = r.expect_err("a repository that does not exist must fail").to_string();
+            assert!(
+                err.contains(&expected),
+                "{name} looked for the tokenizer somewhere else: {err}"
             );
         }
     }

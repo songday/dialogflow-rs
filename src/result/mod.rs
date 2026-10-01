@@ -19,12 +19,15 @@ pub(crate) enum Error {
     InvalidJsonStructure(Box<serde_json::Error>),
 }
 
-impl Serialize for Error {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let message = match &self {
+impl Error {
+    /// 给用户看的一句话说明。
+    ///
+    /// 抽出来是因为它有两个消费者：HTTP 响应里的 `err.message`（[`Serialize`]
+    /// 实现），以及需要把失败原因拼进**别的**响应体的地方（模型文件校验会把
+    /// "哪个文件不对"直接回给前端弹给用户）。两处必须是同一句话，否则用户看到的
+    /// 提示和日志/接口里的原因就开始各说各话。
+    pub(crate) fn message(&self) -> String {
+        match &self {
             Self::Db(e) => format!("{e:?}"),
             Self::DbBusy(s) => format!("Database is busy: {s}"),
             Self::Serde(e) => format!("{e:?}"),
@@ -33,7 +36,22 @@ impl Serialize for Error {
             Self::NetworkConnectTimeout(e) => format!("Network connect timeout: {e:?}"),
             Self::NetworkReadTimeout(e) => format!("Network read timeout: {e:?}"),
             Self::InvalidJsonStructure(e) => format!("Invalid JSON structure: {e:?}"),
-        };
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message())
+    }
+}
+
+impl Serialize for Error {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let message = self.message();
         let mut s = serializer.serialize_struct("Error", 1)?;
         s.serialize_field("message", &message)?;
         s.end()

@@ -9,7 +9,7 @@ use axum::body::Bytes;
 use axum::extract::Query;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::ai::huggingface::HuggingFaceModel;
 use crate::ai::{asr, chat, embedding, huggingface, tts};
@@ -33,6 +33,167 @@ pub(crate) const SETTINGS_KEY: &str = "global-settings";
 
 static SETTINGS_CACHE: LazyLock<Mutex<HashMap<String, Settings>>> =
     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
+
+/// 后台预热本地模型的状态，按机器人存。
+///
+/// 保存设置**不再**在请求里现装模型：几十 GB 的权重能把接口卡几十秒，而且那是在
+/// async 任务里做同步重活，会占住一个 tokio worker。改成 `spawn_blocking` 后台装，
+/// 这里记状态给设置页轮询：`loading` 显示"正在后台加载模型"，`err` 把失败原因
+/// （哪个文件不对、为什么）原样带给用户。
+///
+/// 键是 `robot_id`，和 [`SETTINGS_CACHE`] / `LOADED_MODELS` 一样，机器人删掉后没
+/// 有人来清（那两张表也一样）；一条记录很小，不值得为它单独加清理钩子。
+static MODEL_LOAD_STATUS: LazyLock<Mutex<HashMap<String, ModelLoadStatus>>> =
+    LazyLock::new(|| Mutex::new(HashMap::with_capacity(8)));
+
+#[derive(Clone, Default, Serialize)]
+pub(crate) struct ModelLoadStatus {
+    pub(crate) chat: ModelLoadProgress,
+    pub(crate) embedding: ModelLoadProgress,
+}
+
+#[derive(Clone, Default, Serialize)]
+pub(crate) struct ModelLoadProgress {
+    pub(crate) loading: bool,
+    /// 正在装（或最后装过）的模型名，给界面显示用。
+    pub(crate) model: String,
+    /// 上一次装载失败的原因；成功、或还没跑过时是空串。
+    pub(crate) err: String,
+}
+
+/// 「重新加载模型」按钮的入参：装哪个机器人的哪一块。
+#[derive(Deserialize)]
+pub(crate) struct LoadModelQuery {
+    #[serde(rename = "robotId")]
+    pub(crate) robot_id: String,
+    /// `chat` 或 `embedding`，见 [`ModelKind::from_request`]。
+    pub(crate) kind: String,
+}
+
+/// 后台要装的是哪一块的模型。
+#[derive(Clone, Copy)]
+enum ModelKind {
+    Chat,
+    Embedding,
+}
+
+impl ModelKind {
+    /// 请求里写的 `kind`。**不认识的取值一律拒绝**：写错了就当 chat 处理，会
+    /// 把另一个模型装进缓存，运行中的对话会被换成错的模型。
+    fn from_request(kind: &str) -> Option<ModelKind> {
+        match kind {
+            "chat" => Some(ModelKind::Chat),
+            "embedding" => Some(ModelKind::Embedding),
+            _ => None,
+        }
+    }
+}
+
+/// 改一格装载状态。拿不到锁（中毒）就什么都不做：这只是给界面看的状态，
+/// 不值得让保存/查询跟着失败。
+fn update_load_status(robot_id: &str, kind: ModelKind, f: impl FnOnce(&mut ModelLoadProgress)) {
+    let Ok(mut map) = MODEL_LOAD_STATUS.lock() else {
+        return;
+    };
+    let status = map.entry(String::from(robot_id)).or_default();
+    let slot = match kind {
+        ModelKind::Chat => &mut status.chat,
+        ModelKind::Embedding => &mut status.embedding,
+    };
+    f(slot);
+}
+
+/// 把"装载这个本地模型"丢到后台，并**立刻**把状态置成"加载中"。
+///
+/// 状态必须先写：保存接口一返回，设置页马上就会来轮询；晚一步它会先看到一次
+/// "没在加载"，提示语就会闪一下才出现。
+///
+/// 为什么必须 `spawn_blocking`：装载是同步的纯 CPU/IO 重活（GGUF 要把整个文件读
+/// 进内存再反量化），丢在 async 任务里会占住一个 tokio worker 几十秒。失败原因
+/// 原样存下来给前端弹，而不是只写日志。
+fn spawn_model_load(robot_id: &str, kind: ModelKind, model: HuggingFaceModel) {
+    update_load_status(robot_id, kind, |p| {
+        p.loading = true;
+        p.model = model.to_string();
+        // 上一次的失败原因必须先清掉：否则轮询会在"加载中"的时候还把旧错误挂着。
+        p.err = String::new();
+    });
+    let robot_id = String::from(robot_id);
+    tokio::task::spawn_blocking(move || {
+        let r = match kind {
+            ModelKind::Chat => chat::load_model_into_cache(&robot_id, &model),
+            ModelKind::Embedding => embedding::load_model_into_cache(&robot_id, &model),
+        };
+        match r {
+            Ok(_) => {
+                log::info!("Loaded local model {model} into cache for robot {robot_id}");
+                update_load_status(&robot_id, kind, |p| {
+                    p.loading = false;
+                    p.err = String::new();
+                });
+            }
+            Err(e) => {
+                let err = e.message();
+                log::warn!("Loading local model {model} for robot {robot_id} failed. Err: {err}");
+                update_load_status(&robot_id, kind, |p| {
+                    p.loading = false;
+                    p.err = err;
+                });
+            }
+        }
+    });
+}
+
+/// 这份设置里，这一块用的本地（HuggingFace）模型；在线模型是 `None`。
+fn local_model_for(settings: &Settings, kind: ModelKind) -> Option<HuggingFaceModel> {
+    match kind {
+        ModelKind::Chat => match &settings.chat_provider.provider {
+            chat::ChatProvider::HuggingFace(m) => Some(m.clone()),
+            chat::ChatProvider::OpenAICompatible(_) => None,
+        },
+        ModelKind::Embedding => match &settings.sentence_embedding_provider.provider {
+            embedding::SentenceEmbeddingProvider::HuggingFace(m) => Some(m.clone()),
+            embedding::SentenceEmbeddingProvider::OpenAICompatible(_) => None,
+        },
+    }
+}
+
+/// 这次保存需要在后台重装哪些本地模型（`None` = 不用装）。
+///
+/// **只有模型真的换了才装**：改个 SMTP 超时、动一下会话时长，本来不该把几 GB 到
+/// 几十 GB 的权重重新读一遍（原来每次保存都读）。判据是本地模型本身，所以
+/// "在线模型 → 在线模型"、"本地模型原地不动"都不装；换成在线模型时也没得装。
+fn models_to_reload(
+    previous: Option<&Settings>,
+    current: &Settings,
+) -> (Option<HuggingFaceModel>, Option<HuggingFaceModel>) {
+    let changed = |kind| {
+        let previous = previous.and_then(|p| local_model_for(p, kind));
+        let current = local_model_for(current, kind);
+        match current {
+            Some(current) if previous.as_ref() != Some(&current) => Some(current),
+            _ => None,
+        }
+    };
+    (changed(ModelKind::Chat), changed(ModelKind::Embedding))
+}
+
+/// 这个机器人这一块是不是正在装（`spawn_model_load` 已经把状态置成"加载中"）。
+fn load_in_progress(robot_id: &str, kind: ModelKind) -> bool {
+    MODEL_LOAD_STATUS
+        .lock()
+        .ok()
+        .and_then(|m| m.get(robot_id).map(|s| progress_of(s, kind).loading))
+        .unwrap_or(false)
+}
+
+/// 取状态里对应那一格的进度。
+fn progress_of(status: &ModelLoadStatus, kind: ModelKind) -> &ModelLoadProgress {
+    match kind {
+        ModelKind::Chat => &status.chat,
+        ModelKind::Embedding => &status.embedding,
+    }
+}
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct HfModelDownload {
@@ -374,38 +535,82 @@ pub(crate) async fn save_settings(robot_id: &str, data: Settings) -> Result<()> 
     // 保存时也归一化，这样老地址会被真正写掉（读时归一化只保证运行期正确，
     // 存储里的旧值要等一次保存才能收敛）。
     let data = unify_legacy_api_urls(data);
-    // 本地 HF 模型在这里就装进缓存，免得第一次对话时才现装。
+    // 和**存库里的那份**比：缓存里装的正是它对应的模型，所以"这份设置和上一份
+    // 是不是同一个本地模型"就是"缓存里的东西还能不能接着用"。
     //
-    // 这里原来有**两段**长得一样的代码，都去匹配 `text_generation_provider` 的
-    // 本地模型：第一段把模型塞进 chat 的缓存，第二段（已经不存在的）
-    // `completion::replace_model_cache`。也就是说对话模型自己反而从来没在保存时
-    // 进过缓存，全靠第一次调用时懒加载。文本生成并入对话之后只剩这一段。
-    if let chat::ChatProvider::HuggingFace(m) = &data.chat_provider.provider {
-        if let Err(e) = chat::replace_model_cache(robot_id, m) {
-            log::warn!(
-                "Hugging face model files for chat were incorrect. Err: {:?}",
-                &e
-            );
-        }
-    }
+    // 读不回来（Err）就当"不知道之前是什么"，按换了处理：宁可在后台多装一次，
+    // 也不要因为一次读失败把整个保存拒掉——真要是库坏了，下面的写会自己报错。
+    let previous = get_settings(robot_id).await.ok().flatten();
+    let (reload_chat, reload_embedding) = models_to_reload(previous.as_ref(), &data);
 
-    if let embedding::SentenceEmbeddingProvider::HuggingFace(m) =
-        &data.sentence_embedding_provider.provider
-    {
-        match crate::ai::huggingface::load_bert_model_files(&m.get_info()) {
-            Ok(m) => embedding::replace_model_cache(robot_id, m),
-            Err(e) => {
-                log::warn!(
-                    "Hugging face model files for sentence embedding were incorrect. Err: {:?}",
-                    &e
-                );
-            }
-        }
-    }
     db_executor!(db::write, robot_id, TABLE_SUFFIX, robot_id, &data)?;
     let mut l = SETTINGS_CACHE.lock()?;
     l.insert(String::from(robot_id), data);
+    drop(l);
+
+    // 装模型放在写完库之后：写失败就不该去装。装的过程在后台跑，接口立刻返回，
+    // 进度和失败原因由 [`model_load_progress`] 给设置页（见 [`spawn_model_load`]）。
+    //
+    // 这里原来是在请求里同步装，而且**每次保存都装**（同一个模型再存一次也一样）：
+    // 改个 SMTP 超时也要把整个模型从磁盘读一遍、重新建 tensor。
+    if let Some(m) = reload_chat {
+        spawn_model_load(robot_id, ModelKind::Chat, m);
+    }
+    if let Some(m) = reload_embedding {
+        spawn_model_load(robot_id, ModelKind::Embedding, m);
+    }
     Ok(())
+}
+
+/// 后台预热本地模型的进度/结果，给设置页轮询。
+///
+/// 没有记录的机器人返回一份默认值（都没在加载、也没有错误），前端不必区分
+/// "没跑过"和"跑完了"。
+pub(crate) async fn model_load_progress(Query(q): Query<RobotQuery>) -> impl IntoResponse {
+    let status = MODEL_LOAD_STATUS
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&q.robot_id).cloned())
+        .unwrap_or_default();
+    to_res(Ok(status))
+}
+
+/// 「重新加载模型」按钮：手动把本地模型重新装进内存。
+///
+/// 用在"文件坏了 → 补好 → 不想等下一次对话、也不想重启进程"这条路上。装载动作和
+/// 保存时的预热完全一样（后台 `spawn_blocking` + [`model_load_progress`] 可查），
+/// 所以前端复用同一套进度轮询。
+///
+/// 装哪个模型**以存库的设置为准**，不接受前端传模型名。缓存是按 `robot_id` 存的，
+/// 而运行中的对话读的也是存库的那份设置：允许"装一个还没保存的选择"会把正在用的
+/// 模型换成另一个，错得很难查。
+pub(crate) async fn load_model_now(Query(q): Query<LoadModelQuery>) -> impl IntoResponse {
+    let Some(kind) = ModelKind::from_request(&q.kind) else {
+        return to_res(Err(Error::WithMessage(format!(
+            "Unknown model kind {:?}, expected \"chat\" or \"embedding\".",
+            &q.kind
+        ))));
+    };
+    let settings = match get_settings(&q.robot_id).await {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            return to_res(Err(Error::WithMessage(String::from(
+                "Can NOT find settings of this robot.",
+            ))));
+        }
+        Err(e) => return to_res(Err(e)),
+    };
+    let Some(model) = local_model_for(&settings, kind) else {
+        return to_res(Err(Error::WithMessage(String::from(
+            "This robot does not use a local HuggingFace model here.",
+        ))));
+    };
+    // 已经在装了就直接返回：重复点（或者双击）不该同时装两遍，那既费内存也费 IO。
+    // 状态里已经有"加载中"，前端会继续显示进度，所以这里静默成功是对的。
+    if !load_in_progress(&q.robot_id, kind) {
+        spawn_model_load(&q.robot_id, kind, model);
+    }
+    to_res(Ok(()))
 }
 
 pub(crate) async fn smtp_test(Json(settings): Json<Settings>) -> impl IntoResponse {
@@ -474,24 +679,48 @@ pub(crate) async fn download_model_progress() -> impl IntoResponse {
     to_res(Ok(r))
 }
 
+/// 一个模型文件级校验的结果。
+///
+/// `err` 不是可选的装饰：只回一个 bool，用户看到的就只是"坏了"，既不知道哪个
+/// 文件不对、也不知道该删什么重下。校验失败的原因（`Path "..." is not exist.`、
+/// `... is not a GGUF file` 之类）要原样带回前端弹出来。
+#[derive(Serialize)]
+pub(crate) struct ModelFileCheck {
+    pub(crate) ok: bool,
+    /// 校验通过时为空串。
+    pub(crate) err: String,
+}
+
+/// 批量校验本地模型文件：请求体是模型名数组，响应是 `模型名 -> {ok, err}`。
+///
+/// 这是**文件级**校验：逐个 stat、解析 `config.json` / `tokenizer.json`、核对
+/// safetensors 体积和 GGUF 魔数。比 [`local_model_paths`] 只 stat 目录贵得多
+/// （tokenizer.json 有几兆到几十兆），所以设置页把它放在用户主动点的
+/// 「检测模型」按钮后面，而不是每次打开页面都跑一遍。
 pub(crate) async fn check_model_files(bytes: Bytes) -> impl IntoResponse {
     match serde_json::from_slice::<Vec<HuggingFaceModel>>(bytes.as_ref()) {
-        Ok(repositories) => {
-            let mut map = Map::new();
-            for model in repositories.iter() {
+        Ok(models) => {
+            let mut map: HashMap<String, ModelFileCheck> = HashMap::new();
+            for model in models.iter() {
                 let info = model.get_info();
-                let r = match huggingface::check_model_files(&info) {
-                    Ok(_) => true,
+                let check = match huggingface::check_model_files(&info) {
+                    Ok(_) => ModelFileCheck {
+                        ok: true,
+                        err: String::new(),
+                    },
                     Err(e) => {
                         log::warn!(
                             "Hugging face model {} files incorrect. Err: {:?}",
                             info.repository,
                             &e
                         );
-                        false
+                        ModelFileCheck {
+                            ok: false,
+                            err: e.message(),
+                        }
                     }
                 };
-                map.insert(model.to_string(), Value::from(r));
+                map.insert(model.to_string(), check);
             }
             to_res(Ok(map))
         }
@@ -763,6 +992,131 @@ mod tests {
         assert_eq!(
             unify_legacy_api_url("http://localhost:11434/api/chat?x=1"),
             "http://localhost:11434/api/chat?x=1"
+        );
+    }
+
+    /// 造一份只为"换模型"测试用的设置：`None` 表示这一块用在线模型。
+    fn settings_with(
+        chat: Option<HuggingFaceModel>,
+        embedding: Option<HuggingFaceModel>,
+    ) -> Settings {
+        let mut s = Settings::default();
+        s.chat_provider.provider = match chat {
+            Some(m) => chat::ChatProvider::HuggingFace(m),
+            None => chat::ChatProvider::OpenAICompatible(String::from("gpt-4o-mini")),
+        };
+        s.sentence_embedding_provider.provider = match embedding {
+            Some(m) => embedding::SentenceEmbeddingProvider::HuggingFace(m),
+            None => embedding::SentenceEmbeddingProvider::OpenAICompatible(String::from(
+                "text-embedding-3-small",
+            )),
+        };
+        s
+    }
+
+    /// 保存设置只重装**换了**的本地模型。
+    ///
+    /// 这条判据是"保存接口到底慢不慢"的全部依据：以前每次保存（哪怕只改一个
+    /// SMTP 超时）都会把整个模型从磁盘读一遍。
+    #[test]
+    fn only_a_changed_local_model_is_reloaded() {
+        use HuggingFaceModel::{BgeSmallEnV1_5, Qwen3_0_6B, Qwen3_8B};
+
+        // 第一次保存（库里还没有东西）：本地模型都要装。
+        let both_local = settings_with(Some(Qwen3_0_6B), Some(BgeSmallEnV1_5));
+        assert_eq!(
+            models_to_reload(None, &both_local),
+            (Some(Qwen3_0_6B), Some(BgeSmallEnV1_5))
+        );
+
+        // 一模一样的设置再存一次：什么都不用装。
+        assert_eq!(
+            models_to_reload(Some(&both_local), &both_local),
+            (None, None),
+            "re-saving the same model must not re-read the weights"
+        );
+
+        // 只换了对话模型：只装对话那一个。
+        let new_chat = settings_with(Some(Qwen3_8B), Some(BgeSmallEnV1_5));
+        assert_eq!(
+            models_to_reload(Some(&both_local), &new_chat),
+            (Some(Qwen3_8B), None)
+        );
+
+        // 只换了句向量模型：只装句向量那一个。
+        let new_embedding = settings_with(Some(Qwen3_0_6B), Some(Qwen3_8B));
+        assert_eq!(
+            models_to_reload(Some(&both_local), &new_embedding),
+            (None, Some(Qwen3_8B))
+        );
+
+        // 本地模型换成在线模型：没有东西可装（旧缓存留给懒加载/LRU 处理）。
+        let all_online = settings_with(None, None);
+        assert_eq!(models_to_reload(Some(&both_local), &all_online), (None, None));
+
+        // 在线模型之间、以及在线换回本地：后者要装。
+        assert_eq!(
+            models_to_reload(Some(&all_online), &all_online),
+            (None, None)
+        );
+        assert_eq!(
+            models_to_reload(Some(&all_online), &both_local),
+            (Some(Qwen3_0_6B), Some(BgeSmallEnV1_5))
+        );
+    }
+
+    /// 改的是和模型无关的设置时，不该触发任何装载。
+    #[test]
+    fn unrelated_settings_changes_do_not_reload_models() {
+        let before = settings_with(Some(HuggingFaceModel::Qwen3_0_6B), None);
+        let mut after = settings_with(Some(HuggingFaceModel::Qwen3_0_6B), None);
+        after.smtp_host = String::from("smtp.example.com");
+        after.max_session_idle_sec = 60;
+        after.chat_provider.api_url = String::from("https://api.openai.com/v1/chat/completions");
+
+        assert_eq!(models_to_reload(Some(&before), &after), (None, None));
+    }
+
+    /// 「重新加载模型」按钮的入参解析，以及"装哪个模型"的解析。
+    ///
+    /// `kind` 写错**必须拒绝**：要是把不认识的值当成 chat，就可能在用户想重装
+    /// 句向量模型时把另一个对话模型装进缓存，运行中的对话被悄悄换掉。
+    #[test]
+    fn reload_targets_come_from_the_stored_settings() {
+        use HuggingFaceModel::{BgeSmallEnV1_5, Qwen3_0_6B};
+
+        assert!(matches!(
+            ModelKind::from_request("chat"),
+            Some(ModelKind::Chat)
+        ));
+        assert!(matches!(
+            ModelKind::from_request("embedding"),
+            Some(ModelKind::Embedding)
+        ));
+        for bad in ["", "Chat", "embeddings", " chat", "all"] {
+            assert!(
+                ModelKind::from_request(bad).is_none(),
+                "{bad:?} must not be accepted"
+            );
+        }
+
+        // 存库的设置决定装哪个：本地模型给出模型本身，在线模型给出 None
+        // （按钮那边会明确报错，而不是随便装一个）。
+        let local_both = settings_with(Some(Qwen3_0_6B), Some(BgeSmallEnV1_5));
+        assert_eq!(
+            local_model_for(&local_both, ModelKind::Chat),
+            Some(Qwen3_0_6B)
+        );
+        assert_eq!(
+            local_model_for(&local_both, ModelKind::Embedding),
+            Some(BgeSmallEnV1_5)
+        );
+
+        let online_chat = settings_with(None, Some(BgeSmallEnV1_5));
+        assert_eq!(local_model_for(&online_chat, ModelKind::Chat), None);
+        assert_eq!(
+            local_model_for(&online_chat, ModelKind::Embedding),
+            Some(BgeSmallEnV1_5)
         );
     }
 }
