@@ -192,6 +192,22 @@ impl HuggingFaceModelInfo {
         format!("{HUGGING_FACE_MODEL_ROOT}{}", self.local_directory())
     }
 
+    /// 本地目录的完整路径，以及这个目录**是否已经存在**。
+    ///
+    /// 设置页要回答两个问题："模型会落到哪个目录"（显示给用户）和"下载过没有"
+    /// （要不要提示下载）。目录在不在就够回答后者了，不必逐个 stat 模型文件、
+    /// 更不必解析 `tokenizer.json`（几兆到几十兆）——那是 [`check_model_files`]
+    /// 的活，成本高，应该由用户主动触发。
+    ///
+    /// 路径**必须**来自 [`Self::local_directory_path`]：它和真正写文件的下载路径
+    /// 同源，这样显示给用户的目录不可能是编出来的。`pub(crate)` 就是为了让
+    /// `man::settings` 走这条路，而不是自己拼一个可能漂移的字符串。
+    pub(crate) fn local_directory_status(&self) -> (String, bool) {
+        let path = self.local_directory_path();
+        let exists = Path::new(&path).is_dir();
+        (path, exists)
+    }
+
     /// 本地 `tokenizer.json` 的完整路径。
     pub(super) fn tokenizer_path(&self) -> String {
         construct_model_file_path(self.local_directory(), "tokenizer.json")
@@ -879,7 +895,13 @@ impl std::fmt::Display for HuggingFaceModel {
     }
 }
 
-const HUGGING_FACE_MODEL_ROOT: &str = "./data/model/";
+/// 本地模型的根目录。下载、加载、校验、以及设置页显示给用户的路径全部从这里来。
+///
+/// 用**复数** `models`：这是同类工具的通行写法（ollama 的 `~/.ollama/models`、
+/// LM Studio / llama.cpp 的 `models`），而且设置页里显示的文案本来就是
+/// `./data/models`。以前这里是单数 `./data/model/`，前端那句提示就一直是错的，
+/// 用户照着提示去目录里找根本找不到文件。
+const HUGGING_FACE_MODEL_ROOT: &str = "./data/models/";
 
 #[derive(Clone, Serialize)]
 pub(crate) struct DownloadStatus {
@@ -1777,8 +1799,8 @@ mod tests {
 
     /// The load path must match where the files are actually saved.
     ///
-    /// `Qwen3_0_6B` used to download into `data/model/Qwen/Qwen3-0.6B/` (built
-    /// from `repository`) while loading from `data/model/unsloth/Qwen3-0.6B-GGUF/`
+    /// `Qwen3_0_6B` used to download into `data/models/Qwen/Qwen3-0.6B/` (built
+    /// from `repository`) while loading from `data/models/unsloth/Qwen3-0.6B-GGUF/`
     /// (built from `mirror`), so an already-downloaded model could never load.
     /// The local directory is now `repository` and both sides use it.
     #[test]
@@ -1799,23 +1821,48 @@ mod tests {
             assert_eq!(info.local_directory(), dir, "{m:?} local directory");
             assert_eq!(
                 info.local_directory_path(),
-                format!("./data/model/{dir}"),
+                format!("./data/models/{dir}"),
                 "{m:?} local directory path"
             );
             // The exact path the user reported, pinned so it cannot drift again.
             assert_eq!(
                 info.gguf_model_path().unwrap(),
-                format!("./data/model/{dir}/{}", info.gguf_model_filename)
+                format!("./data/models/{dir}/{}", info.gguf_model_filename)
             );
             assert_eq!(
                 info.tokenizer_path(),
-                format!("./data/model/{dir}/tokenizer.json")
+                format!("./data/models/{dir}/tokenizer.json")
             );
         }
         assert_eq!(
             HuggingFaceModel::Qwen3_0_6B.get_info().gguf_model_path().unwrap(),
-            "./data/model/Qwen/Qwen3-0.6B/Qwen3-0.6B-Q4_K_M.gguf"
+            "./data/models/Qwen/Qwen3-0.6B/Qwen3-0.6B-Q4_K_M.gguf"
         );
+    }
+
+    /// The reported directory must be the one the downloader writes into.
+    ///
+    /// The settings page puts this string in front of the user ("Model will be
+    /// downloaded locally at ..."), so a second, drifting computation of the path
+    /// would point them at a directory that never exists.
+    #[test]
+    fn local_directory_status_reports_the_download_directory() {
+        for m in [
+            HuggingFaceModel::Qwen3_0_6B,
+            HuggingFaceModel::BgeSmallEnV1_5,
+            HuggingFaceModel::Gemma4E2BIt,
+        ] {
+            let info = m.get_info();
+            let (path, exists) = info.local_directory_status();
+            assert_eq!(path, info.local_directory_path(), "{m:?}");
+            // Whether the model is already downloaded depends on this machine, so
+            // pin the comparison instead of a fixed answer.
+            assert_eq!(
+                exists,
+                std::path::Path::new(&path).is_dir(),
+                "{m:?} existence"
+            );
+        }
     }
 
     /// Every path the check pass looks at must live in the local directory.

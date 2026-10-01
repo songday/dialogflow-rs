@@ -747,7 +747,7 @@ mod tests {
     /// 没有 16GB 的权重，这条断言只在本地装了模型时才有意义。
     #[test]
     fn gemma4_special_markers_are_single_tokens() {
-        const DIR: &str = "data/model/google/gemma-4-E4B-it";
+        const DIR: &str = "data/models/google/gemma-4-E4B-it";
         let path = format!("{DIR}/tokenizer.json");
         if !std::path::Path::new(&path).exists() {
             eprintln!("skipping: {path} not present");

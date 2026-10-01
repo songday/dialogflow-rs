@@ -1276,7 +1276,7 @@ mod tests {
     /// 这里锁住两个**远端来源**，防止有人"顺手统一"成同一个而把下载跑成 404。
     ///
     /// 注意本地目录不在这两个字段里：它跟着保存时用的 `repository` 走，
-    /// 所以 GGUF 落在 `data/model/Qwen/Qwen3-4B/`，而不是量化仓库名下。
+    /// 所以 GGUF 落在 `data/models/Qwen/Qwen3-4B/`，而不是量化仓库名下。
     #[test]
     fn qwen3_fetches_weights_and_tokenizer_from_two_repositories() {
         let info = HuggingFaceModel::Qwen3_4B.get_info();
@@ -1284,7 +1284,7 @@ mod tests {
         assert_eq!(info.local_directory(), "Qwen/Qwen3-4B");
         assert_eq!(
             info.gguf_model_path().unwrap(),
-            "./data/model/Qwen/Qwen3-4B/Qwen3-4B-Q4_K_M.gguf"
+            "./data/models/Qwen/Qwen3-4B/Qwen3-4B-Q4_K_M.gguf"
         );
         // 非 GGUF 模型不受影响：分词器仓库回退到权重仓库。
         let bert = HuggingFaceModel::AllMiniLML6V2.get_info();
