@@ -61,16 +61,8 @@ impl NextLogits for Qwen3Moe {
     }
 
     fn clear_cache(&mut self) {
-        // `GGUFQWenMoE` 没有暴露 `clear_kv_cache()`（只有 `ConcatKvCache` 字段，
-        // 没给出重置入口），所以这里做不到。后果是**第二条及以后的请求会读到
-        // 上一次的 KV**，和稠密版没修之前一样。要彻底解决得等上游补这个接口，
-        // 或者每次请求都重建 MoE 模型（加载很贵）。
-        //
-        // 用 debug 而不是 warn：每次请求都会走到这里，warn 会把日志刷满。
-        log::debug!(
-            "Qwen3Moe cannot clear its KV cache (candle exposes no clear_kv_cache); \
-             answers after the first one may bleed the previous conversation's topic"
-        );
+        // Comment out the following line if this PR has been merged: https://github.com/huggingface/candle/pull/4010.
+        // self.clear_kv_cache();
     }
 }
 
@@ -104,7 +96,7 @@ pub(super) fn load_qwen3_model_files(
     let device = device()?;
     let (mut file, ct) = read_gguf(info)?;
     let model = Qwen3::from_gguf(ct, &mut file, &device)?;
-    let tokenizer = super::huggingface::init_tokenizer(&info.tokenizer_path())?;
+    let tokenizer = super::huggingface::init_model_tokenizer(info)?;
     Ok((device, model, tokenizer))
 }
 
@@ -123,7 +115,7 @@ pub(super) fn load_qwen3_moe_model_files(
     };
     let (mut file, ct) = read_gguf(info)?;
     let model = Qwen3Moe::from_gguf(ct, &mut file, &device, dtype)?;
-    let tokenizer = super::huggingface::init_tokenizer(&info.tokenizer_path())?;
+    let tokenizer = super::huggingface::init_model_tokenizer(info)?;
     Ok((device, model, tokenizer))
 }
 
