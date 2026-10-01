@@ -1223,6 +1223,7 @@ mod tests {
         for m in [
             HuggingFaceModel::Gemma4E2BIt,
             HuggingFaceModel::Gemma4E4BIt,
+            HuggingFaceModel::Gemma412BIt,
         ] {
             let info = m.get_info();
             assert_eq!(
@@ -1258,6 +1259,7 @@ mod tests {
         for (m, repo) in [
             (HuggingFaceModel::Gemma4E2BIt, "google/gemma-4-E2B-it"),
             (HuggingFaceModel::Gemma4E4BIt, "google/gemma-4-E4B-it"),
+            (HuggingFaceModel::Gemma412BIt, "google/gemma-4-12B-it"),
         ] {
             let info = m.get_info();
             assert_eq!(info.repository, repo);

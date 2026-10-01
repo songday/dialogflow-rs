@@ -580,6 +580,10 @@ const chatProviders = [
                 value: "Gemma4E4BIt",
             },
             {
+                label: "google/gemma-4-12B-it (24.0GB, text+vision)",
+                value: "Gemma412BIt",
+            },
+            {
                 label: "TinyLlama/TinyLlama-1.1B-Chat-v1.0 (2.2GB)",
                 value: "TinyLlama1_1bChatV1_0",
             },

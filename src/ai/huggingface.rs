@@ -50,6 +50,7 @@ pub(crate) enum HuggingFaceModel {
     // 实际权重是 51 亿 / 80 亿参数（BF16 下约 10.2GB / 16GB）。
     Gemma4E2BIt,
     Gemma4E4BIt,
+    Gemma412BIt,
     Moondream2,
     ParlerTtsMiniV1,
     ParlerTtsLargeV1,
@@ -700,6 +701,17 @@ impl HuggingFaceModel {
             HuggingFaceModel::Gemma4E4BIt => HuggingFaceModelInfo {
                 repository: "google/gemma-4-E4B-it",
                 mirror: "google/gemma-4-E4B-it",
+                model_files: gemma4_model_files(),
+                model_index_file: "",
+                tokenizer_filename: "tokenizer.json",
+                dimenssions: 1024,
+                gguf_model_filename: "",
+                tokenizer_repository: "",
+                model_type: HuggingFaceModelType::Gemma4,
+            },
+            HuggingFaceModel::Gemma412BIt => HuggingFaceModelInfo {
+                repository: "google/gemma-4-12B-it",
+                mirror: "google/gemma-4-12B-it",
                 model_files: gemma4_model_files(),
                 model_index_file: "",
                 tokenizer_filename: "tokenizer.json",
