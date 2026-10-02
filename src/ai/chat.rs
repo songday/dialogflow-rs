@@ -141,7 +141,22 @@ async fn get_or_load_model(
     // 不会再阻塞任何已经在跑的生成。
     let loaded = LoadedHuggingFaceModel::load(m)?;
 
-    let entry = Arc::new(Mutex::new(loaded));
+    cache_loaded_model(robot_id, loaded)
+}
+
+/// 把一个**已经装好**的模型放进缓存，并按 LRU 记账，返回放进去的那个句柄。
+///
+/// 插入和淘汰**必须在同一处**。只在 [`get_or_load_model`] 里记账的话，从别的入口
+/// （保存设置的后台预热走 [`load_model_into_cache`]）插进来的条目不会进 `MODEL_LRU`
+/// 队列：它永远不会被淘汰，`lru.len()` 也算不到它，常驻模型数就能悄悄超过
+/// `MAX_LOADED_MODELS`。
+fn cache_loaded_model(
+    robot_id: &str,
+    model: LoadedHuggingFaceModel,
+) -> Result<Arc<Mutex<LoadedHuggingFaceModel>>> {
+    // 换成一个新的 `Arc`：正在生成的请求手里还攥着旧的那个，会安全地跑完并被
+    // 释放，不会被这里拦住，也不会被我们改到。
+    let entry = Arc::new(Mutex::new(model));
     let evicted = {
         let mut models = LOADED_MODELS.lock()?;
         models.insert(String::from(robot_id), entry.clone());
@@ -259,12 +274,14 @@ pub(crate) enum ChatProvider {
     OpenAICompatible(String),
 }
 
-pub(crate) fn replace_model_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
+/// 从磁盘装载 `m`，装好后按 LRU 放进缓存。
+///
+/// **同步且耗时**：要把整个权重文件读进来再建 tensor，GGUF 动辄几 GB 到几十 GB。
+/// 调用方必须把它放进 `spawn_blocking`，否则会占住一个 tokio worker 几十秒
+/// （设置保存的后台预热就是这么用的）。
+pub(crate) fn load_model_into_cache(robot_id: &str, m: &HuggingFaceModel) -> Result<()> {
     let m = LoadedHuggingFaceModel::load(m)?;
-    let mut r = LOADED_MODELS.lock()?;
-    // 换成一个新的 `Arc`：正在生成的请求手里还攥着旧的那个，会安全地跑完并被
-    // 释放，不会被这里拦住，也不会被我们改到。
-    r.insert(String::from(robot_id), Arc::new(Mutex::new(m)));
+    cache_loaded_model(robot_id, m)?;
     Ok(())
 }
 
@@ -572,7 +589,7 @@ fn huggingface(
     // 只锁这一个模型：不同机器人之间互不阻塞，同一机器人的请求在此串行
     // （KV cache 是模型自身的可变状态，必须串行）。
     //
-    // `entry` 是 `chat()` 拿到的 `Arc` 快照：即使期间有人 `replace_model_cache`
+    // `entry` 是 `chat()` 拿到的 `Arc` 快照：即使期间有人 `load_model_into_cache`
     // 换了新实例，我们手上这个依然有效，不会被改动或提前释放。
     let mut guard = entry.lock().unwrap_or_else(|e| {
         log::warn!("{:#?}", &e);
@@ -589,6 +606,23 @@ fn huggingface(
             Some(0.5),
             &mut result_sender,
         ),
+        LoadedHuggingFaceModel::Gemma4((device, model, tokenizer)) => {
+            // Gemma 4 的 prompt 由 `convert_prompt` 拼成 `<|turn>…`，图片占位符
+            // （`<|image|>`）由 `gen_text_gemma4` 按每张图的软 token 数补在后面。
+            // 模型只有一个形状（多模态），纯文本请求也走它。
+            super::gemma::gen_text_gemma4(
+                device,
+                &mut model.0,
+                tokenizer,
+                super::gemma::Gemma4Input {
+                    prompt: &new_prompt,
+                    images_base64: &media.images,
+                },
+                sample_len,
+                Some(0.5),
+                &mut result_sender,
+            )
+        }
         LoadedHuggingFaceModel::Llama(m) => super::llama::gen_text(
             &m.0,
             &m.1,
@@ -1069,10 +1103,14 @@ mod tests {
             role: String::from("user"),
             content: String::from("hi"),
         }]);
-        for m in [
-            HuggingFaceModel::TinyLlama1_1bChatV1_0,
-            HuggingFaceModel::Gemma2bInstruct,
-            HuggingFaceModel::Phi3Mini4kInstruct,
+        // `(模型, 它认不认这个思考开关)`。Gemma 4 用的是自己那套 `<|think|>` /
+        // `<|channel>`，认这个开关 —— 具体形状由下面 `gemma4_prompt_*` 那条测试管；
+        // 这里只要求它们都别拿到 Qwen 的 `<think>` / `/no_think`。
+        for (m, honours_thinking) in [
+            (HuggingFaceModel::TinyLlama1_1bChatV1_0, false),
+            (HuggingFaceModel::Gemma2bInstruct, false),
+            (HuggingFaceModel::Phi3Mini4kInstruct, false),
+            (HuggingFaceModel::Gemma4E4BIt, true),
         ] {
             let info = m.get_info();
             for enable in [false, true] {
@@ -1082,12 +1120,171 @@ mod tests {
                     "{m:?} (thinking={enable}) must not get Qwen thinking markers: {p}"
                 );
             }
-            // 两种取值必须产出完全一样的提示词。
+            if !honours_thinking {
+                // 两种取值必须产出完全一样的提示词。
+                assert_eq!(
+                    info.convert_prompt("", history.clone(), false).unwrap(),
+                    info.convert_prompt("", history.clone(), true).unwrap(),
+                    "{m:?} ignores the thinking switch, so both settings must match"
+                );
+            }
+        }
+    }
+
+    /// Gemma 4 换了回合标记：`<|turn>role\n … <turn|>\n`，生成前缀
+    /// `<|turn>model\n`。这里锁住几个容易写错的地方：
+    /// - 不能用 gemma2 的 `<start_of_turn>` / `<end_of_turn>`；
+    /// - assistant 的回合名是 `model`，不是 `assistant`；
+    /// - 有 system 消息就要开系统回合（哪怕没开思考）；
+    /// - 思考开关只在系统回合最前面加 `<|think|>`，并且此时**空**系统提示词也要
+    ///   开系统回合 —— 官方模板的条件是 `enable_thinking or tools or system`；
+    /// - 空 user 回合必须跳过。
+    #[test]
+    fn gemma4_prompt_uses_turn_markers_and_gates_thinking() {
+        let info = HuggingFaceModel::Gemma4E4BIt.get_info();
+        let history = Some(vec![
+            Prompt {
+                role: String::from("system"),
+                content: String::from("你是客服"),
+            },
+            Prompt {
+                role: String::from("user"),
+                content: String::from("你好"),
+            },
+            Prompt {
+                role: String::from("assistant"),
+                content: String::from("你好，有什么可以帮你？"),
+            },
+            Prompt {
+                role: String::from("user"),
+                content: String::from("退货运费谁出"),
+            },
+        ]);
+        // 没开思考：系统回合照开，但没有 `<|think|>`。
+        assert_eq!(
+            info.convert_prompt("", history.clone(), false).unwrap(),
+            "<|turn>system\n你是客服<turn|>\n\
+             <|turn>user\n你好<turn|>\n\
+             <|turn>model\n你好，有什么可以帮你？<turn|>\n\
+             <|turn>user\n退货运费谁出<turn|>\n\
+             <|turn>model\n"
+        );
+        // 开了思考：多出来的系统回合在**最前面**、内容为空 —— 因为 `s` 是空的，
+        // system 正文只存在于 history 里，这和官方模板只认 `messages[0]` 的口径
+        // 一致，于是 history 里那条 system 又各自成了一个系统回合。
+        assert_eq!(
+            info.convert_prompt("", history, true).unwrap(),
+            "<|turn>system\n<|think|>\n<turn|>\n\
+             <|turn>system\n你是客服<turn|>\n\
+             <|turn>user\n你好<turn|>\n\
+             <|turn>model\n你好，有什么可以帮你？<turn|>\n\
+             <|turn>user\n退货运费谁出<turn|>\n\
+             <|turn>model\n"
+        );
+        // 没有历史、没有系统提示词：只有一个空的生成前缀（`chat()` 的第一轮就是
+        // "history 为空、`s` 为空"这个形状，不能多送空回合）。
+        assert_eq!(
+            info.convert_prompt("", None, false).unwrap(),
+            "<|turn>model\n"
+        );
+        // 开了思考但没有系统提示词：仍要有系统回合来承载 `<|think|>`。
+        assert_eq!(
+            info.convert_prompt("", None, true).unwrap(),
+            "<|turn>system\n<|think|>\n<turn|>\n<|turn>model\n"
+        );
+        // 上一轮回答里带思考块时，拼进提示词前要被摘掉（官方 `strip_thinking`）。
+        let with_thought = Some(vec![Prompt {
+            role: String::from("assistant"),
+            content: String::from("<|channel>thought\n内部推理<channel|>正式回答"),
+        }]);
+        assert_eq!(
+            info.convert_prompt("", with_thought, false).unwrap(),
+            "<|turn>model\n正式回答<turn|>\n<|turn>model\n"
+        );
+        // system / user 同时出现在 **history** 和 `s` 两条路上时，两边的内容都会被
+        // 渲染：system 变成两个系统回合、user 变成两个 user 回合。这是官方模板的
+        // 口径（它只把 `messages[0]` 当系统消息、其余原样渲染），而两个调用方传的
+        // `s` 都是空串（`chat()` 的最新 user 消息在 history 末尾），所以线上走不到
+        // 这个组合。这里把既成事实钉住，免得以后误以为是新引入的 bug。
+        let system_and_user_in_history = Some(vec![
+            Prompt {
+                role: String::from("system"),
+                content: String::from("你是客服"),
+            },
+            Prompt {
+                role: String::from("user"),
+                content: String::from("你好"),
+            },
+        ]);
+        assert_eq!(
+            info.convert_prompt(
+                r#"[{"role":"user","content":"你好"},{"role":"system","content":"你是客服"}]"#,
+                system_and_user_in_history,
+                false
+            )
+            .unwrap(),
+            "<|turn>system\n你是客服<turn|>\n\
+             <|turn>system\n你是客服<turn|>\n\
+             <|turn>user\n你好<turn|>\n\
+             <|turn>user\n你好<turn|>\n\
+             <|turn>model\n"
+        );
+    }
+
+    /// Gemma 4 的权重和分词器在**同一个**仓库里（不像 Qwen3 的 GGUF 是双仓库），
+    /// 而且是**单文件** `model.safetensors`：`model_index_file` 必须留空，否则
+    /// `get_model_files` 会去找不存在的 `model.safetensors.index.json`。
+    /// `processor_config.json` 必须在下载清单里 —— 图像预处理的参数来自它。
+    #[test]
+    fn gemma4_is_a_single_repository_single_file_model() {
+        for m in [
+            HuggingFaceModel::Gemma4E2BIt,
+            HuggingFaceModel::Gemma4E4BIt,
+            HuggingFaceModel::Gemma412BIt,
+        ] {
+            let info = m.get_info();
             assert_eq!(
-                info.convert_prompt("", history.clone(), false).unwrap(),
-                info.convert_prompt("", history.clone(), true).unwrap(),
-                "{m:?} ignores the thinking switch, so both settings must match"
+                info.model_type,
+                crate::ai::huggingface::HuggingFaceModelType::Gemma4
             );
+            assert!(info.supports_vision(), "{m:?} takes images");
+            assert_eq!(info.tokenizer_repository(), info.repository);
+            assert!(
+                info.model_index_file.is_empty(),
+                "{m:?} has a single weights file, so it must not look for an index"
+            );
+            assert!(
+                info.model_files.contains(&"processor_config.json"),
+                "{m:?} needs processor_config.json: the image preprocessing reads it"
+            );
+            assert!(
+                !info.model_files.contains(&"model.safetensors"),
+                "{m:?}: the weights file must not be listed twice (get_model_files \
+                 already adds it)"
+            );
+        }
+        assert_eq!(
+            HuggingFaceModel::Gemma4E4BIt.get_info().local_directory(),
+            "google/gemma-4-E4B-it"
+        );
+    }
+
+    /// Gemma 4 走的是**文本 + 图像**那条路：加载器只接受带视觉塔的检查点，所以
+    /// 这两个档位必须真的能收图，而且都不需要访问令牌（Apache-2.0、非 gated）。
+    #[test]
+    fn gemma4_models_each_declare_a_vision_tower() {
+        for (m, repo) in [
+            (HuggingFaceModel::Gemma4E2BIt, "google/gemma-4-E2B-it"),
+            (HuggingFaceModel::Gemma4E4BIt, "google/gemma-4-E4B-it"),
+            (HuggingFaceModel::Gemma412BIt, "google/gemma-4-12B-it"),
+        ] {
+            let info = m.get_info();
+            assert_eq!(info.repository, repo);
+            assert_eq!(
+                info.model_type,
+                crate::ai::huggingface::HuggingFaceModelType::Gemma4
+            );
+            assert!(info.supports_vision(), "{m:?} must accept images");
         }
     }
 
@@ -1096,7 +1293,7 @@ mod tests {
     /// 这里锁住两个**远端来源**，防止有人"顺手统一"成同一个而把下载跑成 404。
     ///
     /// 注意本地目录不在这两个字段里：它跟着保存时用的 `repository` 走，
-    /// 所以 GGUF 落在 `data/model/Qwen/Qwen3-4B/`，而不是量化仓库名下。
+    /// 所以 GGUF 落在 `data/models/Qwen/Qwen3-4B/`，而不是量化仓库名下。
     #[test]
     fn qwen3_fetches_weights_and_tokenizer_from_two_repositories() {
         let info = HuggingFaceModel::Qwen3_4B.get_info();
@@ -1104,7 +1301,7 @@ mod tests {
         assert_eq!(info.local_directory(), "Qwen/Qwen3-4B");
         assert_eq!(
             info.gguf_model_path().unwrap(),
-            "./data/model/Qwen/Qwen3-4B/Qwen3-4B-Q4_K_M.gguf"
+            "./data/models/Qwen/Qwen3-4B/Qwen3-4B-Q4_K_M.gguf"
         );
         // 非 GGUF 模型不受影响：分词器仓库回退到权重仓库。
         let bert = HuggingFaceModel::AllMiniLML6V2.get_info();

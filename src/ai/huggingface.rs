@@ -9,6 +9,8 @@ use candle::{DType, Device};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config, DTYPE};
 use candle_transformers::models::gemma::{Config as GemmaConfig, Model as GemmaModel};
+use candle_transformers::models::gemma4::config::Gemma4Config;
+use candle_transformers::models::gemma4::Model as Gemma4Model;
 use candle_transformers::models::llama::{Cache as LlamaCache, Llama, LlamaConfig, LlamaEosToks};
 use candle_transformers::models::moondream::{Config as MoondreamConfig, Model as MoondreamModel};
 use candle_transformers::models::parler_tts::{Config as ParlerTtsConfig, Model as ParlerTtsModel};
@@ -24,7 +26,9 @@ use tokio::io::AsyncWriteExt;
 
 use crate::result::{Error, Result};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// 本地的 HuggingFace 模型。`PartialEq` 是给"保存设置时模型换没换"比的：只有换了
+/// 才需要重新装（见 `man::settings::models_to_reload`）。
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub(crate) enum HuggingFaceModel {
     AllMiniLML6V2,
     ParaphraseMLMiniLML12V2,
@@ -42,6 +46,13 @@ pub(crate) enum HuggingFaceModel {
     TinyLlama1_1bChatV1_0,
     Gemma2bInstruct,
     Gemma7bInstruct,
+    // 本地 Gemma 4（多模态）。两个档位都是单文件 BF16 safetensors，Apache-2.0、
+    // 不需要访问令牌。权重里同时含文本/视觉/音频三部分，我们只用文本和视觉。
+    // E2B/E4B 的 "E" 是 effective parameters，和 2B/4B 的稠密模型不是一回事：
+    // 实际权重是 51 亿 / 80 亿参数（BF16 下约 10.2GB / 16GB）。
+    Gemma4E2BIt,
+    Gemma4E4BIt,
+    Gemma412BIt,
     Moondream2,
     ParlerTtsMiniV1,
     ParlerTtsLargeV1,
@@ -61,6 +72,9 @@ pub(crate) enum LoadedHuggingFaceModel {
     Bert((BertModel, Tokenizer)),
     Llama((Device, Llama, LlamaCache, Tokenizer, Option<LlamaEosToks>)),
     Gemma((Device, GemmaModel, Tokenizer)),
+    /// Gemma 4 的两种加载形状（纯文本 / 多模态）。`pub(crate)` 是为了让它能出现在
+    /// `LoadedHuggingFaceModel` 这个 crate 级枚举里；具体形状见 `gemma.rs`。
+    Gemma4((Device, super::gemma::Gemma4Loaded, Tokenizer)),
     Phi3((Device, Phi3, Tokenizer)),
     Moondream((Device, MoondreamModel, Tokenizer)),
     Qwen3((Device, Qwen3, Tokenizer)),
@@ -76,6 +90,9 @@ impl LoadedHuggingFaceModel {
             }
             HuggingFaceModelType::Gemma => {
                 LoadedHuggingFaceModel::Gemma(load_gemma_model_files(&info)?)
+            }
+            HuggingFaceModelType::Gemma4 => {
+                LoadedHuggingFaceModel::Gemma4(load_gemma4_model_files(&info)?)
             }
             HuggingFaceModelType::Phi3 => {
                 LoadedHuggingFaceModel::Phi3(load_phi3_model_files(&info)?)
@@ -102,6 +119,7 @@ pub(crate) enum HuggingFaceModelType {
     Bert,
     Llama,
     Gemma,
+    Gemma4,
     Phi3,
     Moondream,
     Qwen3,
@@ -117,8 +135,12 @@ pub(crate) struct HuggingFaceModelInfo {
     pub(super) model_type: HuggingFaceModelType,
     pub(crate) repository: &'static str,
     mirror: &'static str,
-    model_files: Vec<&'static str>,
-    model_index_file: &'static str,
+    /// 非权重文件清单（`config.json`、`tokenizer.json`…）。`pub(super)` 是为了让
+    /// `chat.rs` 里的单测能断言下载清单的组成。
+    pub(super) model_files: Vec<&'static str>,
+    /// 分片权重的索引文件名；空串表示只有一个 `model.safetensors`。同样是
+    /// `pub(super)` 以便断言"单文件模型不许去找索引"。
+    pub(super) model_index_file: &'static str,
     tokenizer_filename: &'static str,
     dimenssions: u32,
     /// GGUF 权重文件名（相对于 `mirror` 仓库根目录）。空串表示这个模型不是
@@ -172,13 +194,32 @@ impl HuggingFaceModelInfo {
         format!("{HUGGING_FACE_MODEL_ROOT}{}", self.local_directory())
     }
 
+    /// 本地目录的完整路径，以及这个目录**是否已经存在**。
+    ///
+    /// 设置页要回答两个问题："模型会落到哪个目录"（显示给用户）和"下载过没有"
+    /// （要不要提示下载）。目录在不在就够回答后者了，不必逐个 stat 模型文件、
+    /// 更不必解析 `tokenizer.json`（几兆到几十兆）——那是 [`check_model_files`]
+    /// 的活，成本高，应该由用户主动触发。
+    ///
+    /// 路径**必须**来自 [`Self::local_directory_path`]：它和真正写文件的下载路径
+    /// 同源，这样显示给用户的目录不可能是编出来的。`pub(crate)` 就是为了让
+    /// `man::settings` 走这条路，而不是自己拼一个可能漂移的字符串。
+    pub(crate) fn local_directory_status(&self) -> (String, bool) {
+        let path = self.local_directory_path();
+        let exists = Path::new(&path).is_dir();
+        (path, exists)
+    }
+
     /// 本地 `tokenizer.json` 的完整路径。
     pub(super) fn tokenizer_path(&self) -> String {
         construct_model_file_path(self.local_directory(), "tokenizer.json")
     }
 
     pub(super) fn supports_vision(&self) -> bool {
-        matches!(self.model_type, HuggingFaceModelType::Moondream)
+        matches!(
+            self.model_type,
+            HuggingFaceModelType::Moondream | HuggingFaceModelType::Gemma4
+        )
     }
 
     /// 把对话历史拼成模型要的提示词。
@@ -265,6 +306,64 @@ impl HuggingFaceModelInfo {
                 p.push_str("<start_of_turn>user\n");
                 p.push_str(&user);
                 p.push_str("<end_of_turn>\n<start_of_turn>model");
+                Ok(p)
+            }
+            // Gemma 4 换了回合标记：`<|turn>role\n … <turn|>\n`，生成前缀是
+            // `<|turn>model\n`（见仓库里的 `chat_template.jinja`）。system 只在
+            // **有 system 消息**时开一个系统回合；`enable_thinking` 打开时官方模板
+            // 会在系统回合最前面注入 `<|think|>`。两者是独立的：有系统提示词但没开
+            // 思考时，照样要有系统回合，只是不带 `<|think|>`。
+            //
+            // system / user 的正文按官方模板 trim，assistant 的历史正文先过一次
+            // `strip_thinking`（上一轮回答可能带着 `<|channel>` 推理块回传）。
+            HuggingFaceModelType::Gemma4 => {
+                use super::gemma::{THINK_TOKEN, TURN_END, TURN_START};
+                let mut p = String::with_capacity(s.len() + 64);
+                // 模板以 `{{- bos_token }}` 开头，`<bos>` 由 tokenizer 的
+                // post-processor 自己加，这里不能重复。
+                if enable_thinking || !system.is_empty() {
+                    p.push_str(TURN_START);
+                    p.push_str("system\n");
+                    if enable_thinking {
+                        p.push_str(THINK_TOKEN);
+                        p.push('\n');
+                    }
+                    if !system.is_empty() {
+                        p.push_str(system.trim());
+                    }
+                    p.push_str(TURN_END);
+                }
+                if let Some(h) = history {
+                    for i in h.iter() {
+                        if i.content.is_empty() {
+                            continue;
+                        }
+                        let role = if i.role.eq("assistant") {
+                            "model"
+                        } else {
+                            i.role.as_str()
+                        };
+                        p.push_str(TURN_START);
+                        p.push_str(role);
+                        p.push('\n');
+                        if role.eq("model") {
+                            p.push_str(&super::gemma::strip_thinking(&i.content));
+                        } else {
+                            p.push_str(i.content.trim());
+                        }
+                        p.push_str(TURN_END);
+                    }
+                }
+                // 两个调用方都传 `s = ""`，最新的那条 user 消息在 history 末尾，
+                // 所以 `user` 通常是空的 —— 空回合要跳过。
+                if !user.is_empty() {
+                    p.push_str(TURN_START);
+                    p.push_str("user\n");
+                    p.push_str(user.trim());
+                    p.push_str(TURN_END);
+                }
+                p.push_str(TURN_START);
+                p.push_str("model\n");
                 Ok(p)
             }
             HuggingFaceModelType::Phi3 => {
@@ -369,6 +468,21 @@ fn get_common_model_files() -> Vec<&'static str> {
 /// GGUF 文件本身由 `gguf_model_filename` 单独描述。
 fn qwen3_model_files() -> Vec<&'static str> {
     vec!["tokenizer.json", "tokenizer_config.json", "config.json"]
+}
+
+/// Gemma 4 要下载的**非权重**文件。
+///
+/// 不能直接复用 `get_common_model_files()`：权重是单文件 `model.safetensors`，
+/// 而那个列表里就带着 "model.safetensors"，会被 `get_model_files` 当成额外文件
+/// 再拼一遍。`processor_config.json` 必须下 —— 图像预处理的
+/// `max_soft_tokens = 280` / patch / 池化参数都是照它来的。
+fn gemma4_model_files() -> Vec<&'static str> {
+    vec![
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "config.json",
+        "processor_config.json",
+    ]
 }
 
 impl HuggingFaceModel {
@@ -583,6 +697,47 @@ impl HuggingFaceModel {
                 tokenizer_repository: "",
                 model_type: HuggingFaceModelType::Gemma,
             },
+            // ---- 本地 Gemma 4（多模态，文本 + 视觉） ----
+            //
+            // 两个档位都是**单文件** `model.safetensors`（没有分片索引），所以
+            // `model_files` 里要把自带的 "model.safetensors" 去掉、并让
+            // `model_index_file` 留空，`get_model_files` 才会去找那一个文件。
+            //
+            // `processor_config.json` 要一起下：它带着 `max_soft_tokens = 280` 和
+            // patch/池化参数，是图像预处理（`gemma.rs`）的依据。
+            HuggingFaceModel::Gemma4E2BIt => HuggingFaceModelInfo {
+                repository: "google/gemma-4-E2B-it",
+                mirror: "google/gemma-4-E2B-it",
+                model_files: gemma4_model_files(),
+                model_index_file: "",
+                tokenizer_filename: "tokenizer.json",
+                dimenssions: 1024,
+                gguf_model_filename: "",
+                tokenizer_repository: "",
+                model_type: HuggingFaceModelType::Gemma4,
+            },
+            HuggingFaceModel::Gemma4E4BIt => HuggingFaceModelInfo {
+                repository: "google/gemma-4-E4B-it",
+                mirror: "google/gemma-4-E4B-it",
+                model_files: gemma4_model_files(),
+                model_index_file: "",
+                tokenizer_filename: "tokenizer.json",
+                dimenssions: 1024,
+                gguf_model_filename: "",
+                tokenizer_repository: "",
+                model_type: HuggingFaceModelType::Gemma4,
+            },
+            HuggingFaceModel::Gemma412BIt => HuggingFaceModelInfo {
+                repository: "google/gemma-4-12B-it",
+                mirror: "google/gemma-4-12B-it",
+                model_files: gemma4_model_files(),
+                model_index_file: "",
+                tokenizer_filename: "tokenizer.json",
+                dimenssions: 1024,
+                gguf_model_filename: "",
+                tokenizer_repository: "",
+                model_type: HuggingFaceModelType::Gemma4,
+            },
             HuggingFaceModel::Moondream2 => HuggingFaceModelInfo {
                 repository: "vikhyatk/moondream2",
                 mirror: "vikhyatk/moondream2",
@@ -742,7 +897,13 @@ impl std::fmt::Display for HuggingFaceModel {
     }
 }
 
-const HUGGING_FACE_MODEL_ROOT: &str = "./data/model/";
+/// 本地模型的根目录。下载、加载、校验、以及设置页显示给用户的路径全部从这里来。
+///
+/// 用**复数** `models`：这是同类工具的通行写法（ollama 的 `~/.ollama/models`、
+/// LM Studio / llama.cpp 的 `models`），而且设置页里显示的文案本来就是
+/// `./data/models`。以前这里是单数 `./data/model/`，前端那句提示就一直是错的，
+/// 用户照着提示去目录里找根本找不到文件。
+const HUGGING_FACE_MODEL_ROOT: &str = "./data/models/";
 
 #[derive(Clone, Serialize)]
 pub(crate) struct DownloadStatus {
@@ -1112,11 +1273,25 @@ pub(crate) fn check_model_files(info: &HuggingFaceModelInfo) -> Result<()> {
 /// 收的是**文件路径**而不是仓库名：分词器是两仓库下载的产物，落在
 /// `local_directory()` 里（`Qwen/Qwen3-0.6B`），而不是它在 HuggingFace 上的
 /// 来源仓库（`mirror`）。按仓库名去找会指到一个不存在的目录。
+///
+/// 只是"路径"这个口子本身太容易喂错——装载器请一律走 [`init_model_tokenizer`]。
 pub(super) fn init_tokenizer(tokenizer_path: &str) -> Result<Tokenizer> {
     match Tokenizer::from_file(tokenizer_path) {
         Ok(t) => Ok(t),
         Err(e) => Err(Error::WithMessage(format!("{tokenizer_path}: {e}"))),
     }
+}
+
+/// 读 `info` 对应的本地 `tokenizer.json`（装载器统一入口）。
+///
+/// 收模型信息而不是路径，是因为**这个错误真的发生过**：
+/// `load_llama_model_files` / `load_gemma_model_files` / `load_moondream_model_files`
+/// / `load_parler_tts_model_files` 四处都写成过 `init_tokenizer(info.repository)`，
+/// 把仓库名当文件路径去打开，于是这四个模型家族**永远加载失败**，用户看到的还是
+/// 一句看不懂的 `TinyLlama/TinyLlama-1.1B-Chat-v1.0: 系统找不到指定的路径。`。
+/// 不接受路径参数，这类错误就不可能再写出来。
+pub(super) fn init_model_tokenizer(info: &HuggingFaceModelInfo) -> Result<Tokenizer> {
+    init_tokenizer(&info.tokenizer_path())
 }
 
 fn set_tokenizer_config(
@@ -1267,7 +1442,7 @@ pub(crate) fn load_phi3_model_files(
     let config = std::fs::read_to_string(config_filename)?;
     let config: Phi3Config = serde_json::from_str(&config)?;
     let phi3 = Phi3::new(&config, vb)?;
-    let tokenizer = init_tokenizer(&info.tokenizer_path())?;
+    let tokenizer = init_model_tokenizer(info)?;
     Ok((device, phi3, tokenizer))
 }
 
@@ -1344,7 +1519,7 @@ pub(crate) fn load_llama_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, Llama, LlamaCache, Tokenizer, Option<LlamaEosToks>)> {
     log::info!("load_llama_model_files start");
-    let tokenizer = init_tokenizer(info.repository)?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
 
     let config_filename = construct_model_file_path(info.repository, "config.json");
@@ -1365,7 +1540,7 @@ pub(crate) fn load_llama_model_files(
 pub(crate) fn load_gemma_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, GemmaModel, Tokenizer)> {
-    let tokenizer = init_tokenizer(info.repository)?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
 
     let config_filename = construct_model_file_path(info.repository, "config.json");
@@ -1381,10 +1556,91 @@ pub(crate) fn load_gemma_model_files(
     Ok((device, model, tokenizer))
 }
 
+/// 读并解析 Gemma 4 的 `config.json`。
+///
+/// 多模态形状：`text_config` / `vision_config` / `audio_config` 三段并列，candle 的
+/// `Gemma4Config` 就是照这个结构反序列化的。缺 `vision_config` 时给出**针对性的**
+/// 提示，而不是让 serde 只报一句 "missing field"：那种检查点没有视觉塔，我们跑不了。
+fn read_gemma4_config(config_filename: &str) -> Result<Gemma4Config> {
+    let raw: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(config_filename)?).map_err(|e| {
+            Error::WithMessage(format!("{config_filename} is not valid JSON: {e}"))
+        })?;
+    if raw.get("text_config").is_none() {
+        return Err(Error::WithMessage(format!(
+            "{config_filename} has no text_config: this does not look like a Gemma 4 config"
+        )));
+    }
+    if raw.get("vision_config").is_none() {
+        return Err(Error::WithMessage(format!(
+            "{config_filename} has no vision_config: this Gemma 4 checkpoint carries no \
+             vision tower, and this build only runs the multimodal ones \
+             (google/gemma-4-E2B-it or -E4B-it)."
+        )));
+    }
+    serde_json::from_value(raw).map_err(|e| {
+        Error::WithMessage(format!(
+            "cannot parse the Gemma 4 config in {config_filename}: {e}"
+        ))
+    })
+}
+
+/// 加载 Gemma 4 的权重与分词器。
+///
+/// 只支持**多模态**检查点：google 官方的 `gemma-4-E2B-it` / `-E4B-it` 都是这个形状，
+/// 而我们要的正是文本 + 图像。配置里没有 `vision_config` 的检查点直接报错，而不是
+/// 悄悄降级成纯文本 —— candle 0.11.0 的 `gemma4::text::TextModel` 确实是纯文本入口，
+/// 但同一个模型实例是跨请求复用的（`chat.rs` 的 `LOADED_MODELS`），一旦按纯文本建
+/// 出来，之后的带图请求就永远出不了图，那种"有时能收图有时不能"的行为比直接失败
+/// 更难查。
+pub(crate) fn load_gemma4_model_files(
+    info: &HuggingFaceModelInfo,
+) -> Result<(Device, super::gemma::Gemma4Loaded, Tokenizer)> {
+    let start = std::time::Instant::now();
+    let tokenizer = init_model_tokenizer(info)?;
+    let device = device()?;
+    let dtype = if device.is_cuda() {
+        DType::BF16
+    } else {
+        DType::F32
+    };
+    let config_filename = construct_model_file_path(info.repository, "config.json");
+    let config = read_gemma4_config(&config_filename)?;
+    log::info!(
+        "Gemma4: {} hidden size, {} text layers, {dtype:?}",
+        config.text_config.hidden_size,
+        config.text_config.num_hidden_layers,
+    );
+    let filenames = get_model_files(info)?;
+    let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
+
+    // 前缀是**检查点**决定的，不是我们决定的：多模态权重挂在
+    // `model.language_model.*` / `model.vision_tower.*` 下。candle 的 `Model` 内部
+    // 还会自己再 `pp("model")`，所以这里多包的那层就是最外层那个 `model`。
+    if !vb.contains_tensor("model.language_model.embed_tokens.weight") {
+        return Err(Error::WithMessage(format!(
+            "{config_filename}: cannot find model.language_model.embed_tokens.weight in {}; \
+             this does not look like a multimodal Gemma 4 checkpoint",
+            filenames.join(", ")
+        )));
+    }
+    let vb = vb.pp("model");
+
+    // 注意 `Model::new` 会连**音频塔**一起建（配置里有 `audio_config` 就会
+    // `vb.get` 它的权重），而我们只推送文本和图像。google/gemma-4-*-it 是 any-to-any
+    // 检查点、权重里带着音频塔，所以正常；真遇到"只有文本+视觉"的检查点，这里会在
+    // 加载时报找不到 `model.audio_tower.*` —— 那时的修法是先把
+    // `raw_config["audio_config"]` 置成 `null` 再构造（`forward_multimodal` 本来就把
+    // 音频塔当可选的，`None` 会直接跳过音频注入）。
+    let model = super::gemma::Gemma4Loaded(Gemma4Model::new(&config, vb)?);
+    log::info!("Gemma4: weights loaded in {:.2}s", start.elapsed().as_secs_f32());
+    Ok((device, model, tokenizer))
+}
+
 pub(crate) fn load_parler_tts_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, ParlerTtsModel, Tokenizer)> {
-    let tokenizer = init_tokenizer(info.repository)?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
     let filenames = get_model_files(info)?;
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, DType::F32, &device)? };
@@ -1397,7 +1653,7 @@ pub(crate) fn load_parler_tts_model_files(
 pub(crate) fn load_moondream_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, MoondreamModel, Tokenizer)> {
-    let tokenizer = init_tokenizer(info.repository)?;
+    let tokenizer = init_model_tokenizer(info)?;
     let device = device()?;
     let config = MoondreamConfig::v2();
     let dtype = if device.is_cuda() {
@@ -1559,8 +1815,8 @@ mod tests {
 
     /// The load path must match where the files are actually saved.
     ///
-    /// `Qwen3_0_6B` used to download into `data/model/Qwen/Qwen3-0.6B/` (built
-    /// from `repository`) while loading from `data/model/unsloth/Qwen3-0.6B-GGUF/`
+    /// `Qwen3_0_6B` used to download into `data/models/Qwen/Qwen3-0.6B/` (built
+    /// from `repository`) while loading from `data/models/unsloth/Qwen3-0.6B-GGUF/`
     /// (built from `mirror`), so an already-downloaded model could never load.
     /// The local directory is now `repository` and both sides use it.
     #[test]
@@ -1581,23 +1837,92 @@ mod tests {
             assert_eq!(info.local_directory(), dir, "{m:?} local directory");
             assert_eq!(
                 info.local_directory_path(),
-                format!("./data/model/{dir}"),
+                format!("./data/models/{dir}"),
                 "{m:?} local directory path"
             );
             // The exact path the user reported, pinned so it cannot drift again.
             assert_eq!(
                 info.gguf_model_path().unwrap(),
-                format!("./data/model/{dir}/{}", info.gguf_model_filename)
+                format!("./data/models/{dir}/{}", info.gguf_model_filename)
             );
             assert_eq!(
                 info.tokenizer_path(),
-                format!("./data/model/{dir}/tokenizer.json")
+                format!("./data/models/{dir}/tokenizer.json")
             );
         }
         assert_eq!(
             HuggingFaceModel::Qwen3_0_6B.get_info().gguf_model_path().unwrap(),
-            "./data/model/Qwen/Qwen3-0.6B/Qwen3-0.6B-Q4_K_M.gguf"
+            "./data/models/Qwen/Qwen3-0.6B/Qwen3-0.6B-Q4_K_M.gguf"
         );
+    }
+
+    /// The reported directory must be the one the downloader writes into.
+    ///
+    /// The settings page puts this string in front of the user ("Model will be
+    /// downloaded locally at ..."), so a second, drifting computation of the path
+    /// would point them at a directory that never exists.
+    #[test]
+    fn local_directory_status_reports_the_download_directory() {
+        for m in [
+            HuggingFaceModel::Qwen3_0_6B,
+            HuggingFaceModel::BgeSmallEnV1_5,
+            HuggingFaceModel::Gemma4E2BIt,
+        ] {
+            let info = m.get_info();
+            let (path, exists) = info.local_directory_status();
+            assert_eq!(path, info.local_directory_path(), "{m:?}");
+            // Whether the model is already downloaded depends on this machine, so
+            // pin the comparison instead of a fixed answer.
+            assert_eq!(
+                exists,
+                std::path::Path::new(&path).is_dir(),
+                "{m:?} existence"
+            );
+        }
+    }
+
+    /// 每个装载器都必须按**本地路径**去找 `tokenizer.json`，而不是拿仓库名当路径。
+    ///
+    /// 这个错误真的发生过：llama / gemma / moondream / parler_tts 四个装载器都写成
+    /// 了 `init_tokenizer(info.repository)`，于是这四个模型家族永远加载失败，用户看到
+    /// 的是一句看不懂的 `TinyLlama/TinyLlama-1.1B-Chat-v1.0: 系统找不到指定的路径。`。
+    ///
+    /// 用一个**不存在的仓库名**调用就够把路径钉住：这四个装载器都是先读分词器，所以
+    /// 它们必定在分词器这一步失败，不会碰到任何权重（这条测试不许依赖磁盘上有模型）。
+    #[test]
+    fn loaders_look_for_the_tokenizer_in_the_local_directory() {
+        let info = HuggingFaceModelInfo {
+            model_type: HuggingFaceModelType::Llama,
+            repository: "__no_such_repository__/nope",
+            mirror: "__no_such_repository__/nope",
+            model_files: Vec::new(),
+            model_index_file: "",
+            tokenizer_filename: "tokenizer.json",
+            dimenssions: 0,
+            gguf_model_filename: "",
+            tokenizer_repository: "",
+        };
+        let expected = format!("{HUGGING_FACE_MODEL_ROOT}__no_such_repository__/nope/tokenizer.json");
+
+        let cases: [(&str, Result<()>); 4] = [
+            ("llama", load_llama_model_files(&info).map(|_| ())),
+            ("gemma", load_gemma_model_files(&info).map(|_| ())),
+            (
+                "moondream",
+                load_moondream_model_files(&info).map(|_| ()),
+            ),
+            (
+                "parler_tts",
+                load_parler_tts_model_files(&info).map(|_| ()),
+            ),
+        ];
+        for (name, r) in cases {
+            let err = r.expect_err("a repository that does not exist must fail").to_string();
+            assert!(
+                err.contains(&expected),
+                "{name} looked for the tokenizer somewhere else: {err}"
+            );
+        }
     }
 
     /// Every path the check pass looks at must live in the local directory.

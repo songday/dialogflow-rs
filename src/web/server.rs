@@ -284,6 +284,18 @@ fn gen_router() -> Router {
             post(settings::check_model_files),
         )
         .route(
+            "/management/settings/model/local/path",
+            post(settings::local_model_paths),
+        )
+        .route(
+            "/management/settings/model/load/progress",
+            get(settings::model_load_progress),
+        )
+        .route(
+            "/management/settings/model/load",
+            post(settings::load_model_now),
+        )
+        .route(
             "/management/settings/model/check/embedding",
             get(settings::check_embedding_model),
         )

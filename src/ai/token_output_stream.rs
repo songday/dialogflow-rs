@@ -96,7 +96,7 @@ mod tests {
     /// 模型文件不在时跳过（CI 上通常没有）。
     #[test]
     fn the_think_markers_are_not_filtered_by_skip_special_tokens() {
-        let path = "data/model/Qwen/Qwen3-0.6B/tokenizer.json";
+        let path = "data/models/Qwen/Qwen3-0.6B/tokenizer.json";
         if !std::path::Path::new(path).exists() {
             eprintln!("skipping: {path} not present");
             return;
