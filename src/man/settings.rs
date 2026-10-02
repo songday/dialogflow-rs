@@ -307,6 +307,26 @@ pub(crate) struct SentenceEmbeddingProvider {
     pub(crate) read_timeout_millis: u32,
     #[serde(rename = "proxyUrl")]
     pub(crate) proxy_url: String,
+    /// 期望的向量维度，`None` = 由模型自己决定（绝大多数情况）。
+    ///
+    /// 只有实现了 Matryoshka 截断的模型才认这个参数，而且字段名各家不同：
+    /// OpenAI / DashScope 兼容模式 / 硅基流动用 `dimensions`，Cohere / Voyage /
+    /// Mistral 用 `output_dimension`，Gemini 用 `output_dimensionality`。我们对
+    /// 外只发 `dimensions`（见 [`crate::ai::embedding`] 里那段注释），所以这里填的
+    /// 值在别的厂商那里可能被无视——请求发出去之后会**核对返回向量的长度**，
+    /// 没生效就直接报错，而不是把不一致的向量写进库。
+    ///
+    /// `#[serde(default)]` 是必需的：老记录里没有这个键，没有它整个设置都读不回来。
+    #[serde(default)]
+    pub(crate) dimensions: Option<u32>,
+    /// **已经写进向量表的那份索引**用的是哪个模型/维度。
+    ///
+    /// 它和当前配置是两件事：换掉模型之后，库里旧向量还在，要等重新索引（或重建）
+    /// 才会变。设置页拿它和当前配置比，不一致就警告——见
+    /// [`Settings::indexed_embedding_matches`] 的说明（向量空间换掉之后不重新索引，
+    /// 检索要么直接报错，要么静默变成噪声）。
+    #[serde(rename = "indexedEmbedding", default)]
+    pub(crate) indexed_embedding: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -381,6 +401,8 @@ impl Default for Settings {
                 api_url: String::new(),
                 api_key: String::new(),
                 model: String::new(),
+                dimensions: None,
+                indexed_embedding: None,
                 connect_timeout_millis: 5000,
                 read_timeout_millis: 10000,
                 proxy_url: String::new(),
@@ -496,6 +518,80 @@ fn unify_legacy_api_urls(mut s: Settings) -> Settings {
     s.sentence_embedding_provider.api_url =
         unify_legacy_api_url(&s.sentence_embedding_provider.api_url);
     s
+}
+
+/// 「这份向量是用哪个模型、多少维算出来的」的指纹。
+///
+/// 格式固定成 `v1|kind|model|dims`，前端按同样规则拼一份来比对（见
+/// `Settings.vue` 的 `currentEmbeddingIdentity`），中间的 `|` 分隔是为了让前端
+/// 能安全地 `split("|")` 取模型名和维度。
+///
+/// **必须包含模型名，不只是维度**：两个模型维度都是 1024 也照样不可比——它们把
+/// 同一个句子映射到两个毫不相干的坐标系里，`vector_distance_cos` 算出来的余弦
+/// 距离全是噪声（而且**不会报错**，比报错更难查）。维度则是因为同一模型可以按
+/// Matryoshka 截断成不同长度，而 turso 的 `vector_distance_cos` 遇到维度不一致
+/// 会直接返回错误，整条检索整体失败。
+pub(crate) fn embedding_identity(
+    provider: &embedding::SentenceEmbeddingProvider,
+    model: &str,
+    dims: usize,
+) -> String {
+    let kind = match provider {
+        embedding::SentenceEmbeddingProvider::HuggingFace(_) => "huggingface",
+        embedding::SentenceEmbeddingProvider::OpenAICompatible(_) => "openai-compatible",
+    };
+    format!("v1|{kind}|{model}|{dims}")
+}
+
+/// 这份设置实际用的模型名。
+///
+/// **本地模型的真名在枚举里**（如 `BgeM3`）：设置里那个 `model` 字段对本地模型
+/// 没有意义（前端显示的是枚举名，用户改不了）。在线模型则只能取
+/// `OpenAICompatible(名字)` 里那个名字 —— 这是真正发给端点的字符串，而不是外层
+/// 那个可能没人维护的 `model` 字段。
+pub(crate) fn embedding_model_name(provider: &embedding::SentenceEmbeddingProvider) -> String {
+    match provider {
+        embedding::SentenceEmbeddingProvider::HuggingFace(m) => m.to_string(),
+        embedding::SentenceEmbeddingProvider::OpenAICompatible(m) => m.clone(),
+    }
+}
+
+impl Settings {
+    /// 当前配置对应的索引指纹。维度用配置里写的那个（没写就是"还不知道"，
+    /// 用 0 占位），所以它和「实际写进库的指纹」只在用户设了 dimensions 时
+    /// 才严格可比。设置页自己按同一规则拼一份来比对（见 `Settings.vue` 的
+    /// `currentEmbeddingIdentity`）。
+    pub(crate) fn current_embedding_identity(&self) -> String {
+        let p = &self.sentence_embedding_provider;
+        embedding_identity(
+            &p.provider,
+            &embedding_model_name(&p.provider),
+            p.dimensions.unwrap_or(0) as usize,
+        )
+    }
+}
+
+/// 把「写进库的那份向量是哪来的」记下来。
+///
+/// **必须在向量真正落库之后调用**（见 `kb::qa::save` / `kb::doc` / `intent::phrase`），
+/// 而且只在写入路径上调：查询路径也会算向量，但查询不改变库里有什么。
+///
+/// 指纹描述的是**库里的东西**，不是用户当前的配置，所以换模型本身不会改它——
+/// 这正是设置页能发现"换了模型但还没重新索引"的原因。
+///
+/// 返回 `Result` 只是为了把"设置读不出来/写不回去"的细节留给调用方决定：打标失败
+/// 最多是下次少一条警告，而向量已经写成功了，所以调用方通常只记一笔日志，不把
+/// 整个请求判失败。
+pub(crate) async fn stamp_embedding_index(robot_id: &str) -> Result<()> {
+    let Some(mut s) = get_settings(robot_id).await? else {
+        return Ok(());
+    };
+    s.sentence_embedding_provider.indexed_embedding = Some(s.current_embedding_identity());
+    db_executor!(db::write, robot_id, TABLE_SUFFIX, robot_id, &s)?;
+    let mut l = SETTINGS_CACHE.lock()?;
+    l.insert(String::from(robot_id), s);
+    drop(l);
+    Ok(())
 }
 
 pub(crate) async fn get(Query(q): Query<RobotQuery>) -> impl IntoResponse {
@@ -1118,5 +1214,61 @@ mod tests {
             local_model_for(&online_chat, ModelKind::Embedding),
             Some(BgeSmallEnV1_5)
         );
+    }
+
+    /// 老记录里没有 `dimensions` / `indexedEmbedding` 两个键。少一个
+    /// `#[serde(default)]` 就会让**整个设置**读不回来 —— 那等于用户升级之后
+    /// 机器人的配置全部消失，比缺少两个可选功能严重得多。
+    #[test]
+    fn settings_without_the_new_keys_still_load() {
+        let mut v = serde_json::to_value(Settings::default()).unwrap();
+        let obj = v.as_object_mut().unwrap();
+        let p = obj
+            .get_mut("sentenceEmbeddingProvider")
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        assert!(p.remove("dimensions").is_some());
+        assert!(p.remove("indexedEmbedding").is_some());
+
+        let s: Settings = serde_json::from_value(v).unwrap();
+        assert_eq!(s.sentence_embedding_provider.dimensions, None);
+        assert_eq!(s.sentence_embedding_provider.indexed_embedding, None);
+        assert!(s.sentence_embedding_provider.connect_timeout_millis > 0);
+    }
+
+    /// 指纹必须同时带上模型名和维度，而且前端要能按 `|` 拆开它：
+    /// 只比维度会让"换了模型但维度相同"蒙混过关，只比模型名则漏掉
+    /// Matryoshka 截断（维度一变，`vector_distance_cos` 会让整条检索报错）。
+    #[test]
+    fn embedding_identity_names_both_the_model_and_the_dimensions() {
+        let mut s = Settings::default();
+        // 默认是本地 AllMiniLML6V2，没填维度。
+        assert_eq!(s.current_embedding_identity(), "v1|huggingface|AllMiniLML6V2|0");
+        s.sentence_embedding_provider.dimensions = Some(1024);
+        assert_eq!(s.current_embedding_identity(), "v1|huggingface|AllMiniLML6V2|1024");
+
+        // 在线模型用真正发给端点的那个名字（`OpenAICompatible(名字)`），
+        // 外层那个 `model` 字段不参与 —— 前端存的是前者。
+        s.sentence_embedding_provider.provider =
+            embedding::SentenceEmbeddingProvider::OpenAICompatible(String::from("text-embedding-v4"));
+        s.sentence_embedding_provider.model = String::from("stale-unused-field");
+        let identity = s.current_embedding_identity();
+        assert_eq!(identity, "v1|openai-compatible|text-embedding-v4|1024");
+        let parts: Vec<&str> = identity.split('|').collect();
+        assert_eq!(parts.len(), 4, "the frontend splits this on |: {identity}");
+        assert_eq!(parts[2], "text-embedding-v4");
+        assert_eq!(parts[3], "1024");
+
+        // 同一个模型换维度、同一个维度换模型，指纹都必须变。
+        let mut other = s.clone();
+        other.sentence_embedding_provider.dimensions = Some(512);
+        assert_ne!(other.current_embedding_identity(), identity);
+        let mut third = s.clone();
+        third.sentence_embedding_provider.provider =
+            embedding::SentenceEmbeddingProvider::OpenAICompatible(String::from(
+                "text-embedding-v3",
+            ));
+        assert_ne!(third.current_embedding_identity(), identity);
     }
 }

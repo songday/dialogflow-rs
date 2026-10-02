@@ -317,6 +317,14 @@ export default {
     chatModelTip: "无需下载大模型文件，除非您要使用下述功能。<br/>目前它的作用仅是为对话节点提供自动回复能力和建议回复模板。",
     sentenceEmbeddingTip: "无需下载模型文件。<br/>它的作用仅是提升用户输入的意图识别准确率，不会影响流程的响应功能。<br/>不下载模型也可以通过关键词和正则表达式的配置来识别用户意图。",
     simThresTip: "当表达式匹配相似度超过该阈值时，对应意图才会被使用。",
+    dimensions: "向量维度",
+    dimensionsAuto: "自动",
+    dimensionsTip:
+        "留空表示由模型自己决定，这是绝大多数情况的正确选择。只有实现了 Matryoshka 截断的模型才认这个参数（如 OpenAI text-embedding-3、通义 text-embedding-v4、智谱 embedding-3）；不认它的模型会返回自己的固定维度，此时保存或首次调用会明确报错，而不是把不一致的向量写进库。同一批数据必须始终用同一个模型和同一个维度。",
+    embeddingIndexModelChanged:
+        "知识库/意图里已有的向量是旧模型（{indexed}）算出来的，和当前配置不是同一个向量空间：不重建的话检索不会报错，但结果会变成噪声。请重新索引（重建向量）后再使用。",
+    embeddingIndexDimsChanged:
+        "已有向量是用另一份配置（{indexed}）算出来的：维度不一致时检索会直接失败（向量距离计算要求维度相同）。请重新索引（重建向量）。",
     hfModelMissing: "HuggingFace 模型文件不正确或缺失，请",
     hfModelDownloadLink: "点击此处从 Huggingface.co 下载模型文件",
     hfModelManual: "，或者手动下载后放到 {path} 目录",

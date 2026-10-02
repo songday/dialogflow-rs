@@ -345,6 +345,14 @@ export default {
     chatModelTip: "You don’t need to download the large model file unless you want to use the functionalities described below.<br/>Currently, its function is merely to provide automatic response capabilities and suggested reply templates for dialogue nodes.",
     sentenceEmbeddingTip: "Downloading model files is not necessary.<br/>Its function is merely to enhance the accuracy of intent recognition for user inputs, and it will not affect the response functionality of the process.<br/>User intent can also be recognized through the configuration of keywords and regular expressions without downloading the model.",
     simThresTip: "An intent is used when the expression matching similarity exceeds the threshold.",
+    dimensions: "Embedding dimensions",
+    dimensionsAuto: "Auto",
+    dimensionsTip:
+        "Leave it empty to let the model decide, which is the right choice in almost every case. Only models with Matryoshka truncation honour this parameter (e.g. OpenAI text-embedding-3, Qwen text-embedding-v4, Zhipu embedding-3); a model that ignores it returns its own fixed size, and saving or the first call then fails with a clear message instead of storing vectors of a different length. The same data must always use one model and one dimension.",
+    embeddingIndexModelChanged:
+        "The vectors already stored for your knowledge base and intents were produced by a different model ({indexed}), so they live in a different vector space: retrieval will not fail, but its results become noise until the vectors are rebuilt. Please re-index before using them.",
+    embeddingIndexDimsChanged:
+        "The stored vectors were produced with a different setting ({indexed}). Retrieval fails outright when the dimensions differ, because the distance function requires both sides to have the same length. Please re-index.",
     hfModelMissing: "HuggingFace model files were incorrect or missing, please",
     hfModelDownloadLink: "click here to download model files from Huggingface.co",
     hfModelManual: ", or you can download manually and put them in {path}",

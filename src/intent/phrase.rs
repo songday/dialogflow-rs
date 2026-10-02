@@ -6,6 +6,7 @@ use std::vec::Vec;
 
 use super::dto::IntentPhraseData;
 use crate::ai::embedding::embedding;
+use crate::man::settings;
 use crate::result::{Error, Result};
 use crate::retry_on_busy;
 
@@ -169,7 +170,7 @@ pub(crate) async fn add(
     // 重跑只会原样重放这两条语句。
     let vec_len = vectors.0.len();
     let vec_json = serde_json::to_string(&vectors.0)?;
-    retry_on_busy!(async {
+    let id = retry_on_busy!(async {
         let mut conn = conn()?;
         // CREATE TABLE 和 INSERT/UPDATE 收在同一个事务里：原先它们是两次独立加锁，
         // 中途失败会留下"表建好了但没数据"的中间态，重试又要重新抢两次锁。
@@ -210,7 +211,13 @@ pub(crate) async fn add(
         tx.commit().await?;
         log::info!("last_insert_rowid = {}", id);
         Ok(id)
-    })
+    })?;
+    // 短语向量已经落库，记下它是用哪个模型/维度算的（见
+    // settings::stamp_embedding_index）。打标失败不影响这条短语。
+    if let Err(e) = settings::stamp_embedding_index(robot_id).await {
+        log::warn!("Stamping embedding index of {robot_id} failed: {e:?}");
+    }
+    Ok(id)
 }
 
 /// 给一组**已存在**的短语重算向量。
@@ -280,7 +287,11 @@ pub(crate) async fn batch_add(
         }
         tx.commit().await?;
         Ok(())
-    })
+    })?;
+    if let Err(e) = settings::stamp_embedding_index(robot_id).await {
+        log::warn!("Stamping embedding index of {robot_id} failed: {e:?}");
+    }
+    Ok(())
 }
 
 pub(crate) async fn remove(robot_id: &str, id: i64) -> Result<()> {

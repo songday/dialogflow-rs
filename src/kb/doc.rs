@@ -18,6 +18,7 @@ use text_splitter::TextSplitter;
 
 use super::dto::DocData;
 use crate::ai::embedding;
+use crate::man::settings;
 use crate::result::{Error, Result};
 use crate::retry_on_busy;
 
@@ -162,7 +163,13 @@ pub(super) async fn save(
         save_doc_embedding(&tx, robot_id, doc_id, &chunks, &embeddings, vec_size).await?;
         tx.commit().await?;
         Ok(())
-    })
+    })?;
+    // 分块向量已经落库，记下它们是用哪个模型/维度算的（见
+    // settings::stamp_embedding_index）。打标失败不影响上传结果。
+    if let Err(e) = settings::stamp_embedding_index(robot_id).await {
+        log::warn!("Stamping embedding index of {robot_id} failed: {e:?}");
+    }
+    Ok(())
 }
 
 pub(super) async fn update(robot_id: &str, doc_id: i64, doc_content: &str) -> Result<()> {
@@ -186,7 +193,11 @@ pub(super) async fn update(robot_id: &str, doc_id: i64, doc_content: &str) -> Re
             tx.rollback().await?;
         }
         Ok(())
-    })
+    })?;
+    if let Err(e) = settings::stamp_embedding_index(robot_id).await {
+        log::warn!("Stamping embedding index of {robot_id} failed: {e:?}");
+    }
+    Ok(())
 }
 
 /// 删掉该机器人在 `doc.dat` 里的两张表（`robot::purge` 用）。
