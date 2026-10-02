@@ -1094,9 +1094,9 @@ mod tests {
         );
     }
 
-    /// 空 think 块是 Qwen3 专有的：**绝不能**注入到 llama/gemma/phi3 的提示词里，
-    /// 那会把它们的提示词弄脏。这个开关必须由 `convert_prompt` 按模型类型判断，
-    /// 而不是让调用方自己拼字符串。
+    /// 空 think 块是 Qwen3 专有的：**绝不能**注入到 llama/gemma/phi3/phi4-mini 的
+    /// 提示词里，那会把它们的提示词弄脏。这个开关必须由 `convert_prompt` 按模型类型
+    /// 判断，而不是让调用方自己拼字符串。
     #[test]
     fn the_thinking_markers_never_leak_into_other_models() {
         let history = Some(vec![Prompt {
@@ -1110,6 +1110,7 @@ mod tests {
             (HuggingFaceModel::TinyLlama1_1bChatV1_0, false),
             (HuggingFaceModel::Gemma2bInstruct, false),
             (HuggingFaceModel::Phi3Mini4kInstruct, false),
+            (HuggingFaceModel::Phi4MiniInstruct, false),
             (HuggingFaceModel::Gemma4E4BIt, true),
         ] {
             let info = m.get_info();

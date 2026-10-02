@@ -42,7 +42,19 @@ pub(crate) enum HuggingFaceModel {
     MultilingualE5Base,
     MultilingualE5Large,
     MxbaiEmbedLargeV1,
+    /// Microsoft Phi-3-mini-4k-instruct（3.8B，分片 safetensors）。
     Phi3Mini4kInstruct,
+    /// Microsoft Phi-4-mini-instruct（V4Mini，3.8B，BF16 分片 safetensors）。
+    ///
+    /// 架构和 Phi-3 是同一个（仓库 `config.json` 里 `architectures` 是
+    /// `Phi3ForCausalLM`、`model_type` 是 `phi3`），candle 里也共用 `phi3::Model`
+    /// —— 参考 `candle-examples/examples/phi/main.rs`，V3 / V3-medium / V4Mini 都走
+    /// `Model::Phi3` 那一支，所以本项目的推理也直接复用 `phi3.rs`。
+    ///
+    /// 与 Phi-3 的差别只有三处，都不在这个枚举里：BF16 权重与 longrope
+    /// （131072 上下文）在 `load_phi3_model_files` 里按 `model_type` 选 dtype，
+    /// chat 模板在 `convert_prompt` 里单独拼。
+    Phi4MiniInstruct,
     TinyLlama1_1bChatV1_0,
     Gemma2bInstruct,
     Gemma7bInstruct,
@@ -75,6 +87,8 @@ pub(crate) enum LoadedHuggingFaceModel {
     /// Gemma 4 的两种加载形状（纯文本 / 多模态）。`pub(crate)` 是为了让它能出现在
     /// `LoadedHuggingFaceModel` 这个 crate 级枚举里；具体形状见 `gemma.rs`。
     Gemma4((Device, super::gemma::Gemma4Loaded, Tokenizer)),
+    /// Phi-3-mini 与 Phi-4-mini（V4Mini）**共用**这个变体：两者在 candle 里是同一个
+    /// `phi3::Model`，形状完全一致，差别只在权重 dtype 与 chat 模板。
     Phi3((Device, Phi3, Tokenizer)),
     Moondream((Device, MoondreamModel, Tokenizer)),
     Qwen3((Device, Qwen3, Tokenizer)),
@@ -95,6 +109,9 @@ impl LoadedHuggingFaceModel {
                 LoadedHuggingFaceModel::Gemma4(load_gemma4_model_files(&info)?)
             }
             HuggingFaceModelType::Phi3 => {
+                LoadedHuggingFaceModel::Phi3(load_phi3_model_files(&info)?)
+            }
+            HuggingFaceModelType::Phi4Mini => {
                 LoadedHuggingFaceModel::Phi3(load_phi3_model_files(&info)?)
             }
             HuggingFaceModelType::Moondream => {
@@ -121,6 +138,10 @@ pub(crate) enum HuggingFaceModelType {
     Gemma,
     Gemma4,
     Phi3,
+    /// Phi-4-mini（V4Mini）。与 `Phi3` 共用 candle 的 `phi3::Model` 与
+    /// `LoadedHuggingFaceModel::Phi3`，单列出来是为了让它拿到自己的**加载 dtype**
+    /// （BF16）和**官方 chat 模板** —— 这两件事都与 Phi-3 不同。
+    Phi4Mini,
     Moondream,
     Qwen3,
     Qwen3Moe,
@@ -388,6 +409,49 @@ impl HuggingFaceModelInfo {
                 p.push_str("<|end|>\n<|assistant|>");
                 Ok(p)
             }
+            // Phi-4-mini（V4Mini）的官方模板，照 `tokenizer_config.json` 里的
+            // `chat_template` 逐字搬过来：
+            //   `{{ '<|' + message['role'] + '|>' + message['content'] + '<|end|>' }}`
+            //   最后是 `{{ '<|assistant|>' }}`。
+            //
+            // 和上面 Phi-3 那一支有**两处不能照抄**的差别：
+            //   * 开头**没有** `<s>`（Phi-3 模板以 `{{ bos_token }}` 起头，V4Mini 的
+            //     tokenizer 是 `add_bos_token: false`）；
+            //   * 角色标记后面**没有** `\n`，正文直接接 `<|end|>`。
+            // 多出来的换行虽然会被 `<|end|>` 这个 rstrip 的 added token 吃掉一部分，
+            // 但把官方形状原样拼出来才是安全的。
+            //
+            // 空的 history 回合要跳过（`<|user|><|end|>` 不是模板会产出的形状）；
+            // 两个调用方都传 `s = ""`，最新那条 user 消息在 history 末尾，所以
+            // 上面那个单独的 `user` 分支通常为空 —— 这里**不**像 Phi-3 那一支那样
+            // 无条件补一个空回合，官方模板也不会产出它。
+            HuggingFaceModelType::Phi4Mini => {
+                let mut p = String::with_capacity(s.len() + 64);
+                if !system.is_empty() {
+                    p.push_str("<|system|>");
+                    p.push_str(&system);
+                    p.push_str("<|end|>");
+                }
+                if let Some(h) = history {
+                    for i in h.iter() {
+                        if i.content.is_empty() {
+                            continue;
+                        }
+                        p.push_str("<|");
+                        p.push_str(&i.role);
+                        p.push_str("|>");
+                        p.push_str(&i.content);
+                        p.push_str("<|end|>");
+                    }
+                }
+                if !user.is_empty() {
+                    p.push_str("<|user|>");
+                    p.push_str(&user);
+                    p.push_str("<|end|>");
+                }
+                p.push_str("<|assistant|>");
+                Ok(p)
+            }
             // Qwen3 用 ChatML。和上面几个一样，只有 system 和我们自己拼的
             // assistant 开头是固定的，history 原样保留。
             //
@@ -641,6 +705,32 @@ impl HuggingFaceModel {
                 gguf_model_filename: "",
                 tokenizer_repository: "",
                 model_type: HuggingFaceModelType::Phi3,
+            },
+            // Phi-4-mini 的权重同样是分片 safetensors（`model-00001-of-00002` 两片 +
+            // 索引），所以和上面 Phi-3 一样：`model_files` 里去掉
+            // "model.safetensors"、由 `model_index_file` 描述权重。
+            // `tie_word_embeddings: true`，没有单独的 `lm_head` 权重。
+            HuggingFaceModel::Phi4MiniInstruct => HuggingFaceModelInfo {
+                repository: "microsoft/Phi-4-mini-instruct",
+                mirror: "microsoft/Phi-4-mini-instruct",
+                model_files: {
+                    let mut v = get_common_model_files();
+                    let mut idx = 0usize;
+                    for &f in v.iter() {
+                        if f.eq("model.safetensors") {
+                            break;
+                        }
+                        idx += 1;
+                    }
+                    v.remove(idx);
+                    v
+                },
+                model_index_file: "model.safetensors.index.json",
+                tokenizer_filename: "tokenizer.json",
+                dimenssions: 3072,
+                gguf_model_filename: "",
+                tokenizer_repository: "",
+                model_type: HuggingFaceModelType::Phi4Mini,
             },
             HuggingFaceModel::TinyLlama1_1bChatV1_0 => HuggingFaceModelInfo {
                 repository: "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
@@ -1427,10 +1517,19 @@ pub(crate) fn load_phi3_model_files(
     info: &HuggingFaceModelInfo,
 ) -> Result<(Device, Phi3, Tokenizer)> {
     let device = device()?;
-    let dtype = if device.is_cuda() {
-        DType::BF16
-    } else {
-        DType::F32
+    // V4Mini（Phi-4-mini）的权重是 BF16：照参考例子 `candle-examples/examples/phi/
+    // main.rs` 的做法（V3 / V3-medium / V4Mini 都走这一支）用
+    // `device.bf16_default_to_f32()` —— 支持 BF16 的设备（CUDA / Metal）用 BF16，
+    // CPU 自动落回 F32。Phi-3-mini 保持原来的取舍不变。
+    let dtype = match info.model_type {
+        HuggingFaceModelType::Phi4Mini => device.bf16_default_to_f32(),
+        _ => {
+            if device.is_cuda() {
+                DType::BF16
+            } else {
+                DType::F32
+            }
+        }
     };
     let dir = info.local_directory();
     let filenames = load_safetensors(dir, info.model_index_file)?
@@ -1960,25 +2059,94 @@ mod tests {
 
     /// Non-GGUF models keep a single repository, so nothing changes for them.
     ///
-    /// Uses the real `Phi3Mini4kInstruct` entry rather than a hand-built struct:
-    /// its `model_files` deliberately omits `model.safetensors` (weights come
-    /// from `model_index_file` shards) and hand-building it is easy to get wrong.
+    /// Uses real entries rather than hand-built structs: their `model_files`
+    /// deliberately omit `model.safetensors` (weights come from
+    /// `model_index_file` shards) and hand-building that is easy to get wrong.
+    /// Phi-4-mini (V4Mini) is the same shape as Phi-3-mini, so it must be
+    /// covered too — its weights are also two shards behind an index file.
     #[test]
     fn non_gguf_models_keep_a_single_repository() {
-        let info = HuggingFaceModel::Phi3Mini4kInstruct.get_info();
-        assert_eq!(info.tokenizer_repository(), info.mirror);
-        assert_eq!(info.local_directory(), info.repository);
-        // For every non-GGUF entry these three coincide, so the local directory,
-        // the download origin and the tokenizer origin are all the same repo.
-        assert_eq!(info.local_directory(), info.mirror);
-        let files = download_file_list(&info);
-        for (repository, _) in files.iter() {
-            assert_eq!(*repository, info.mirror);
+        for m in [
+            HuggingFaceModel::Phi3Mini4kInstruct,
+            HuggingFaceModel::Phi4MiniInstruct,
+        ] {
+            let info = m.get_info();
+            assert_eq!(info.tokenizer_repository(), info.mirror);
+            assert_eq!(info.local_directory(), info.repository);
+            // For every non-GGUF entry these three coincide, so the local directory,
+            // the download origin and the tokenizer origin are all the same repo.
+            assert_eq!(info.local_directory(), info.mirror);
+            assert_eq!(
+                info.model_index_file, "model.safetensors.index.json",
+                "{m:?} weights are sharded, so the index file has to be named"
+            );
+            let files = download_file_list(&info);
+            for (repository, _) in files.iter() {
+                assert_eq!(*repository, info.mirror);
+            }
+            assert!(
+                files.iter().all(|(_, f)| f != "model.safetensors"),
+                "{m:?} must not look for a single-file checkpoint: {files:?}"
+            );
+            assert!(
+                files.iter().any(|(_, f)| f == "tokenizer.json"),
+                "the tokenizer still has to be in the list: {files:?}"
+            );
         }
-        assert!(files.iter().all(|(_, f)| f != "model.safetensors"));
-        assert!(
-            files.iter().any(|(_, f)| f == "tokenizer.json"),
-            "the tokenizer still has to be in the list: {files:?}"
+    }
+
+    /// Phi-4-mini（V4Mini）的提示词照官方 `chat_template` 拼：**没有**开头 `<s>`、
+    /// 角色标记后**没有**换行，每条消息以 `<|end|>` 收尾，最后是 `<|assistant|>`。
+    ///
+    /// 它和 Phi-3-mini 的模板长得很像，但这两处差别不能照抄 —— 所以这里把两个模型的
+    /// 期望值放在一起对照，谁被改成对方的样子都会红。
+    #[test]
+    fn phi4_mini_uses_its_own_chat_template() {
+        let history = Some(vec![
+            crate::ai::chat::Prompt {
+                role: String::from("system"),
+                content: String::from("你是客服"),
+            },
+            crate::ai::chat::Prompt {
+                role: String::from("user"),
+                content: String::from("你好"),
+            },
+        ]);
+        // 走 `chat()` / `gen_text()` 的真实形状：`s` 为空、最新一条 user 在 history 末尾。
+        assert_eq!(
+            HuggingFaceModel::Phi4MiniInstruct
+                .get_info()
+                .convert_prompt("", history.clone(), false)
+                .unwrap(),
+            "<|system|>你是客服<|end|><|user|>你好<|end|><|assistant|>"
+        );
+        // Phi-4-mini 忽略思考开关：两种取值必须完全一样。
+        assert_eq!(
+            HuggingFaceModel::Phi4MiniInstruct
+                .get_info()
+                .convert_prompt("", history.clone(), true)
+                .unwrap(),
+            "<|system|>你是客服<|end|><|user|>你好<|end|><|assistant|>"
+        );
+        // Phi-3 那一支不受影响。注意它比官方模板多一个**空回合**：`s` 是空的
+        // （最新那条 user 消息在 history 里），而这一支仍无条件补
+        // `<|user|>\n<|end|>\n`。这是既有的小瑕疵（`convert_prompt` 里 Qwen3 那段
+        // 注释也提到过），这里只把它钉住，Phi-4-mini 的分支不重复这个形状。
+        assert_eq!(
+            HuggingFaceModel::Phi3Mini4kInstruct
+                .get_info()
+                .convert_prompt("", history, false)
+                .unwrap(),
+            "<s><|system|>\n你是客服<|end|>\n<|user|>\n你好<|end|>\n\
+             <|user|>\n<|end|>\n<|assistant|>"
+        );
+        // 没有历史、也没有单独 user 文本时也不能留下空回合。
+        assert_eq!(
+            HuggingFaceModel::Phi4MiniInstruct
+                .get_info()
+                .convert_prompt("", None, false)
+                .unwrap(),
+            "<|assistant|>"
         );
     }
 }

@@ -802,6 +802,12 @@ const chatProviders = [
                 label: "microsoft/Phi-3-mini-4k-instruct (7.7GB)",
                 value: "Phi3Mini4kInstruct",
             },
+            // Phi-4-mini（V4Mini）。架构与 Phi-3 同一个（candle 里共用 phi3），
+            // 权重是 BF16 的两片分片，所以体积与 Phi-3-mini 相当。
+            {
+                label: "microsoft/Phi-4-mini-instruct (7.7GB)",
+                value: "Phi4MiniInstruct",
+            },
             {
                 label: "google/gemma-2b-it (4.9GB)",
                 value: "Gemma2bInstruct",
