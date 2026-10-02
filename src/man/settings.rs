@@ -450,7 +450,7 @@ pub(crate) async fn exists(store: &db::RedbStore) -> Result<bool> {
 pub(crate) async fn init_global(store: &db::RedbStore) -> Result<GlobalSettings> {
     let settings = GlobalSettings::default();
     db::write(store, TABLE, SETTINGS_KEY, &settings).await?;
-    let format = time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second]]")
+    let format = time::format_description::parse_borrowed::<3>("[year]-[month]-[day] [hour]:[minute]:[second]]")
         .expect("Invalid format description");
     let t = time::OffsetDateTime::now_utc();
     let t_str = t
