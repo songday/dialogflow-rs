@@ -309,6 +309,10 @@ pub(crate) struct SentenceEmbeddingProvider {
     pub(crate) proxy_url: String,
     /// 期望的向量维度，`None` = 由模型自己决定（绝大多数情况）。
     ///
+    /// 这是**当前 provider 生效的那一份**，后端只用它（见 [`crate::ai::embedding`]）。
+    /// 它和 [`Self::dimensions_by_provider`] 的关系：后者是给设置页在"本地/在线"之间
+    /// 来回切换时记住各自那一份用的，设置页保存前会把当前 provider 的值同步到这里。
+    ///
     /// 只有实现了 Matryoshka 截断的模型才认这个参数，而且字段名各家不同：
     /// OpenAI / DashScope 兼容模式 / 硅基流动用 `dimensions`，Cohere / Voyage /
     /// Mistral 用 `output_dimension`，Gemini 用 `output_dimensionality`。我们对
@@ -316,9 +320,26 @@ pub(crate) struct SentenceEmbeddingProvider {
     /// 值在别的厂商那里可能被无视——请求发出去之后会**核对返回向量的长度**，
     /// 没生效就直接报错，而不是把不一致的向量写进库。
     ///
+    /// 保留 `dimensions` 这个名字（而不是只留下面那张表）：它是**后端唯一读的那个
+    /// 字段**，接口形状和"缺省即自动"这个语义都不变，老记录也照旧能读。
+    ///
     /// `#[serde(default)]` 是必需的：老记录里没有这个键，没有它整个设置都读不回来。
     #[serde(default)]
     pub(crate) dimensions: Option<u32>,
+    /// 每个 provider（本地 / 在线）各自那份维度，`{"HuggingFace": 8192, ...}`。
+    ///
+    /// 为什么不能只留一个 `dimensions`：本地模型和在线模型是两类互不相干的模型，
+    /// 维度跟着模型走。只存一份的话，"在本地填 8192、保存、切到在线"会把 8192
+    /// 当成在线那一份，用户看到的是自己从没填过的值。
+    ///
+    /// 服务端不解析它，只是存下来再原样返回给设置页。
+    ///
+    /// `allow(dead_code)`：Rust 这边确实一个字段都不读（读写都靠 serde），但它绝不
+    /// 是死代码——删掉它，设置页每打开一次，"本地 8192 / 在线 16"就只剩当前生效的
+    /// 那一份，用户在本地填的值会跑到在线那一栏去。
+    #[allow(dead_code)]
+    #[serde(rename = "dimensionsByProvider", default)]
+    pub(crate) dimensions_by_provider: Option<serde_json::Value>,
     /// **已经写进向量表的那份索引**用的是哪个模型/维度。
     ///
     /// 它和当前配置是两件事：换掉模型之后，库里旧向量还在，要等重新索引（或重建）
@@ -402,6 +423,7 @@ impl Default for Settings {
                 api_key: String::new(),
                 model: String::new(),
                 dimensions: None,
+                dimensions_by_provider: None,
                 indexed_embedding: None,
                 connect_timeout_millis: 5000,
                 read_timeout_millis: 10000,
@@ -1216,9 +1238,9 @@ mod tests {
         );
     }
 
-    /// 老记录里没有 `dimensions` / `indexedEmbedding` 两个键。少一个
-    /// `#[serde(default)]` 就会让**整个设置**读不回来 —— 那等于用户升级之后
-    /// 机器人的配置全部消失，比缺少两个可选功能严重得多。
+    /// 老记录里没有 `dimensions` / `dimensionsByProvider` / `indexedEmbedding`
+    /// 这些键。少一个 `#[serde(default)]` 就会让**整个设置**读不回来 —— 那等于
+    /// 用户升级之后机器人的配置全部消失，比缺少几个可选功能严重得多。
     #[test]
     fn settings_without_the_new_keys_still_load() {
         let mut v = serde_json::to_value(Settings::default()).unwrap();
@@ -1229,12 +1251,36 @@ mod tests {
             .as_object_mut()
             .unwrap();
         assert!(p.remove("dimensions").is_some());
+        assert!(p.remove("dimensionsByProvider").is_some());
         assert!(p.remove("indexedEmbedding").is_some());
 
         let s: Settings = serde_json::from_value(v).unwrap();
         assert_eq!(s.sentence_embedding_provider.dimensions, None);
+        assert_eq!(s.sentence_embedding_provider.dimensions_by_provider, None);
         assert_eq!(s.sentence_embedding_provider.indexed_embedding, None);
         assert!(s.sentence_embedding_provider.connect_timeout_millis > 0);
+    }
+
+    /// 每个 provider 各自那份维度必须原样进出：服务端不解析它，但也不能把它丢掉，
+    /// 否则设置页每打开一次，"本地 8192 / 在线 16"就退化成只剩当前生效的那一份。
+    #[test]
+    fn per_provider_dimensions_round_trip_untouched() {
+        let mut s = Settings::default();
+        s.sentence_embedding_provider.dimensions = Some(8192);
+        s.sentence_embedding_provider.dimensions_by_provider = Some(serde_json::json!({
+            "HuggingFace": 8192,
+            "OpenAICompatible": 16,
+        }));
+
+        let json = serde_json::to_string(&s).unwrap();
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.sentence_embedding_provider.dimensions, Some(8192));
+        let map = back
+            .sentence_embedding_provider
+            .dimensions_by_provider
+            .unwrap();
+        assert_eq!(map["HuggingFace"], 8192);
+        assert_eq!(map["OpenAICompatible"], 16);
     }
 
     /// 指纹必须同时带上模型名和维度，而且前端要能按 `|` 拆开它：

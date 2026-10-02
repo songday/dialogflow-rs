@@ -57,7 +57,13 @@ const settings = reactive({
         showApiKeyInput: true,
         apiKey: "",
         // 期望的向量维度。null = 自动（由模型决定），这时后端不会发 dimensions 键。
+        // 这是**当前 provider 生效的那一份**，后端只读它。
         dimensions: null,
+        // 每个 provider 各自那份维度，{ HuggingFace: 8192, OpenAICompatible: 16 }。
+        // 「本地模型 / 在线模型」是两类互不相干的模型，维度跟着模型走，所以必须分开
+        // 存：只留一份的话，在本地填 8192、保存、切到在线，在线会显示 8192 —— 一个
+        // 用户从没填过的值。后端不解析它，只负责存下来原样返回。
+        dimensionsByProvider: {},
         // 库里现有向量是用哪个模型/维度建的（后端打的标）。它只由**写入**更新，
         // 所以"改了模型还没重新索引"能从这里看出来。null = 从没打过标（老库）。
         indexedEmbedding: null,
@@ -94,7 +100,7 @@ const settings = reactive({
         proxyUrl: "",
     },
 });
-const formLabelWidth = "150px";
+const formLabelWidth = "160px";
 const loading = ref(false);
 const smtpPassed = ref(false);
 const smtpFailed = ref(false);
@@ -191,6 +197,21 @@ onMounted(async () => {
         sentenceEmbeddingDynamicReqUrlMap.set(
             settings.sentenceEmbeddingProvider.provider.id,
             settings.sentenceEmbeddingProvider.apiUrl,
+        );
+        // 每份 provider 的维度都从库里种进来（后端原样存着那张表），再用当前生效
+        // 的 dimensions 覆盖当前 provider 那一项：老记录里没有那张表，这是它唯一
+        // 的迁移入口。`??` 而不是 `||` —— 0 和 null 都是要原样保留的值。
+        sentenceEmbeddingDimensionsMap.clear();
+        for (const [k, v] of Object.entries(
+            settings.sentenceEmbeddingProvider.dimensionsByProvider || {},
+        ))
+            sentenceEmbeddingDimensionsMap.set(k, v ?? null);
+        sentenceEmbeddingDimensionsMap.set(
+            settings.sentenceEmbeddingProvider.provider.id,
+            settings.sentenceEmbeddingProvider.dimensions ?? null,
+        );
+        restoreSentenceEmbeddingDimensions(
+            settings.sentenceEmbeddingProvider.provider.id,
         );
         await changeChatProvider(settings.chatProvider.provider.id);
         await changeSentenceEmbeddingProvider(
@@ -494,6 +515,10 @@ async function saveSettings() {
     settings.maxSessionIdleSec = maxSessionIdleMin.value * 60;
     settings.sentenceEmbeddingProvider.similarityThreshold =
         similarityThreshold.value / 100;
+    // 把"当前 provider 那一份维度"定稿到 `dimensions`（后端只读它），并把
+    // `dimensionsByProvider` 刷成最新。用户可能一次都没动过输入框，所以不能只靠
+    // 输入框的 setter。
+    syncSentenceEmbeddingDimensions();
     const r = await httpReq(
         "POST",
         "management/settings",
@@ -1135,7 +1160,51 @@ const fetchChatModelList = async () => {
 
 const sentenceEmbeddingModelOptions = reactive([]);
 const sentenceEmbeddingDynamicReqUrlMap = new Map();
+// 每个 provider（本地/在线）各记一份用户填的「向量维度」。理由和上面那张 URL map
+// 完全一样：这一栏的当前值只是**当前 provider 的**值，切走再切回来要有地方取回。
+//
+// 和 URL map 的唯一区别是它**要持久化**：URL map 里那份东西本来就在设置里
+// （apiUrl），而维度如果只留一份在设置里，两个 provider 就会互相覆盖
+// （在本地填 8192 保存，切到在线也显示 8192）。所以这里多发一张
+// `dimensionsByProvider` 表给后端存着，同时把当前 provider 的值同步进
+// `dimensions` —— 后端只读后者。
+const sentenceEmbeddingDimensionsMap = new Map();
+
+// 把 `dimensions` 同步回 map，并原样维护要发给后端的那张表。
+// 三个调用点：切 provider、用户改动维度、保存之前。
+const syncSentenceEmbeddingDimensions = () => {
+    const p = settings.sentenceEmbeddingProvider;
+    const id = p.provider.id;
+    if (id) sentenceEmbeddingDimensionsMap.set(id, p.dimensions ?? null);
+    const table = {};
+    for (const [k, v] of sentenceEmbeddingDimensionsMap) table[k] = v;
+    p.dimensionsByProvider = table;
+};
+
+// 切到 provider `id` 时取回它那份维度。
+//
+// 有记录就原样取回（`null` = 自动，也是一个有意义的值，不能和"没记录过"混为一谈）；
+// 没记录（第一次见到这个 provider）就用**存库的那一份**兜底一次：老记录里只有
+// `dimensions`、没有那张表，这是它唯一的迁移入口。
+const restoreSentenceEmbeddingDimensions = (id) => {
+    const p = settings.sentenceEmbeddingProvider;
+    if (sentenceEmbeddingDimensionsMap.has(id))
+        p.dimensions = sentenceEmbeddingDimensionsMap.get(id) ?? null;
+    else if (p.provider.id == id) p.dimensions = p.dimensions ?? null;
+    else p.dimensions = null;
+};
+
 const choosedSentenceEmbeddingProvider = ref("");
+// 输入框绑这个，而不是直接绑 `dimensions`：setter 里顺手把当前 provider 那一份
+// 记进 map、并刷新要发给后端的那张表。用户每改一次维度就同步一次，所以即使直接
+// 点保存（不切 provider）也不会漏。
+const embeddingDimensionsInput = computed({
+    get: () => settings.sentenceEmbeddingProvider.dimensions,
+    set: (v) => {
+        settings.sentenceEmbeddingProvider.dimensions = v ?? null;
+        syncSentenceEmbeddingDimensions();
+    },
+});
 const sentenceEmbeddingVendorKey = ref("");
 const refreshSentenceEmbeddingVendor = () => {
     const p = sentenceEmbeddingProviders.find((d) => d.id == "OpenAICompatible");
@@ -1164,22 +1233,22 @@ const applySentenceEmbeddingVendorPreset = (key) => {
     refreshSentenceEmbeddingVendor();
 };
 const changeSentenceEmbeddingProvider = async (n) => {
-    // 换的是"本地模型 ↔ 在线模型"这类**类别**切换，不是勾选框的初始化：这时维度
-    // 一定不再适用（它跟的是模型，不是这一栏），清成"自动"。`provider.model` 是
-    // 另一回事——每个 provider 各留一份，下面那个循环之后不用动它。
+    // 维度跟的是**模型**，而「本地模型 / 在线模型」是两类互不相干的模型，所以切
+    // 类别时要换一份维度值。但**不能清掉**：那是用户填过的内容，切回来必须还在。
     //
-    // 初始化时必须跳过（`choosed*` 还是空串），否则 `onMounted` 里这次调用会把刚
-    // 读回来的 dimensions 清掉。同 chat 里 apiUrl 的处理方式。
-    if (
-        choosedSentenceEmbeddingProvider.value &&
-        choosedSentenceEmbeddingProvider.value != n
-    )
-        settings.sentenceEmbeddingProvider.dimensions = null;
-    if (choosedSentenceEmbeddingProvider.value)
+    // 存的是"切走前那个 provider"那一份，所以先用 `choosed*`（它此刻还指向旧
+    // provider），不能用 `provider.id`——那是控件当前绑定的值。初始化时
+    // `choosed*` 还是空串，整段跳过；`onMounted` 已经替我们把两份都种好了。
+    if (choosedSentenceEmbeddingProvider.value) {
+        sentenceEmbeddingDimensionsMap.set(
+            choosedSentenceEmbeddingProvider.value,
+            settings.sentenceEmbeddingProvider.dimensions ?? null,
+        );
         sentenceEmbeddingDynamicReqUrlMap.set(
             choosedSentenceEmbeddingProvider.value,
             settings.sentenceEmbeddingProvider.apiUrl,
         );
+    }
     for (let i = 0; i < sentenceEmbeddingProviders.length; i++) {
         if (sentenceEmbeddingProviders[i].id == n) {
             if (sentenceEmbeddingProviders[i].apiUrlDisabled)
@@ -1195,6 +1264,8 @@ const changeSentenceEmbeddingProvider = async (n) => {
                 sentenceEmbeddingProviders[i].apiUrlDisabled;
             settings.sentenceEmbeddingProvider.showApiKeyInput =
                 sentenceEmbeddingProviders[i].showApiKeyInput;
+            // 换到另一类别之前，先把它那份维度取回来。
+            restoreSentenceEmbeddingDimensions(n);
             choosedSentenceEmbeddingProvider.value = n;
             // 同 chat：关掉可能开着的添加表单。
             isAddingAnotherSentenceEmbeddingModel.value = false;
@@ -1217,6 +1288,7 @@ const changeSentenceEmbeddingProvider = async (n) => {
         );
 };
 const sentenceEmbeddingModelListLoading = ref(false);
+
 const fetchSentenceEmbeddingModelList = async () => {
     if (!settings.sentenceEmbeddingProvider.apiUrl) return;
     sentenceEmbeddingModelListLoading.value = true;
@@ -1771,7 +1843,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                     <el-form-item :label="t('botSettings.dimensions')">
                         <div class="threshold-row">
                             <el-input-number
-                                v-model="settings.sentenceEmbeddingProvider.dimensions"
+                                v-model="embeddingDimensionsInput"
                                 :min="16"
                                 :max="8192"
                                 :step="1"
