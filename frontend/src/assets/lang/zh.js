@@ -338,6 +338,7 @@ export default {
     hfModelLoading: "正在后台加载模型：{model}…",
     downloading: "正在下载",
     modelChangedWarning: "句子向量模型已被修改，这可能引起向量维度不匹配问题<strong>（可以重新生成所有句子的向量来解决）</strong>。是否继续？",
+    embeddingDimensionsChangedWarning: "句子向量的维度已被修改，已有向量与新维度不一致会导致检索失败<strong>（可以重新生成所有句子的向量来解决）</strong>。是否继续？",
     apiKey: "API 密钥",
     smtp: {
       title: "邮件设置",

@@ -366,6 +366,7 @@ export default {
     hfModelLoading: "Loading model in the background: {model}…",
     downloading: "Downloading",
     modelChangedWarning: "Sentence embedding model has been changed, this may cause dimension mismatch issue <strong>(You can regenerate all sentences to resolve)</strong>. Continue?",
+    embeddingDimensionsChangedWarning: "The embedding dimensions have been changed. Existing vectors no longer match the new dimensions, which makes retrieval fail <strong>(You can regenerate all sentences to resolve)</strong>. Continue?",
     apiKey: "API key",
     smtp: {
       title: "Email settings",

@@ -343,9 +343,9 @@ pub(crate) struct SentenceEmbeddingProvider {
     /// **已经写进向量表的那份索引**用的是哪个模型/维度。
     ///
     /// 它和当前配置是两件事：换掉模型之后，库里旧向量还在，要等重新索引（或重建）
-    /// 才会变。设置页拿它和当前配置比，不一致就警告——见
-    /// [`Settings::indexed_embedding_matches`] 的说明（向量空间换掉之后不重新索引，
-    /// 检索要么直接报错，要么静默变成噪声）。
+    /// 才会变。设置页拿它和当前配置比，不一致就警告（见 `Settings.vue` 的
+    /// `embeddingIndexWarning`）：换了模型的话向量空间整个不同，检索**不会报错**、
+    /// 只会全是噪声；只换了维度的话 `vector_distance_cos` 会让整条检索直接失败。
     #[serde(rename = "indexedEmbedding", default)]
     pub(crate) indexed_embedding: Option<String>,
 }

@@ -127,6 +127,10 @@ const sentenceEmbeddingModelLocalPath = ref("");
 // 改了下拉框而还没保存。
 const savedChatModel = ref("");
 const savedEmbeddingModel = ref("");
+// 存库的向量维度（就是「当前 provider 生效的那一份」`dimensions`）。
+// 和上面两个 ref 一样，用来判断用户改了但还没保存——只是这一项改动了不会让
+// "重新加载模型"变得可疑，而是会让库里已有的向量失效（维度不一致检索直接失败）。
+const savedEmbeddingDimensions = ref(null);
 // 后端 provider 的形状是 `{id, model}`：只有 HuggingFace 时 model 才是本地模型名。
 const savedLocalModelName = (provider) =>
     provider?.id == "HuggingFace" ? provider.model || "" : "";
@@ -168,6 +172,17 @@ onMounted(async () => {
         null,
     );
     if (r.status == 200) {
+        // `copyProperties` 跳过值为 null / undefined 的键（见 assets/tools.js），
+        // 这对"用响应合并默认值"是对的，但**后端明确为 null 的字段就合并不进来**，
+        // 内存里会留着上一轮的旧值。本对象里有三个字段合法地就是 null：
+        //   dimensions        没有目标维度（＝自动）
+        //   dimensionsByProvider / indexedEmbedding   从没设置过
+        // 不先清空的话：后端说"本地那份是 null"，界面上却留着在线那份 16，
+        // 保存时的"维度变了"判定就会误报。这几个字段的权威来源只有后端，所以
+        // 每次 load 都先归零再合并。
+        settings.sentenceEmbeddingProvider.dimensions = null;
+        settings.sentenceEmbeddingProvider.dimensionsByProvider = {};
+        settings.sentenceEmbeddingProvider.indexedEmbedding = null;
         copyProperties(r.data, settings);
         maxSessionIdleMin.value = settings.maxSessionIdleSec / 60;
         if (settings.sentenceEmbeddingProvider.similarityThreshold != null)
@@ -180,6 +195,8 @@ onMounted(async () => {
         savedEmbeddingModel.value = savedLocalModelName(
             r.data.sentenceEmbeddingProvider.provider,
         );
+        savedEmbeddingDimensions.value =
+            r.data.sentenceEmbeddingProvider.dimensions ?? null;
         // 这件事必须在 change*Provider 之前做：
         // 把已存地址种进 urlMap。change*Provider 的 else 分支要读这个 map，
         // 不种的话它会拿到 undefined，于是把刚 copyProperties 进来的用户
@@ -488,12 +505,27 @@ async function reloadModel(kind) {
 }
 
 async function save() {
-    if (
+    // 两种情况都会让库里的旧向量失效，都要先问一句：
+    //
+    // - 换了 provider（本地模型 ↔ 在线模型）：这是"模型换了"，向量空间整个不同。
+    // - 只改了维度（Matryoshka 截断）：同一模型的另一段长度，`vector_distance_cos`
+    //   遇到维度不一致会直接报错，检索整体挂掉。
+    //
+    // 注意这里比的是**当前 provider 那一份**与「存库时那一份」：provider 一起比是
+    // 因为同一份 `savedEmbeddingDimensions` 在切 provider 后就变成另一栏的基准了。
+    const savedDims = savedEmbeddingDimensions.value;
+    const currentDims = settings.sentenceEmbeddingProvider.dimensions ?? null;
+    const dimsChanged = (savedDims ?? null) !== currentDims;
+    const providerChanged =
         originalSentenceEmbeddingModelId.value !=
-        settings.sentenceEmbeddingProvider.provider.id
-    ) {
+        settings.sentenceEmbeddingProvider.provider.id;
+    if (providerChanged || dimsChanged) {
         ElMessageBox.confirm(
-            t("botSettings.modelChangedWarning"),
+            t(
+                providerChanged
+                    ? "botSettings.modelChangedWarning"
+                    : "botSettings.embeddingDimensionsChangedWarning",
+            ),
             t("common.warning"),
             {
                 confirmButtonText: t("common.confirm"),
@@ -534,6 +566,11 @@ async function saveSettings() {
         savedEmbeddingModel.value = savedLocalModelName(
             settings.sentenceEmbeddingProvider.provider,
         );
+        // 基准也要跟着更新，否则"存完再点一次保存"会拿旧基准再弹一次同样的警告。
+        // `originalSentenceEmbeddingModelId` 故意**不动**：它记录的是"进这个页面时
+        // 存库的是哪个 provider"，是"这次会话里换过 provider"的依据，语义不同。
+        savedEmbeddingDimensions.value =
+            settings.sentenceEmbeddingProvider.dimensions ?? null;
         await checkHfModelFiles();
         // 换了本地模型的话，后端已经开始在后台装它了：这里开始（或继续）显示进度。
         await refreshModelLoadStatus();
