@@ -1543,7 +1543,10 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             show-password
                         />
                     </el-form-item>
-                    <el-form-item :label="t('botSettings.model')">
+                    <el-form-item
+                        :label="t('botSettings.model')"
+                        class="model-row"
+                    >
                         <el-select
                             ref="chatModelSelector"
                             v-model="settings.chatProvider.provider.model"
@@ -1609,13 +1612,13 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             </template>
                         </el-select>
                         <el-button
+                            class="action-btn"
                             v-if="
                                 settings.chatProvider.provider.id ==
                                 'OpenAICompatible'
                             "
                             :loading="chatModelListLoading"
                             :disabled="!settings.chatProvider.apiUrl"
-                            style="margin-left: 8px"
                             @click="fetchChatModelList"
                         >
                             {{ $t("botSettings.fetchModelList") }}
@@ -1710,6 +1713,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
         </div>
         <div v-if="isLocalChatModel" class="model-check-row">
             <el-button
+                class="action-btn"
                 v-if="canCheckChatModel"
                 size="small"
                 :loading="checkingChatModel"
@@ -1725,6 +1729,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             <!-- 手动重装：模型存在与否都能点。文件刚补好（提示位还停在"缺失"）
                  或者想确认一次装载失败的原因时，这是唯一不必等下一次对话的入口。 -->
             <el-button
+                class="action-btn"
                 size="small"
                 :loading="chatModelLoad.loading"
                 @click="reloadModel('chat')"
@@ -1846,7 +1851,10 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             show-password
                         />
                     </el-form-item>
-                    <el-form-item :label="t('botSettings.model')">
+                    <el-form-item
+                        :label="t('botSettings.model')"
+                        class="model-row"
+                    >
                         <el-select
                             ref="sentenceEmbeddingModelSelector"
                             v-model="
@@ -1919,6 +1927,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             </template>
                         </el-select>
                         <el-button
+                            class="action-btn"
                             v-if="
                                 settings.sentenceEmbeddingProvider.provider
                                     .id == 'OpenAICompatible'
@@ -1927,7 +1936,6 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             :disabled="
                                 !settings.sentenceEmbeddingProvider.apiUrl
                             "
-                            style="margin-left: 8px"
                             @click="fetchSentenceEmbeddingModelList"
                         >
                             {{ $t("botSettings.fetchModelList") }}
@@ -2062,6 +2070,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
         </el-alert>
         <div class="model-check-row">
             <el-button
+                class="action-btn"
                 size="small"
                 :loading="checkingVectorDimensions"
                 @click="checkVectorDimensions"
@@ -2146,6 +2155,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
         </div>
         <div v-if="isLocalEmbeddingModel" class="model-check-row">
             <el-button
+                class="action-btn"
                 v-if="canCheckEmbeddingModel"
                 size="small"
                 :loading="checkingEmbeddingModel"
@@ -2160,6 +2170,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             </el-button>
             <!-- 同对话卡片：重装按钮不看"模型缺失"提示，谁都能点。 -->
             <el-button
+                class="action-btn"
                 size="small"
                 :loading="sentenceEmbeddingModelLoad.loading"
                 @click="reloadModel('embedding')"
@@ -2303,6 +2314,46 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
     font-size: 12px;
     line-height: 1.5;
     margin-top: 4px;
+}
+
+/* 「模型」那一行是下拉 + 「获取模型列表」按钮：el-form-item__content 默认
+   flex-wrap: wrap，而 el-select 自身宽度是 100%，按钮会被挤到下一行。这里禁止
+   换行，让下拉自己收缩，按钮和下拉留在同一行。 */
+.model-row :deep(.el-form-item__content) {
+    flex-wrap: nowrap;
+    gap: 8px;
+}
+
+.model-row :deep(.el-select) {
+    flex: 1;
+    min-width: 0;
+}
+
+.model-row :deep(.el-button) {
+    flex-shrink: 0;
+}
+
+/* 页面里的操作按钮（获取模型列表 / 检测模型 / 重新加载模型 / 检测已存向量维度）：
+   默认的白底描边按钮夹在表单里和输入框几乎一样，给一层浅底色区分出「可点」的入口。 */
+.action-btn {
+    background: var(--el-color-primary-light-9, #ecf5ff);
+    border-color: var(--el-color-primary-light-5, #a0cfff);
+    color: var(--el-color-primary, #409eff);
+}
+
+.action-btn:not(.is-disabled):not(.is-loading):hover,
+.action-btn:not(.is-disabled):not(.is-loading):focus {
+    background: var(--el-color-primary-light-8, #d9ecff);
+    border-color: var(--el-color-primary, #409eff);
+    color: var(--el-color-primary, #409eff);
+}
+
+/* 禁用 / 加载中沿用 Element Plus 的灰态，别让按钮看起来还能点。 */
+.action-btn.is-disabled,
+.action-btn.is-disabled:hover {
+    background: var(--el-fill-color-light, #f5f7fa);
+    border-color: var(--el-border-color-lighter, #ebeef5);
+    color: var(--el-text-color-placeholder, #a8abb2);
 }
 
 .proxy-row {
