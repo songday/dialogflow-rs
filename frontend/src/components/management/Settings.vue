@@ -1326,6 +1326,62 @@ const changeSentenceEmbeddingProvider = async (n) => {
 };
 const sentenceEmbeddingModelListLoading = ref(false);
 
+// 「检测已存向量维度」：设置里那一栏 `dimensions` 说的是"**以后**按几维算"，而库里
+// 已有的向量是既成事实——改过设置又还没重新索引时两者就不一致，而 turso 的
+// `vector_distance_cos` 遇到维度不一致会让**整条检索报错**。所以这个按钮只读地
+// 数一遍 blob（维度 = 字节数 / 4），给一个"不看设置、只看数据"的答案。
+const checkingVectorDimensions = ref(false);
+const vectorDimensionsVisible = ref(false);
+const vectorDimensions = reactive({ configured: null, stored: [] });
+const checkVectorDimensions = async () => {
+    checkingVectorDimensions.value = true;
+    try {
+        const r = await httpReq(
+            "GET",
+            "management/settings/embedding/vector-dimensions",
+            { robotId: robotId },
+            null,
+            null,
+        );
+        if (r.status != 200 || r.data == null)
+            throw new Error(r.err?.message || "bad response");
+        vectorDimensions.configured = r.data.configured ?? null;
+        vectorDimensions.stored = r.data.stored || [];
+        vectorDimensionsVisible.value = true;
+    } catch (e) {
+        ElMessage.error(e?.message || t("botSettings.vectorDimensionsFailed"));
+    } finally {
+        checkingVectorDimensions.value = false;
+    }
+};
+
+const vectorDimensionsVerdict = computed(() => {
+    const present = vectorDimensions.stored.filter(
+        (s) => s.exists && s.dims.length,
+    );
+    if (!present.length)
+        return {
+            type: "info",
+            key: "botSettings.vectorDimensionsEmpty",
+        };
+    // 混合维度最严重：`vector_distance_cos` 遇到长度不一致会让整条查询报错。
+    if (present.some((s) => s.dims.length > 1))
+        return {
+            type: "error",
+            key: "botSettings.vectorDimensionsMixed",
+        };
+    const stored = [...new Set(present.flatMap((s) => s.dims))];
+    const configured = vectorDimensions.configured;
+    // 只在用户**明确填了**维度时才比对：留空表示"由模型决定"，此时这里的 configured
+    // 是 null，无从比较——那种情况下以库里实际存着的值为准。
+    if (configured != null && (stored.length > 1 || stored[0] != configured))
+        return {
+            type: "warning",
+            key: "botSettings.vectorDimensionsMismatch",
+        };
+    return { type: "success", key: "botSettings.vectorDimensionsOk" };
+});
+
 const fetchSentenceEmbeddingModelList = async () => {
     if (!settings.sentenceEmbeddingProvider.apiUrl) return;
     sentenceEmbeddingModelListLoading.value = true;
@@ -2004,6 +2060,74 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 }}
             </template>
         </el-alert>
+        <div class="model-check-row">
+            <el-button
+                size="small"
+                :loading="checkingVectorDimensions"
+                @click="checkVectorDimensions"
+            >
+                {{ $t("botSettings.checkVectorDimensions") }}
+            </el-button>
+        </div>
+        <el-dialog
+            v-model="vectorDimensionsVisible"
+            :title="t('botSettings.vectorDimensionsTitle')"
+            width="640px"
+        >
+            <div class="vector-dims-hint">
+                {{ $t("botSettings.vectorDimensionsHint") }}
+            </div>
+            <div class="vector-dims-configured">
+                {{
+                    $t("botSettings.vectorDimensionsConfigured", {
+                        value:
+                            vectorDimensions.configured ??
+                            t("botSettings.dimensionsAuto"),
+                    })
+                }}
+            </div>
+            <el-alert
+                v-if="vectorDimensionsVerdict"
+                :type="vectorDimensionsVerdict.type"
+                :closable="false"
+                class="hf-alert"
+            >
+                <template #title>
+                    {{ $t(vectorDimensionsVerdict.key) }}
+                </template>
+            </el-alert>
+            <el-table :data="vectorDimensions.stored" size="small">
+                <el-table-column
+                    prop="source"
+                    :label="t('botSettings.vectorDimensionsSource')"
+                    min-width="240"
+                />
+                <el-table-column
+                    prop="rows"
+                    :label="t('botSettings.vectorDimensionsRows')"
+                    width="80"
+                />
+                <el-table-column
+                    :label="t('botSettings.vectorDimensionsDims')"
+                    width="120"
+                >
+                    <template #default="scope">
+                        {{
+                            scope.row.exists
+                                ? scope.row.dims.length
+                                    ? scope.row.dims.join(" / ")
+                                    : "—"
+                                : t("botSettings.vectorDimensionsNotCreated")
+                        }}
+                    </template>
+                </el-table-column>
+            </el-table>
+            <template #footer>
+                <el-button @click="vectorDimensionsVisible = false">
+                    {{ $t("botSettings.confirm") }}
+                </el-button>
+            </template>
+        </el-dialog>
         <div v-if="sentenceEmbeddingModelLoad.loading" class="model-load-status">
             {{
                 $t("botSettings.hfModelLoading", {
@@ -2227,6 +2351,18 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
 
 .hf-alert {
     margin-top: 8px;
+}
+
+/* 「检测已存向量维度」弹窗里的说明文字：来源列是文件+表+列，比较长，允许折行。 */
+.vector-dims-hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary, #909399);
+    margin-bottom: 8px;
+}
+
+.vector-dims-configured {
+    font-size: 13px;
+    margin-bottom: 8px;
 }
 
 .hf-alert :deep(.el-button) {

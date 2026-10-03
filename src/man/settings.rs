@@ -809,6 +809,36 @@ pub(crate) struct ModelFileCheck {
     pub(crate) err: String,
 }
 
+/// 「检测已存向量维度」的响应。
+///
+/// 为什么要单独看"库里已经存了什么"：设置页那一栏 `dimensions` 说的是"**以后**按
+/// 几维算"，和库里已有的向量是两件事——改过设置又还没重新索引时，两者不一致，
+/// 而 turso 的 `vector_distance_cos` 遇到维度不一致会让**整条检索报错**。所以用户
+/// 需要一个"不看设置、只看数据"的答案。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VectorDimensions {
+    /// 当前配置会算出来的维度（设置里填了就是它，没填就是 `null` = 由模型决定）。
+    /// 只用于界面提示，不是事实来源。
+    pub(crate) configured: Option<u32>,
+    /// 库里实际存着的维度（每处向量列一条）。`exists = false` 表示"还没写过向量"。
+    pub(crate) stored: Vec<crate::man::vector_report::VectorColumn>,
+}
+
+/// 只读地报告"库里已经存了的向量是多少维"。
+///
+/// 命令行版本见 `man::vector_report` 的 `report_vector_dimensions` 测试；这条接口是
+/// 给设置页那个按钮用的。它**不写任何东西**，所以可以随便点。
+pub(crate) async fn vector_dimensions(Query(q): Query<RobotQuery>) -> impl IntoResponse {
+    let configured = get_settings(&q.robot_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| s.sentence_embedding_provider.dimensions);
+    let stored = crate::man::vector_report::robot_vector_report(&q.robot_id).await;
+    to_res(Ok(VectorDimensions { configured, stored }))
+}
+
 /// 批量校验本地模型文件：请求体是模型名数组，响应是 `模型名 -> {ok, err}`。
 ///
 /// 这是**文件级**校验：逐个 stat、解析 `config.json` / `tokenizer.json`、核对
