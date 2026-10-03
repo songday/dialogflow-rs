@@ -300,6 +300,10 @@ fn gen_router() -> Router {
             get(settings::check_embedding_model),
         )
         .route(
+            "/management/settings/embedding/vector-dimensions",
+            get(settings::vector_dimensions),
+        )
+        .route(
             "/management/settings/model/openai/list",
             get(settings::list_openai_models),
         )

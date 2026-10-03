@@ -57,7 +57,13 @@ const settings = reactive({
         showApiKeyInput: true,
         apiKey: "",
         // 期望的向量维度。null = 自动（由模型决定），这时后端不会发 dimensions 键。
+        // 这是**当前 provider 生效的那一份**，后端只读它。
         dimensions: null,
+        // 每个 provider 各自那份维度，{ HuggingFace: 8192, OpenAICompatible: 16 }。
+        // 「本地模型 / 在线模型」是两类互不相干的模型，维度跟着模型走，所以必须分开
+        // 存：只留一份的话，在本地填 8192、保存、切到在线，在线会显示 8192 —— 一个
+        // 用户从没填过的值。后端不解析它，只负责存下来原样返回。
+        dimensionsByProvider: {},
         // 库里现有向量是用哪个模型/维度建的（后端打的标）。它只由**写入**更新，
         // 所以"改了模型还没重新索引"能从这里看出来。null = 从没打过标（老库）。
         indexedEmbedding: null,
@@ -94,7 +100,7 @@ const settings = reactive({
         proxyUrl: "",
     },
 });
-const formLabelWidth = "150px";
+const formLabelWidth = "160px";
 const loading = ref(false);
 const smtpPassed = ref(false);
 const smtpFailed = ref(false);
@@ -121,6 +127,10 @@ const sentenceEmbeddingModelLocalPath = ref("");
 // 改了下拉框而还没保存。
 const savedChatModel = ref("");
 const savedEmbeddingModel = ref("");
+// 存库的向量维度（就是「当前 provider 生效的那一份」`dimensions`）。
+// 和上面两个 ref 一样，用来判断用户改了但还没保存——只是这一项改动了不会让
+// "重新加载模型"变得可疑，而是会让库里已有的向量失效（维度不一致检索直接失败）。
+const savedEmbeddingDimensions = ref(null);
 // 后端 provider 的形状是 `{id, model}`：只有 HuggingFace 时 model 才是本地模型名。
 const savedLocalModelName = (provider) =>
     provider?.id == "HuggingFace" ? provider.model || "" : "";
@@ -162,6 +172,17 @@ onMounted(async () => {
         null,
     );
     if (r.status == 200) {
+        // `copyProperties` 跳过值为 null / undefined 的键（见 assets/tools.js），
+        // 这对"用响应合并默认值"是对的，但**后端明确为 null 的字段就合并不进来**，
+        // 内存里会留着上一轮的旧值。本对象里有三个字段合法地就是 null：
+        //   dimensions        没有目标维度（＝自动）
+        //   dimensionsByProvider / indexedEmbedding   从没设置过
+        // 不先清空的话：后端说"本地那份是 null"，界面上却留着在线那份 16，
+        // 保存时的"维度变了"判定就会误报。这几个字段的权威来源只有后端，所以
+        // 每次 load 都先归零再合并。
+        settings.sentenceEmbeddingProvider.dimensions = null;
+        settings.sentenceEmbeddingProvider.dimensionsByProvider = {};
+        settings.sentenceEmbeddingProvider.indexedEmbedding = null;
         copyProperties(r.data, settings);
         maxSessionIdleMin.value = settings.maxSessionIdleSec / 60;
         if (settings.sentenceEmbeddingProvider.similarityThreshold != null)
@@ -174,6 +195,8 @@ onMounted(async () => {
         savedEmbeddingModel.value = savedLocalModelName(
             r.data.sentenceEmbeddingProvider.provider,
         );
+        savedEmbeddingDimensions.value =
+            r.data.sentenceEmbeddingProvider.dimensions ?? null;
         // 这件事必须在 change*Provider 之前做：
         // 把已存地址种进 urlMap。change*Provider 的 else 分支要读这个 map，
         // 不种的话它会拿到 undefined，于是把刚 copyProperties 进来的用户
@@ -191,6 +214,21 @@ onMounted(async () => {
         sentenceEmbeddingDynamicReqUrlMap.set(
             settings.sentenceEmbeddingProvider.provider.id,
             settings.sentenceEmbeddingProvider.apiUrl,
+        );
+        // 每份 provider 的维度都从库里种进来（后端原样存着那张表），再用当前生效
+        // 的 dimensions 覆盖当前 provider 那一项：老记录里没有那张表，这是它唯一
+        // 的迁移入口。`??` 而不是 `||` —— 0 和 null 都是要原样保留的值。
+        sentenceEmbeddingDimensionsMap.clear();
+        for (const [k, v] of Object.entries(
+            settings.sentenceEmbeddingProvider.dimensionsByProvider || {},
+        ))
+            sentenceEmbeddingDimensionsMap.set(k, v ?? null);
+        sentenceEmbeddingDimensionsMap.set(
+            settings.sentenceEmbeddingProvider.provider.id,
+            settings.sentenceEmbeddingProvider.dimensions ?? null,
+        );
+        restoreSentenceEmbeddingDimensions(
+            settings.sentenceEmbeddingProvider.provider.id,
         );
         await changeChatProvider(settings.chatProvider.provider.id);
         await changeSentenceEmbeddingProvider(
@@ -467,12 +505,27 @@ async function reloadModel(kind) {
 }
 
 async function save() {
-    if (
+    // 两种情况都会让库里的旧向量失效，都要先问一句：
+    //
+    // - 换了 provider（本地模型 ↔ 在线模型）：这是"模型换了"，向量空间整个不同。
+    // - 只改了维度（Matryoshka 截断）：同一模型的另一段长度，`vector_distance_cos`
+    //   遇到维度不一致会直接报错，检索整体挂掉。
+    //
+    // 注意这里比的是**当前 provider 那一份**与「存库时那一份」：provider 一起比是
+    // 因为同一份 `savedEmbeddingDimensions` 在切 provider 后就变成另一栏的基准了。
+    const savedDims = savedEmbeddingDimensions.value;
+    const currentDims = settings.sentenceEmbeddingProvider.dimensions ?? null;
+    const dimsChanged = (savedDims ?? null) !== currentDims;
+    const providerChanged =
         originalSentenceEmbeddingModelId.value !=
-        settings.sentenceEmbeddingProvider.provider.id
-    ) {
+        settings.sentenceEmbeddingProvider.provider.id;
+    if (providerChanged || dimsChanged) {
         ElMessageBox.confirm(
-            t("botSettings.modelChangedWarning"),
+            t(
+                providerChanged
+                    ? "botSettings.modelChangedWarning"
+                    : "botSettings.embeddingDimensionsChangedWarning",
+            ),
             t("common.warning"),
             {
                 confirmButtonText: t("common.confirm"),
@@ -494,6 +547,10 @@ async function saveSettings() {
     settings.maxSessionIdleSec = maxSessionIdleMin.value * 60;
     settings.sentenceEmbeddingProvider.similarityThreshold =
         similarityThreshold.value / 100;
+    // 把"当前 provider 那一份维度"定稿到 `dimensions`（后端只读它），并把
+    // `dimensionsByProvider` 刷成最新。用户可能一次都没动过输入框，所以不能只靠
+    // 输入框的 setter。
+    syncSentenceEmbeddingDimensions();
     const r = await httpReq(
         "POST",
         "management/settings",
@@ -509,6 +566,11 @@ async function saveSettings() {
         savedEmbeddingModel.value = savedLocalModelName(
             settings.sentenceEmbeddingProvider.provider,
         );
+        // 基准也要跟着更新，否则"存完再点一次保存"会拿旧基准再弹一次同样的警告。
+        // `originalSentenceEmbeddingModelId` 故意**不动**：它记录的是"进这个页面时
+        // 存库的是哪个 provider"，是"这次会话里换过 provider"的依据，语义不同。
+        savedEmbeddingDimensions.value =
+            settings.sentenceEmbeddingProvider.dimensions ?? null;
         await checkHfModelFiles();
         // 换了本地模型的话，后端已经开始在后台装它了：这里开始（或继续）显示进度。
         await refreshModelLoadStatus();
@@ -1135,7 +1197,51 @@ const fetchChatModelList = async () => {
 
 const sentenceEmbeddingModelOptions = reactive([]);
 const sentenceEmbeddingDynamicReqUrlMap = new Map();
+// 每个 provider（本地/在线）各记一份用户填的「向量维度」。理由和上面那张 URL map
+// 完全一样：这一栏的当前值只是**当前 provider 的**值，切走再切回来要有地方取回。
+//
+// 和 URL map 的唯一区别是它**要持久化**：URL map 里那份东西本来就在设置里
+// （apiUrl），而维度如果只留一份在设置里，两个 provider 就会互相覆盖
+// （在本地填 8192 保存，切到在线也显示 8192）。所以这里多发一张
+// `dimensionsByProvider` 表给后端存着，同时把当前 provider 的值同步进
+// `dimensions` —— 后端只读后者。
+const sentenceEmbeddingDimensionsMap = new Map();
+
+// 把 `dimensions` 同步回 map，并原样维护要发给后端的那张表。
+// 三个调用点：切 provider、用户改动维度、保存之前。
+const syncSentenceEmbeddingDimensions = () => {
+    const p = settings.sentenceEmbeddingProvider;
+    const id = p.provider.id;
+    if (id) sentenceEmbeddingDimensionsMap.set(id, p.dimensions ?? null);
+    const table = {};
+    for (const [k, v] of sentenceEmbeddingDimensionsMap) table[k] = v;
+    p.dimensionsByProvider = table;
+};
+
+// 切到 provider `id` 时取回它那份维度。
+//
+// 有记录就原样取回（`null` = 自动，也是一个有意义的值，不能和"没记录过"混为一谈）；
+// 没记录（第一次见到这个 provider）就用**存库的那一份**兜底一次：老记录里只有
+// `dimensions`、没有那张表，这是它唯一的迁移入口。
+const restoreSentenceEmbeddingDimensions = (id) => {
+    const p = settings.sentenceEmbeddingProvider;
+    if (sentenceEmbeddingDimensionsMap.has(id))
+        p.dimensions = sentenceEmbeddingDimensionsMap.get(id) ?? null;
+    else if (p.provider.id == id) p.dimensions = p.dimensions ?? null;
+    else p.dimensions = null;
+};
+
 const choosedSentenceEmbeddingProvider = ref("");
+// 输入框绑这个，而不是直接绑 `dimensions`：setter 里顺手把当前 provider 那一份
+// 记进 map、并刷新要发给后端的那张表。用户每改一次维度就同步一次，所以即使直接
+// 点保存（不切 provider）也不会漏。
+const embeddingDimensionsInput = computed({
+    get: () => settings.sentenceEmbeddingProvider.dimensions,
+    set: (v) => {
+        settings.sentenceEmbeddingProvider.dimensions = v ?? null;
+        syncSentenceEmbeddingDimensions();
+    },
+});
 const sentenceEmbeddingVendorKey = ref("");
 const refreshSentenceEmbeddingVendor = () => {
     const p = sentenceEmbeddingProviders.find((d) => d.id == "OpenAICompatible");
@@ -1164,22 +1270,22 @@ const applySentenceEmbeddingVendorPreset = (key) => {
     refreshSentenceEmbeddingVendor();
 };
 const changeSentenceEmbeddingProvider = async (n) => {
-    // 换的是"本地模型 ↔ 在线模型"这类**类别**切换，不是勾选框的初始化：这时维度
-    // 一定不再适用（它跟的是模型，不是这一栏），清成"自动"。`provider.model` 是
-    // 另一回事——每个 provider 各留一份，下面那个循环之后不用动它。
+    // 维度跟的是**模型**，而「本地模型 / 在线模型」是两类互不相干的模型，所以切
+    // 类别时要换一份维度值。但**不能清掉**：那是用户填过的内容，切回来必须还在。
     //
-    // 初始化时必须跳过（`choosed*` 还是空串），否则 `onMounted` 里这次调用会把刚
-    // 读回来的 dimensions 清掉。同 chat 里 apiUrl 的处理方式。
-    if (
-        choosedSentenceEmbeddingProvider.value &&
-        choosedSentenceEmbeddingProvider.value != n
-    )
-        settings.sentenceEmbeddingProvider.dimensions = null;
-    if (choosedSentenceEmbeddingProvider.value)
+    // 存的是"切走前那个 provider"那一份，所以先用 `choosed*`（它此刻还指向旧
+    // provider），不能用 `provider.id`——那是控件当前绑定的值。初始化时
+    // `choosed*` 还是空串，整段跳过；`onMounted` 已经替我们把两份都种好了。
+    if (choosedSentenceEmbeddingProvider.value) {
+        sentenceEmbeddingDimensionsMap.set(
+            choosedSentenceEmbeddingProvider.value,
+            settings.sentenceEmbeddingProvider.dimensions ?? null,
+        );
         sentenceEmbeddingDynamicReqUrlMap.set(
             choosedSentenceEmbeddingProvider.value,
             settings.sentenceEmbeddingProvider.apiUrl,
         );
+    }
     for (let i = 0; i < sentenceEmbeddingProviders.length; i++) {
         if (sentenceEmbeddingProviders[i].id == n) {
             if (sentenceEmbeddingProviders[i].apiUrlDisabled)
@@ -1195,6 +1301,8 @@ const changeSentenceEmbeddingProvider = async (n) => {
                 sentenceEmbeddingProviders[i].apiUrlDisabled;
             settings.sentenceEmbeddingProvider.showApiKeyInput =
                 sentenceEmbeddingProviders[i].showApiKeyInput;
+            // 换到另一类别之前，先把它那份维度取回来。
+            restoreSentenceEmbeddingDimensions(n);
             choosedSentenceEmbeddingProvider.value = n;
             // 同 chat：关掉可能开着的添加表单。
             isAddingAnotherSentenceEmbeddingModel.value = false;
@@ -1217,6 +1325,63 @@ const changeSentenceEmbeddingProvider = async (n) => {
         );
 };
 const sentenceEmbeddingModelListLoading = ref(false);
+
+// 「检测已存向量维度」：设置里那一栏 `dimensions` 说的是"**以后**按几维算"，而库里
+// 已有的向量是既成事实——改过设置又还没重新索引时两者就不一致，而 turso 的
+// `vector_distance_cos` 遇到维度不一致会让**整条检索报错**。所以这个按钮只读地
+// 数一遍 blob（维度 = 字节数 / 4），给一个"不看设置、只看数据"的答案。
+const checkingVectorDimensions = ref(false);
+const vectorDimensionsVisible = ref(false);
+const vectorDimensions = reactive({ configured: null, stored: [] });
+const checkVectorDimensions = async () => {
+    checkingVectorDimensions.value = true;
+    try {
+        const r = await httpReq(
+            "GET",
+            "management/settings/embedding/vector-dimensions",
+            { robotId: robotId },
+            null,
+            null,
+        );
+        if (r.status != 200 || r.data == null)
+            throw new Error(r.err?.message || "bad response");
+        vectorDimensions.configured = r.data.configured ?? null;
+        vectorDimensions.stored = r.data.stored || [];
+        vectorDimensionsVisible.value = true;
+    } catch (e) {
+        ElMessage.error(e?.message || t("botSettings.vectorDimensionsFailed"));
+    } finally {
+        checkingVectorDimensions.value = false;
+    }
+};
+
+const vectorDimensionsVerdict = computed(() => {
+    const present = vectorDimensions.stored.filter(
+        (s) => s.exists && s.dims.length,
+    );
+    if (!present.length)
+        return {
+            type: "info",
+            key: "botSettings.vectorDimensionsEmpty",
+        };
+    // 混合维度最严重：`vector_distance_cos` 遇到长度不一致会让整条查询报错。
+    if (present.some((s) => s.dims.length > 1))
+        return {
+            type: "error",
+            key: "botSettings.vectorDimensionsMixed",
+        };
+    const stored = [...new Set(present.flatMap((s) => s.dims))];
+    const configured = vectorDimensions.configured;
+    // 只在用户**明确填了**维度时才比对：留空表示"由模型决定"，此时这里的 configured
+    // 是 null，无从比较——那种情况下以库里实际存着的值为准。
+    if (configured != null && (stored.length > 1 || stored[0] != configured))
+        return {
+            type: "warning",
+            key: "botSettings.vectorDimensionsMismatch",
+        };
+    return { type: "success", key: "botSettings.vectorDimensionsOk" };
+});
+
 const fetchSentenceEmbeddingModelList = async () => {
     if (!settings.sentenceEmbeddingProvider.apiUrl) return;
     sentenceEmbeddingModelListLoading.value = true;
@@ -1378,7 +1543,10 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             show-password
                         />
                     </el-form-item>
-                    <el-form-item :label="t('botSettings.model')">
+                    <el-form-item
+                        :label="t('botSettings.model')"
+                        class="model-row"
+                    >
                         <el-select
                             ref="chatModelSelector"
                             v-model="settings.chatProvider.provider.model"
@@ -1444,13 +1612,13 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             </template>
                         </el-select>
                         <el-button
+                            class="action-btn"
                             v-if="
                                 settings.chatProvider.provider.id ==
                                 'OpenAICompatible'
                             "
                             :loading="chatModelListLoading"
                             :disabled="!settings.chatProvider.apiUrl"
-                            style="margin-left: 8px"
                             @click="fetchChatModelList"
                         >
                             {{ $t("botSettings.fetchModelList") }}
@@ -1545,6 +1713,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
         </div>
         <div v-if="isLocalChatModel" class="model-check-row">
             <el-button
+                class="action-btn"
                 v-if="canCheckChatModel"
                 size="small"
                 :loading="checkingChatModel"
@@ -1560,6 +1729,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             <!-- 手动重装：模型存在与否都能点。文件刚补好（提示位还停在"缺失"）
                  或者想确认一次装载失败的原因时，这是唯一不必等下一次对话的入口。 -->
             <el-button
+                class="action-btn"
                 size="small"
                 :loading="chatModelLoad.loading"
                 @click="reloadModel('chat')"
@@ -1681,7 +1851,10 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             show-password
                         />
                     </el-form-item>
-                    <el-form-item :label="t('botSettings.model')">
+                    <el-form-item
+                        :label="t('botSettings.model')"
+                        class="model-row"
+                    >
                         <el-select
                             ref="sentenceEmbeddingModelSelector"
                             v-model="
@@ -1754,6 +1927,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             </template>
                         </el-select>
                         <el-button
+                            class="action-btn"
                             v-if="
                                 settings.sentenceEmbeddingProvider.provider
                                     .id == 'OpenAICompatible'
@@ -1762,7 +1936,6 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             :disabled="
                                 !settings.sentenceEmbeddingProvider.apiUrl
                             "
-                            style="margin-left: 8px"
                             @click="fetchSentenceEmbeddingModelList"
                         >
                             {{ $t("botSettings.fetchModelList") }}
@@ -1771,7 +1944,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                     <el-form-item :label="t('botSettings.dimensions')">
                         <div class="threshold-row">
                             <el-input-number
-                                v-model="settings.sentenceEmbeddingProvider.dimensions"
+                                v-model="embeddingDimensionsInput"
                                 :min="16"
                                 :max="8192"
                                 :step="1"
@@ -1895,6 +2068,75 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 }}
             </template>
         </el-alert>
+        <div class="model-check-row">
+            <el-button
+                class="action-btn"
+                size="small"
+                :loading="checkingVectorDimensions"
+                @click="checkVectorDimensions"
+            >
+                {{ $t("botSettings.checkVectorDimensions") }}
+            </el-button>
+        </div>
+        <el-dialog
+            v-model="vectorDimensionsVisible"
+            :title="t('botSettings.vectorDimensionsTitle')"
+            width="640px"
+        >
+            <div class="vector-dims-hint">
+                {{ $t("botSettings.vectorDimensionsHint") }}
+            </div>
+            <div class="vector-dims-configured">
+                {{
+                    $t("botSettings.vectorDimensionsConfigured", {
+                        value:
+                            vectorDimensions.configured ??
+                            t("botSettings.dimensionsAuto"),
+                    })
+                }}
+            </div>
+            <el-alert
+                v-if="vectorDimensionsVerdict"
+                :type="vectorDimensionsVerdict.type"
+                :closable="false"
+                class="hf-alert"
+            >
+                <template #title>
+                    {{ $t(vectorDimensionsVerdict.key) }}
+                </template>
+            </el-alert>
+            <el-table :data="vectorDimensions.stored" size="small">
+                <el-table-column
+                    prop="source"
+                    :label="t('botSettings.vectorDimensionsSource')"
+                    min-width="240"
+                />
+                <el-table-column
+                    prop="rows"
+                    :label="t('botSettings.vectorDimensionsRows')"
+                    width="80"
+                />
+                <el-table-column
+                    :label="t('botSettings.vectorDimensionsDims')"
+                    width="120"
+                >
+                    <template #default="scope">
+                        {{
+                            scope.row.exists
+                                ? scope.row.dims.length
+                                    ? scope.row.dims.join(" / ")
+                                    : "—"
+                                : t("botSettings.vectorDimensionsNotCreated")
+                        }}
+                    </template>
+                </el-table-column>
+            </el-table>
+            <template #footer>
+                <el-button @click="vectorDimensionsVisible = false">
+                    {{ $t("botSettings.confirm") }}
+                </el-button>
+            </template>
+        </el-dialog>
         <div v-if="sentenceEmbeddingModelLoad.loading" class="model-load-status">
             {{
                 $t("botSettings.hfModelLoading", {
@@ -1913,6 +2155,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
         </div>
         <div v-if="isLocalEmbeddingModel" class="model-check-row">
             <el-button
+                class="action-btn"
                 v-if="canCheckEmbeddingModel"
                 size="small"
                 :loading="checkingEmbeddingModel"
@@ -1927,6 +2170,7 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
             </el-button>
             <!-- 同对话卡片：重装按钮不看"模型缺失"提示，谁都能点。 -->
             <el-button
+                class="action-btn"
                 size="small"
                 :loading="sentenceEmbeddingModelLoad.loading"
                 @click="reloadModel('embedding')"
@@ -2072,6 +2316,46 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
     margin-top: 4px;
 }
 
+/* 「模型」那一行是下拉 + 「获取模型列表」按钮：el-form-item__content 默认
+   flex-wrap: wrap，而 el-select 自身宽度是 100%，按钮会被挤到下一行。这里禁止
+   换行，让下拉自己收缩，按钮和下拉留在同一行。 */
+.model-row :deep(.el-form-item__content) {
+    flex-wrap: nowrap;
+    gap: 8px;
+}
+
+.model-row :deep(.el-select) {
+    flex: 1;
+    min-width: 0;
+}
+
+.model-row :deep(.el-button) {
+    flex-shrink: 0;
+}
+
+/* 页面里的操作按钮（获取模型列表 / 检测模型 / 重新加载模型 / 检测已存向量维度）：
+   默认的白底描边按钮夹在表单里和输入框几乎一样，给一层浅底色区分出「可点」的入口。 */
+.action-btn {
+    background: var(--el-color-primary-light-9, #ecf5ff);
+    border-color: var(--el-color-primary-light-5, #a0cfff);
+    color: var(--el-color-primary, #409eff);
+}
+
+.action-btn:not(.is-disabled):not(.is-loading):hover,
+.action-btn:not(.is-disabled):not(.is-loading):focus {
+    background: var(--el-color-primary-light-8, #d9ecff);
+    border-color: var(--el-color-primary, #409eff);
+    color: var(--el-color-primary, #409eff);
+}
+
+/* 禁用 / 加载中沿用 Element Plus 的灰态，别让按钮看起来还能点。 */
+.action-btn.is-disabled,
+.action-btn.is-disabled:hover {
+    background: var(--el-fill-color-light, #f5f7fa);
+    border-color: var(--el-border-color-lighter, #ebeef5);
+    color: var(--el-text-color-placeholder, #a8abb2);
+}
+
 .proxy-row {
     display: flex;
     align-items: center;
@@ -2118,6 +2402,18 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
 
 .hf-alert {
     margin-top: 8px;
+}
+
+/* 「检测已存向量维度」弹窗里的说明文字：来源列是文件+表+列，比较长，允许折行。 */
+.vector-dims-hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary, #909399);
+    margin-bottom: 8px;
+}
+
+.vector-dims-configured {
+    font-size: 13px;
+    margin-bottom: 8px;
 }
 
 .hf-alert :deep(.el-button) {

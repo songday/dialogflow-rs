@@ -353,6 +353,23 @@ export default {
         "The vectors already stored for your knowledge base and intents were produced by a different model ({indexed}), so they live in a different vector space: retrieval will not fail, but its results become noise until the vectors are rebuilt. Please re-index before using them.",
     embeddingIndexDimsChanged:
         "The stored vectors were produced with a different setting ({indexed}). Retrieval fails outright when the dimensions differ, because the distance function requires both sides to have the same length. Please re-index.",
+    checkVectorDimensions: "Check stored vector dimensions",
+    vectorDimensionsTitle: "Stored vector dimensions",
+    vectorDimensionsHint:
+        "This result is counted, not declared: a vector's dimension equals its stored byte length divided by 4. The dimension written in the table schema cannot be trusted — it only exists at table creation, never changes afterwards, and the vector table itself is created on the first write.",
+    vectorDimensionsConfigured: "Current setting: {value}",
+    vectorDimensionsSource: "Source",
+    vectorDimensionsRows: "Rows",
+    vectorDimensionsDims: "Dimensions",
+    vectorDimensionsNotCreated: "not created",
+    vectorDimensionsEmpty:
+        "No vectors stored yet, so there is nothing that could mismatch.",
+    vectorDimensionsOk: "The stored vectors match the current setting.",
+    vectorDimensionsMismatch:
+        "The stored vector dimensions differ from the current setting: retrieval fails outright when the lengths differ, so the vectors must be re-indexed.",
+    vectorDimensionsMixed:
+        "Two different dimensions coexist in the same store: a previous dimension change left half of the rows behind. Retrieval fails outright; the whole vector table must be rebuilt.",
+    vectorDimensionsFailed: "Checking stored vector dimensions failed",
     hfModelMissing: "HuggingFace model files were incorrect or missing, please",
     hfModelDownloadLink: "click here to download model files from Huggingface.co",
     hfModelManual: ", or you can download manually and put them in {path}",
@@ -366,6 +383,7 @@ export default {
     hfModelLoading: "Loading model in the background: {model}…",
     downloading: "Downloading",
     modelChangedWarning: "Sentence embedding model has been changed, this may cause dimension mismatch issue <strong>(You can regenerate all sentences to resolve)</strong>. Continue?",
+    embeddingDimensionsChangedWarning: "The embedding dimensions have been changed. Existing vectors no longer match the new dimensions, which makes retrieval fail <strong>(You can regenerate all sentences to resolve)</strong>. Continue?",
     apiKey: "API key",
     smtp: {
       title: "Email settings",

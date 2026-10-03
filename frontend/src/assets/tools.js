@@ -123,6 +123,22 @@ export function providerDisplayName(id, t) {
     }
 }
 
+/**
+ * 把 `src` 上**非 null / 非 undefined** 的属性合并进 `target`（`target` 里同名的
+ * null 会被**原样保留**，不会跟着 `src` 变成 null）。
+ *
+ * 这个语义是给"用响应 / 节点数据合并进一份带默认值的对象"用的：源里缺的字段保留
+ * 目标里已有的默认值。
+ *
+ * 注意它的另一面：**后端明确返回的 null 永远合并不进来**。凡是有"null 本身就是
+ * 一个有意义的值"（＝空 / 自动 / 未设置）的字段，都会在内存里留着上一轮的旧值。
+ * 调用方要么在合并前把这类字段显式归零，要么就别用它 —— 现在的处置见
+ * `components/management/Settings.vue` 的 `onMounted`（`dimensions` /
+ * `dimensionsByProvider` / `indexedEmbedding` 三个字段就是先清空再合并的）。
+ *
+ * TODO：这个"丢 null"的行为目前是全局共用的，改掉它要先把 40 处调用点里
+ * "靠它保住默认值"的场景逐个确认，暂时不动。
+ */
 export function copyProperties(src, target) {
     if (src == null || src == undefined)
         return;

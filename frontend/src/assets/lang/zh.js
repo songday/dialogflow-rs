@@ -325,6 +325,22 @@ export default {
         "知识库/意图里已有的向量是旧模型（{indexed}）算出来的，和当前配置不是同一个向量空间：不重建的话检索不会报错，但结果会变成噪声。请重新索引（重建向量）后再使用。",
     embeddingIndexDimsChanged:
         "已有向量是用另一份配置（{indexed}）算出来的：维度不一致时检索会直接失败（向量距离计算要求维度相同）。请重新索引（重建向量）。",
+    checkVectorDimensions: "检测已存向量维度",
+    vectorDimensionsTitle: "已存向量维度",
+    vectorDimensionsHint:
+        "这个结果是**数出来的**：向量的维度 = 存储字节数 ÷ 4。表结构里写着的那点维度信息靠不住——它只在建表时存在，之后不会再变，而向量表是第一次写入时才创建的。",
+    vectorDimensionsConfigured: "当前设置：{value}",
+    vectorDimensionsSource: "来源",
+    vectorDimensionsRows: "行数",
+    vectorDimensionsDims: "维度",
+    vectorDimensionsNotCreated: "未建表",
+    vectorDimensionsEmpty: "库里还没有任何向量：还没有可失配的数据。",
+    vectorDimensionsOk: "库里的向量与当前设置一致。",
+    vectorDimensionsMismatch:
+        "库里的向量维度和当前设置不一致：检索会因为维度不同而直接失败，需要重新索引（重建向量）。",
+    vectorDimensionsMixed:
+        "库里同时存在两种维度的向量：这是改维度时留下的一半新一半旧，检索会直接报错。需要重建整张向量表。",
+    vectorDimensionsFailed: "检测已存向量维度失败",
     hfModelMissing: "HuggingFace 模型文件不正确或缺失，请",
     hfModelDownloadLink: "点击此处从 Huggingface.co 下载模型文件",
     hfModelManual: "，或者手动下载后放到 {path} 目录",
@@ -338,6 +354,7 @@ export default {
     hfModelLoading: "正在后台加载模型：{model}…",
     downloading: "正在下载",
     modelChangedWarning: "句子向量模型已被修改，这可能引起向量维度不匹配问题<strong>（可以重新生成所有句子的向量来解决）</strong>。是否继续？",
+    embeddingDimensionsChangedWarning: "句子向量的维度已被修改，已有向量与新维度不一致会导致检索失败<strong>（可以重新生成所有句子的向量来解决）</strong>。是否继续？",
     apiKey: "API 密钥",
     smtp: {
       title: "邮件设置",
