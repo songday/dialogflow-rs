@@ -6,6 +6,7 @@ use std::vec::Vec;
 
 use super::dto::QuestionAnswerPair;
 use crate::ai::embedding;
+use crate::man::settings;
 use crate::result::{Error, Result};
 use crate::retry_on_busy;
 
@@ -136,7 +137,7 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
     }
     log::info!("vectors.0.len() = {}", vec_len);
 
-    retry_on_busy!(async {
+    let record_id = retry_on_busy!(async {
         let mut work = d.clone();
         let mut conn = conn()?;
         let tx = conn.transaction().await?;
@@ -201,9 +202,15 @@ pub(crate) async fn save(robot_id: &str, mut d: QuestionAnswerPair) -> Result<i6
         // 提交成功，现在这些 id 才是真实存在的，可以安全地落到入参上。
         d = work;
         Ok(record_id)
-    })
+    })?;
+    // 向量真的落库了，记下它是用哪个模型/维度算出来的（见
+    // settings::stamp_embedding_index）。打标失败不回滚、不报错：库里已经有正确的
+    // 向量，丢的只是一条"将来能提醒用户换过模型"的线索。
+    if let Err(e) = settings::stamp_embedding_index(robot_id).await {
+        log::warn!("Stamping embedding index of {robot_id} failed: {e:?}");
+    }
+    Ok(record_id)
 }
-
 /// 删掉该机器人在 `qa.dat` 里的两张表（`robot::purge` 用）。
 ///
 /// 两张表都是懒创建的（第一次 `list`/`save` 才会建），所以必须 `IF EXISTS`。

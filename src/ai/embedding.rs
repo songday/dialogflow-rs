@@ -32,6 +32,13 @@ pub(crate) enum SentenceEmbeddingProvider {
 
 pub(crate) async fn embedding(robot_id: &str, s: &str) -> Result<(Vec<f32>, f32)> {
     if let Some(settings) = settings::get_settings(robot_id).await? {
+        // 用户要求的目标维度。`Some(0)` 当成没设：0 维向量没有意义，让它走到
+        // "由模型决定"那条路上，而不是拼一个必然失败的请求。
+        let dimensions = settings
+            .sentence_embedding_provider
+            .dimensions
+            .filter(|d| *d > 0);
+        let dims_hint = dimensions.map(|d| d as usize);
         let v = match settings.sentence_embedding_provider.provider {
             SentenceEmbeddingProvider::HuggingFace(m) => hugging_face(robot_id, &m.get_info(), s),
             SentenceEmbeddingProvider::OpenAICompatible(m) => open_ai_compatible(
@@ -42,9 +49,28 @@ pub(crate) async fn embedding(robot_id: &str, s: &str) -> Result<(Vec<f32>, f32)
                 settings.sentence_embedding_provider.connect_timeout_millis,
                 settings.sentence_embedding_provider.read_timeout_millis,
                 &settings.sentence_embedding_provider.proxy_url,
+                dimensions,
             )
             .await,
         }?;
+        // 设了维度就必须真按这个维度回来。失败时**不能**放行：一旦把长度不对的
+        // 向量写进库，那张表就同时存在两种维度，而 turso 的
+        // `vector_distance_cos` 遇到维度不一致会直接报错 —— 表现是"检索整个挂掉"，
+        // 但那时用户已经不知道是哪次配置引起的了。宁可在写之前就把原因说清楚。
+        //
+        // 这条检查对本地模型也适用：它不认 `dimensions`，用户设了就一定会在这里
+        // 看到"没生效"，比默默写进另一个维度的向量要好。
+        if let Some(d) = dims_hint
+            && v.len() != d
+        {
+            return Err(Error::WithMessage(format!(
+                "Embedding model returned {} dimensions but {d} was requested. \
+                 Either this model does not support the dimensions parameter, \
+                 or the value is not valid for it; clear the setting to use the \
+                 model's default.",
+                v.len()
+            )));
+        }
         Ok((v, settings.sentence_embedding_provider.similarity_threshold))
     } else {
         Err(Error::WithMessage(format!(
@@ -137,6 +163,7 @@ async fn open_ai_compatible(
     connect_timeout_millis: u32,
     read_timeout_millis: u32,
     proxy_url: &str,
+    dimensions: Option<u32>,
 ) -> Result<Vec<f32>> {
     let client = crate::external::http::get_client(
         connect_timeout_millis.into(),
@@ -146,6 +173,19 @@ async fn open_ai_compatible(
     let mut map = Map::new();
     map.insert(String::from("input"), Value::String(String::from(s)));
     map.insert(String::from("model"), Value::String(String::from(m)));
+    // `dimensions` 只在用户**明确填了**目标维度时才发。
+    //
+    // 为什么不是无条件发：字段名在厂商之间并不统一（Cohere / Voyage / Mistral 叫
+    // `output_dimension`，Gemini 叫 `output_dimensionality`），而这是 OpenAI 兼容
+    // 代理路径 —— 它们多半会把这个不认识的键丢掉并**默默按自己的默认维度返回**。
+    // 我们随后核对的长度会拦住这种"以为生效了"的情况（见 `embedding`）。
+    //
+    // 为什么只在设置里填了才发：绝大多数模型（bge-m3、e5、gpt-embedding 之外的
+    // 本地模型……）维度是固定的，多带一个键只会给不认识它的网关添麻烦。默认值
+    // 本来就是模型自己最好的选择。
+    if let Some(d) = dimensions {
+        map.insert(String::from("dimensions"), Value::from(d));
+    }
     let obj = Value::Object(map);
     let authorization = format!("Bearer {api_key}");
     // 不再回退到 api.openai.com：用户填了别家的 key 却漏了地址时，
@@ -220,7 +260,7 @@ mod tests {
             body.len()
         );
         let (url, request) = serve_capturing("/custom/llm/embeddings", head, &body).await;
-        let v = open_ai_compatible("bge-m3", "你好", &url, "test-key", 3_327, 9_927, "")
+        let v = open_ai_compatible("bge-m3", "你好", &url, "test-key", 3_327, 9_927, "", None)
             .await
             .unwrap();
         assert_eq!(v, vec![0.5f32, 0.25]);
@@ -237,6 +277,43 @@ mod tests {
                 .contains("authorization: bearer test-key"),
             "the configured key must be sent: {request}"
         );
+        // 没设维度就不许带这个键：不认识的网关会直接 400，而默认值本来就是对的。
+        assert!(
+            !request.contains("dimensions"),
+            "dimensions must be omitted when the user did not ask for one: {request}"
+        );
+    }
+
+    /// 用户设了目标维度就必须发出去。少发这一个键，返回的向量维度就和设置页写的
+    /// 不一致 —— 而长度校验会把它当成"模型不支持该参数"报错，用户看到的提示会
+    /// 指向完全错误的方向。
+    #[tokio::test]
+    async fn open_ai_compatible_sends_requested_dimensions() {
+        let body = String::from(r#"{"data":[{"embedding":[0.5,0.25]}]}"#);
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        let (url, request) = serve_capturing("/custom/llm/embeddings", head, &body).await;
+        let v = open_ai_compatible(
+            "text-embedding-v4",
+            "你好",
+            &url,
+            "k",
+            3_331,
+            9_931,
+            "",
+            Some(512),
+        )
+        .await
+        .unwrap();
+        assert_eq!(v, vec![0.5f32, 0.25]);
+
+        let request = request.await.unwrap();
+        assert!(
+            request.contains(r#""dimensions":512"#),
+            "the requested dimension must reach the endpoint: {request}"
+        );
     }
 
     /// A rejection has to surface as itself, not as a parse error.
@@ -248,7 +325,7 @@ mod tests {
             body.len()
         );
         let (url, _request) = serve_capturing("/custom/llm/embeddings", head, &body).await;
-        let e = open_ai_compatible("bge-m3", "hi", &url, "test-key", 3_329, 9_929, "")
+        let e = open_ai_compatible("bge-m3", "hi", &url, "test-key", 3_329, 9_929, "", None)
             .await
             .unwrap_err();
         let e = format!("{e:?}");

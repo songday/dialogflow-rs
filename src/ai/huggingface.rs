@@ -77,7 +77,7 @@ pub(crate) enum HuggingFaceModel {
     Qwen3_8B,
     Qwen3_14B,
     Qwen3_32B,
-    Qwen3_30B_A3B_Instruct_2507,
+    Qwen3_30bA3bInstruct2507,
 }
 
 pub(crate) enum LoadedHuggingFaceModel {
@@ -963,7 +963,7 @@ impl HuggingFaceModel {
             },
             // MoE：30B 总参数 / 3B 激活。GGUF 仓库里**没有** config.json，
             // 正好由 tokenizer_repository 一起兜住。
-            HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507 => HuggingFaceModelInfo {
+            HuggingFaceModel::Qwen3_30bA3bInstruct2507 => HuggingFaceModelInfo {
                 repository: "Qwen/Qwen3-30B-A3B-Instruct-2507",
                 mirror: "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
                 model_files: qwen3_model_files(),
@@ -1448,20 +1448,24 @@ fn set_special_tokens_map(tokenizer_path: &str, tokenizer: &mut Tokenizer) -> Re
     {
         for (_, value) in root_object.iter() {
             if value.is_string() {
-                tokenizer.add_special_tokens([AddedToken {
+                if let Err(e) = tokenizer.add_special_tokens([AddedToken {
                     content: value.as_str().unwrap().into(),
                     special: true,
                     ..Default::default()
-                }]);
+                }]) {
+                    log::warn!("Error adding special token: {}", e);
+                }
             } else if value.is_object() {
-                tokenizer.add_special_tokens([AddedToken {
+                if let Err(e) = tokenizer.add_special_tokens([AddedToken {
                     content: value["content"].as_str().unwrap().into(),
                     special: true,
                     single_word: value["single_word"].as_bool().unwrap(),
                     lstrip: value["lstrip"].as_bool().unwrap(),
                     rstrip: value["rstrip"].as_bool().unwrap(),
                     normalized: value["normalized"].as_bool().unwrap(),
-                }]);
+                }]) {
+                    log::warn!("Error adding special token: {}", e);
+                }
             }
         }
     }
@@ -1897,7 +1901,7 @@ mod tests {
         assert_eq!(repos["config.json"], "unsloth/Qwen3-0.6B-GGUF");
         assert_eq!(repos["Qwen3-0.6B-Q4_K_M.gguf"], "unsloth/Qwen3-0.6B-GGUF");
 
-        let moe = HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507.get_info();
+        let moe = HuggingFaceModel::Qwen3_30bA3bInstruct2507.get_info();
         let repos: std::collections::HashMap<String, &str> = download_file_list(&moe)
             .into_iter()
             .map(|(r, f)| (f, r))
@@ -1928,7 +1932,7 @@ mod tests {
             (HuggingFaceModel::Qwen3_14B, "Qwen/Qwen3-14B"),
             (HuggingFaceModel::Qwen3_32B, "Qwen/Qwen3-32B"),
             (
-                HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507,
+                HuggingFaceModel::Qwen3_30bA3bInstruct2507,
                 "Qwen/Qwen3-30B-A3B-Instruct-2507",
             ),
         ] {
@@ -2035,7 +2039,7 @@ mod tests {
         for m in [
             HuggingFaceModel::Qwen3_0_6B,
             HuggingFaceModel::Qwen3_8B,
-            HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507,
+            HuggingFaceModel::Qwen3_30bA3bInstruct2507,
         ] {
             let info = m.get_info();
             let prefix = format!("{}/", info.local_directory_path());

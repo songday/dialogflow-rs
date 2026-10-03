@@ -1034,7 +1034,7 @@ mod tests {
     #[test]
     fn qwen3_moe_uses_the_same_chatml() {
         let dense = HuggingFaceModel::Qwen3_0_6B.get_info();
-        let moe = HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507.get_info();
+        let moe = HuggingFaceModel::Qwen3_30bA3bInstruct2507.get_info();
         let history = Some(vec![Prompt {
             role: String::from("user"),
             content: String::from("hi"),
@@ -1083,7 +1083,7 @@ mod tests {
     /// 分支，不能出现"密集模型注入、MoE 不注入"这种不一致。
     #[test]
     fn qwen3_moe_honours_the_thinking_switch() {
-        let moe = HuggingFaceModel::Qwen3_30B_A3B_Instruct_2507.get_info();
+        let moe = HuggingFaceModel::Qwen3_30bA3bInstruct2507.get_info();
         assert_eq!(
             moe.convert_prompt("", None, false).unwrap(),
             "<|im_start|>assistant\n<think>\n\n</think>\n\n"

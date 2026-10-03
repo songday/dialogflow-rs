@@ -56,6 +56,11 @@ const settings = reactive({
         apiUrlDisabled: false,
         showApiKeyInput: true,
         apiKey: "",
+        // 期望的向量维度。null = 自动（由模型决定），这时后端不会发 dimensions 键。
+        dimensions: null,
+        // 库里现有向量是用哪个模型/维度建的（后端打的标）。它只由**写入**更新，
+        // 所以"改了模型还没重新索引"能从这里看出来。null = 从没打过标（老库）。
+        indexedEmbedding: null,
         connectTimeoutMillis: 5000,
         readTimeoutMillis: 10000,
         proxyUrl: "",
@@ -341,6 +346,38 @@ const sentenceEmbeddingModelNotSaved = computed(
         savedEmbeddingModel.value,
 );
 
+// 「库里的向量是用哪个模型/维度建的」。规则必须和后端
+// `man::settings::embedding_identity` 一字不差，否则警告会一直误报：
+//   v1|<kind>|<模型名>|<维度，0 = 没设>
+// 模型名两边的取法都是 `provider.model`：本地候选的 value 是枚举名（如 Qwen3_0_6B），
+// 在线候选的 value 就是端点模型名（如 text-embedding-v4）——后端也是这么取的。
+const currentEmbeddingIdentity = computed(() => {
+    const p = settings.sentenceEmbeddingProvider;
+    const kind = p.provider.id == "HuggingFace" ? "huggingface" : "openai-compatible";
+    return `v1|${kind}|${p.provider.model || ""}|${p.dimensions || 0}`;
+});
+
+// 索引和当前配置对不上就警告。两种情况都**必须**重新索引，但原因不同：
+//
+// - 换了模型：两个模型的向量空间毫不相干，余弦距离算出来是噪声，而且**不会报错**
+//   —— 表现为"回答莫名其妙"，比报错难查得多。
+// - 只换了维度：turso 的 `vector_distance_cos` 遇到维度不一致会直接返回错误，
+//   于是检索（意图、问答、文档）整体失败。
+//
+// 只在**打过标**之后才判断：老库没有这个标，报一条讲不清原因的警告只会让人焦虑。
+// 另外服务端会在下一次写入时把标改成当前配置——但那时旧向量仍然躺在库里，所以
+// 这不是"自动修好了"，真正的修复是重建索引。
+const embeddingIndexWarning = computed(() => {
+    const indexed = settings.sentenceEmbeddingProvider.indexedEmbedding;
+    if (!indexed) return null;
+    if (indexed == currentEmbeddingIdentity.value) return null;
+    const indexedModel = String(indexed).split("|")[2] || "";
+    const currentModel = settings.sentenceEmbeddingProvider.provider.model || "";
+    return indexedModel != currentModel
+        ? "botSettings.embeddingIndexModelChanged"
+        : "botSettings.embeddingIndexDimsChanged";
+});
+
 // 保存时换了本地模型，后端会在**后台**装它（不在请求里现装，几十 GB 的权重会把
 // 保存接口卡住）。这里轮询状态：装着就显示"正在后台加载模型"，装失败了把后端给的
 // 原因（哪个文件不对）显示出来并弹一次。
@@ -618,11 +655,9 @@ const compatibleVendors = [
             "gpt-3.5-turbo",
         ],
         embedUrl: "https://api.openai.com/v1/embeddings",
-        embedModels: [
-            "text-embedding-3-large",
-            "text-embedding-3-small",
-            "text-embedding-ada-002",
-        ],
+        // ada-002 已从候选里去掉：2026 年了，它比 3-small 又贵又差。
+        // 老设置里存着它的仍然能跑（OpenAI 没下线），只是新配置不再推荐。
+        embedModels: ["text-embedding-3-large", "text-embedding-3-small"],
     },
     {
         key: "deepseek",
@@ -644,7 +679,15 @@ const compatibleVendors = [
         chatUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
         chatModels: ["qwen-max", "qwen-plus", "qwen-turbo"],
         embedUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
-        embedModels: ["text-embedding-v3", "text-embedding-v2"],
+        // qwen3.7-text-embedding 是通义最新的向量模型（默认 1024 维，可选到 2560，
+        // 单行 128K tokens）；v4 就是 Qwen3 训练的向量模型，支持 64~2048 维、
+        // 上下文 8K；v3 / v2 留着是因为老设置里可能存着它们。
+        embedModels: [
+            "qwen3.7-text-embedding",
+            "text-embedding-v4",
+            "text-embedding-v3",
+            "text-embedding-v2",
+        ],
     },
     {
         key: "moonshot",
@@ -681,7 +724,15 @@ const compatibleVendors = [
         chatUrl: "https://api.siliconflow.cn/v1/chat/completions",
         chatModels: ["deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-7B-Instruct"],
         embedUrl: "https://api.siliconflow.cn/v1/embeddings",
-        embedModels: ["BAAI/bge-m3", "BAAI/bge-large-zh-v1.5"],
+        // Qwen3-Embedding 系列是硅基流动 2025 年上线的，MTEB 上明显强过 bge-m3；
+        // 模型 id 必须带 `Qwen/` 前缀（docs.siliconflow.com 的示例就是这个写法）。
+        embedModels: [
+            "Qwen/Qwen3-Embedding-8B",
+            "Qwen/Qwen3-Embedding-4B",
+            "Qwen/Qwen3-Embedding-0.6B",
+            "BAAI/bge-m3",
+            "BAAI/bge-large-zh-v1.5",
+        ],
     },
     {
         key: "groq",
@@ -705,7 +756,16 @@ const compatibleVendors = [
         chatUrl: "http://localhost:11434/v1/chat/completions",
         chatModels: [],
         embedUrl: "http://localhost:11434/v1/embeddings",
-        embedModels: ["nomic-embed-text", "bge-m3", "mxbai-embed-large"],
+        // 都是 Ollama 官方库里 `c=embedding` 那一档的模型名（拉取用的名字，
+        // 不带 tag 的用默认 tag）。qwen3-embedding 只有 0.6b/4b/8b 三个档。
+        embedModels: [
+            "qwen3-embedding:8b",
+            "embeddinggemma",
+            "nomic-embed-text-v2-moe",
+            "nomic-embed-text",
+            "bge-m3",
+            "mxbai-embed-large",
+        ],
     },
     {
         key: "vllm",
@@ -951,8 +1011,6 @@ const sentenceEmbeddingProviders = [
                 label: "mixedbread-ai/mxbai-embed-large-v1 (1.34GB)",
                 value: "MxbaiEmbedLargeV1",
             },
-            { label: "moka-ai/m3e-base (409MB)", value: "MokaAiM3eBase" },
-            { label: "moka-ai/m3e-large (1.3GB)", value: "MokaAiM3eLarge" },
         ],
     },
     {
@@ -1106,6 +1164,17 @@ const applySentenceEmbeddingVendorPreset = (key) => {
     refreshSentenceEmbeddingVendor();
 };
 const changeSentenceEmbeddingProvider = async (n) => {
+    // 换的是"本地模型 ↔ 在线模型"这类**类别**切换，不是勾选框的初始化：这时维度
+    // 一定不再适用（它跟的是模型，不是这一栏），清成"自动"。`provider.model` 是
+    // 另一回事——每个 provider 各留一份，下面那个循环之后不用动它。
+    //
+    // 初始化时必须跳过（`choosed*` 还是空串），否则 `onMounted` 里这次调用会把刚
+    // 读回来的 dimensions 清掉。同 chat 里 apiUrl 的处理方式。
+    if (
+        choosedSentenceEmbeddingProvider.value &&
+        choosedSentenceEmbeddingProvider.value != n
+    )
+        settings.sentenceEmbeddingProvider.dimensions = null;
     if (choosedSentenceEmbeddingProvider.value)
         sentenceEmbeddingDynamicReqUrlMap.set(
             choosedSentenceEmbeddingProvider.value,
@@ -1699,6 +1768,25 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                             {{ $t("botSettings.fetchModelList") }}
                         </el-button>
                     </el-form-item>
+                    <el-form-item :label="t('botSettings.dimensions')">
+                        <div class="threshold-row">
+                            <el-input-number
+                                v-model="settings.sentenceEmbeddingProvider.dimensions"
+                                :min="16"
+                                :max="8192"
+                                :step="1"
+                                :controls="false"
+                                :placeholder="t('botSettings.dimensionsAuto')"
+                                style="width: 120px"
+                            />
+                            <el-tooltip effect="light" placement="right">
+                                <template #content>
+                                    {{ $t("botSettings.dimensionsTip") }}
+                                </template>
+                                <el-button circle>?</el-button>
+                            </el-tooltip>
+                        </div>
+                    </el-form-item>
                     <el-form-item :label="t('botSettings.simThres')">
                         <div class="threshold-row">
                             ≥
@@ -1793,6 +1881,20 @@ const usedBySentenceEmbeddingBig = [sentenceEmbeddingPic];
                 />
             </el-col>
         </el-row>
+        <el-alert
+            v-if="embeddingIndexWarning"
+            type="warning"
+            :closable="false"
+            class="hf-alert"
+        >
+            <template #title>
+                {{
+                    $t(embeddingIndexWarning, {
+                        indexed: settings.sentenceEmbeddingProvider.indexedEmbedding,
+                    })
+                }}
+            </template>
+        </el-alert>
         <div v-if="sentenceEmbeddingModelLoad.loading" class="model-load-status">
             {{
                 $t("botSettings.hfModelLoading", {
