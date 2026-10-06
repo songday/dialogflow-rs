@@ -31,6 +31,12 @@ pub(crate) const TABLE: redb::TableDefinition<&str, &[u8]> = redb::TableDefiniti
 pub(crate) const TABLE_SUFFIX: &str = "settings";
 pub(crate) const SETTINGS_KEY: &str = "global-settings";
 
+/// `db_init_time` 写库用的时间格式。
+///
+/// 抽成常量是为了能被单测覆盖：`parse_borrowed` 是**运行期**解析，格式串里多一个
+/// `]` 之类的笔误编译期查不出来，只会在启动写初始化时间时 panic（曾经就是这样）。
+const TIME_FORMAT: &str = "[year]-[month]-[day] [hour]:[minute]:[second]";
+
 static SETTINGS_CACHE: LazyLock<Mutex<HashMap<String, Settings>>> =
     LazyLock::new(|| Mutex::new(HashMap::with_capacity(32)));
 
@@ -472,7 +478,7 @@ pub(crate) async fn exists(store: &db::RedbStore) -> Result<bool> {
 pub(crate) async fn init_global(store: &db::RedbStore) -> Result<GlobalSettings> {
     let settings = GlobalSettings::default();
     db::write(store, TABLE, SETTINGS_KEY, &settings).await?;
-    let format = time::format_description::parse_borrowed::<3>("[year]-[month]-[day] [hour]:[minute]:[second]]")
+    let format = time::format_description::parse_borrowed::<3>(TIME_FORMAT)
         .expect("Invalid format description");
     let t = time::OffsetDateTime::now_utc();
     let t_str = t
@@ -1067,6 +1073,18 @@ async fn retrieve_openai_models(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 格式串必须是**可解析**的：`init_global` 里那句 `.expect(...)` 会在启动时
+    /// 直接 panic，所以这里把解析和格式化都跑一遍。
+    #[test]
+    fn db_init_time_format_is_parseable() {
+        let format = time::format_description::parse_borrowed::<3>(TIME_FORMAT)
+            .expect("TIME_FORMAT must be a valid time format description");
+        let t = time::OffsetDateTime::now_utc();
+        let s = t.format(&format).expect("formatting must succeed");
+        assert_eq!(s.len(), "1970-01-01 00:00:00".len(), "unexpected: {s}");
+        assert!(s.as_bytes()[4] == b'-' && s.as_bytes()[10] == b' ');
+    }
 
     #[test]
     fn models_url_sits_next_to_the_configured_endpoint() {
