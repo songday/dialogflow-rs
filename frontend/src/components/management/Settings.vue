@@ -741,7 +741,7 @@ const compatibleVendors = [
         key: "zhipu",
         nameKey: "botSettings.vendorZhipu",
         chatUrl: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        chatModels: ["glm-4-plus", "glm-4-air", "glm-4-flash"],
+        chatModels: ["glm-5.3", "glm-5.3-flash", "glm-5.2"],
         embedUrl: "https://open.bigmodel.cn/api/paas/v4/embeddings",
         embedModels: ["embedding-3", "embedding-2"],
     },
