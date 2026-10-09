@@ -173,7 +173,7 @@ pub(crate) async fn robot_vector_report(robot_id: &str) -> Vec<VectorColumn> {
             column: "qa_vec",
         },
         Target {
-            file: "qa.dat",
+            file: "phrase.dat",
             table: String::from(robot_id),
             column: "phrase_vec",
         },
