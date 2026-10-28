@@ -99,3 +99,32 @@ Using the different nodes above, to arrange and combine, you can get a conversat
 1. Add a main flow and click its name into it
 1. Create dialog flow by dragging and drop nodes onto canvas
 1. Test it
+
+## We also provide Enterprise and Government & Enterprise Editions
+
+| Feature | Community Edition | Enterprise Edition | Government & Enterprise Edition |
+|---|---|---|---|
+| Visual node editor | Supported | Supported | Supported |
+| Dialogue nodes | Supported | Supported | Supported |
+| LLM chat nodes | Supported | Supported | Supported |
+| Knowledge base answer nodes | Supported | Supported | Supported |
+| Condition nodes | Supported | Supported | Supported |
+| Collection nodes | Supported | Supported | Supported |
+| Jump nodes | Supported | Supported | Supported |
+| External HTTP request nodes | Supported | Supported | Supported |
+| Email sending nodes | Supported | Supported | Supported |
+| End nodes | Supported | Supported | Supported |
+| Intent recognition | Supported | Supported | Supported |
+| Knowledge base | Supported | Supported | Supported |
+| Variable support | Supported | Supported | Supported |
+| Create dialogue flows via API | Not supported | Supported | Supported |
+| Data export/import | Not supported | Supported | Supported |
+| SQL Server | Not supported | Supported | Supported |
+| SQLite | Not supported | Supported | Supported |
+| PostgreSQL | Not supported | Supported | Supported |
+| MySQL | Not supported | Supported | Supported |
+| Audit | Not supported | Not supported | Supported |
+| Xinchuang / localized ecosystem | Not supported | Not supported | Supported |
+| License | Apache License 2.0 | Apache License 2.0 | Apache License 2.0 |
+| Technical support | GitHub issues | Email | Email |
+| Project link | https://github.com/dialogflowai/dialogflow | https://github.com/Braidwork/Kiko | Under development |
