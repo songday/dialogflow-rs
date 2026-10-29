@@ -120,10 +120,10 @@ curl -N -H 'Content-Type: application/json' \
 | 变量支持 | 支持 | 支持 | 支持 |
 | 通过API创建对话流程 | 不支持 | 支持 | 支持 |
 | 数据导出/导入 | 不支持 | 支持 | 支持 |
-| SQL Server | 不支持 | 支持 | 支持 |
-| SQLite | 不支持 | 支持 | 支持 |
+| SQL Server | 不支持 | 正在适配 | 支持 |
+| SQLite | 不支持 | 正在适配 | 支持 |
 | PostgreSQL | 不支持 | 支持 | 支持 |
-| MySQL | 不支持 | 支持 | 支持 |
+| MySQL | 不支持 | 正在适配 | 支持 |
 | 审计/Audit | 不支持 | 不支持 | 支持 |
 | 信创/国产化生态 | 不支持 | 不支持 | 支持 |
 | 许可证 | Apache license 2.0 | Apache license 2.0 | Apache license 2.0 |
