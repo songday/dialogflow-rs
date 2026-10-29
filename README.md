@@ -119,7 +119,7 @@ Using the different nodes above, to arrange and combine, you can get a conversat
 | Variable support | Supported | Supported | Supported |
 | Create dialogue flows via API | Not supported | Supported | Supported |
 | Data export/import | Not supported | Supported | Supported |
-| SQL Server | Not supported | Supported | Supported |
+| SQL Server | Not supported | WIP | Supported |
 | SQLite | Not supported | WIP | Supported |
 | PostgreSQL | Not supported | Supported | Supported |
 | MySQL | Not supported | WIP | Supported |
